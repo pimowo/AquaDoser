@@ -141,57 +141,101 @@ void setupWiFiManager() {
 }
 
 void handlePumpSwitch0(bool state, HASwitch* sender) {
-    handlePumpSwitch(state, sender, 0);
-}
-void handlePumpSwitch1(bool state, HASwitch* sender) {
-    handlePumpSwitch(state, sender, 1);
-}
-
-void handlePumpSwitch0(bool state, HASwitch* sender) {
-    handlePumpSwitch(state, sender, 2);
-}
-void handlePumpSwitch1(bool state, HASwitch* sender) {
-    handlePumpSwitch(state, sender, 3);
+    pumpEnabled[0] = state;
+    saveSettings();
+    updateHAStates();
 }
 
 void handlePumpSwitch0(bool state, HASwitch* sender) {
-    handlePumpSwitch(state, sender, 4);
-}
-void handlePumpSwitch1(bool state, HASwitch* sender) {
-    handlePumpSwitch(state, sender, 5);
+    pumpEnabled[1] = state;
+    saveSettings();
+    updateHAStates();
 }
 
 void handlePumpSwitch0(bool state, HASwitch* sender) {
-    handlePumpSwitch(state, sender, 6);
+    pumpEnabled[2] = state;
+    saveSettings();
+    updateHAStates();
 }
-void handlePumpSwitch1(bool state, HASwitch* sender) {
-    handlePumpSwitch(state, sender, 7);
+
+void handlePumpSwitch0(bool state, HASwitch* sender) {
+    pumpEnabled[3] = state;
+    saveSettings();
+    updateHAStates();
+}
+
+void handlePumpSwitch0(bool state, HASwitch* sender) {
+    pumpEnabled[4] = state;
+    saveSettings();
+    updateHAStates();
+}
+
+void handlePumpSwitch0(bool state, HASwitch* sender) {
+    pumpEnabled[5] = state;
+    saveSettings();
+    updateHAStates();
+}
+
+void handlePumpSwitch0(bool state, HASwitch* sender) {
+    pumpEnabled[6] = state;
+    saveSettings();
+    updateHAStates();
+}
+
+void handlePumpSwitch0(bool state, HASwitch* sender) {
+    pumpEnabled[7] = state;
+    saveSettings();
+    updateHAStates();
 }
 
 void handleCalibration0(HANumeric value, HANumber* sender) {
-    handleCalibration(value, sender, 0);
+    calibrationData[0] = value.toInt8();
+    saveSettings();
+    updateHAStates();
 }
-void handleCalibration1(HANumeric value, HANumber* sender) {
-    handleCalibration(value, sender, 1);
-}
+
 void handleCalibration0(HANumeric value, HANumber* sender) {
-    handleCalibration(value, sender, 2);
+    calibrationData[1] = value.toInt8();
+    saveSettings();
+    updateHAStates();
 }
-void handleCalibration1(HANumeric value, HANumber* sender) {
-    handleCalibration(value, sender, 3);
-}
+
 void handleCalibration0(HANumeric value, HANumber* sender) {
-    handleCalibration(value, sender, 4);
+    calibrationData[2] = value.toInt8();
+    saveSettings();
+    updateHAStates();
 }
-void handleCalibration1(HANumeric value, HANumber* sender) {
-    handleCalibration(value, sender, 5);
-}
+
 void handleCalibration0(HANumeric value, HANumber* sender) {
-    handleCalibration(value, sender, 6);
+    calibrationData[3] = value.toInt8();
+    saveSettings();
+    updateHAStates();
 }
-void handleCalibration1(HANumeric value, HANumber* sender) {
-    handleCalibration(value, sender, 7);
+
+void handleCalibration0(HANumeric value, HANumber* sender) {
+    calibrationData[4] = value.toInt8();
+    saveSettings();
+    updateHAStates();
 }
+
+void handleCalibration0(HANumeric value, HANumber* sender) {
+    calibrationData[5] = value.toInt8();
+    saveSettings();
+    updateHAStates();
+}
+
+void handleCalibration0(HANumeric value, HANumber* sender) {
+    calibrationData[6] = value.toInt8();
+    saveSettings();
+    updateHAStates();
+}
+
+void handleCalibration0(HANumeric value, HANumber* sender) {
+    calibrationData[7] = value.toInt8();
+    saveSettings();
+    updateHAStates();
+}
+
 // Funkcje obsługi przełączników pomp
 void handlePumpSwitch(bool state, HASwitch* sender, int pumpIndex) {
     pumpEnabled[pumpIndex] = state;
@@ -280,11 +324,12 @@ void setupPumpEntities(int pumpIndex) {
     pumpSwitch[pumpIndex]->setName(("Pompa " + String(pumpIndex + 1) + " Harmonogram").c_str());
     pumpSwitch[pumpIndex]->setIcon("mdi:power");
     
-    // Używamy std::bind do przekazania dodatkowego parametru
-    pumpSwitch[pumpIndex]->onCommand(std::bind(handlePumpSwitch, 
-        std::placeholders::_1, 
-        std::placeholders::_2, 
-        pumpIndex));
+    // Używamy bezpośrednich callbacków zamiast std::bind
+    if (pumpIndex == 0) {
+        pumpSwitch[pumpIndex]->onCommand(handlePumpSwitch0);
+    } else {
+        pumpSwitch[pumpIndex]->onCommand(handlePumpSwitch1);
+    }
 
     // Konfiguracja kalibracji
     snprintf(uniqueId, sizeof(uniqueId), "calibration_%d", pumpIndex);
@@ -292,10 +337,11 @@ void setupPumpEntities(int pumpIndex) {
     calibrationNumber[pumpIndex]->setName(("Kalibracja Pompy " + String(pumpIndex + 1)).c_str());
     calibrationNumber[pumpIndex]->setIcon("mdi:tune");
     
-    calibrationNumber[pumpIndex]->onCommand(std::bind(handleCalibration, 
-        std::placeholders::_1, 
-        std::placeholders::_2, 
-        pumpIndex));
+    if (pumpIndex == 0) {
+        calibrationNumber[pumpIndex]->onCommand(handleCalibration0);
+    } else {
+        calibrationNumber[pumpIndex]->onCommand(handleCalibration1);
+    }
 }
 
 // --- Inicjalizacja modułu RTC DS3231 oraz ustawienia czasu
@@ -693,8 +739,9 @@ void updateHAStates() {
         pumpSwitch[i]->setState(pumpEnabled[i]);
         pumpWorkingSensor[i]->setValue(pumpRunning[i] ? "ON" : "OFF");
         tankLevelSensor[i]->setValue(String(doseAmount[i]).c_str());
-        HANumeric wartosc(calibrationData[i]);
-        calibrationNumber[i]->setValue(wartosc);
+        
+        // Używamy setValue z wartością numeryczną bezpośrednio
+        calibrationNumber[i]->setState(calibrationData[i]);
     }
 }
 
