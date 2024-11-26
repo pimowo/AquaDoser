@@ -56,6 +56,14 @@ uint8_t currentAnimationStep = 0;     // Bieżący krok animacji LED
 uint8_t activeDays[NUM_PUMPS];       // Tablica aktywnych dni tygodnia dla pomp
 uint8_t activeHours[NUM_PUMPS];      // Tablica aktywnych godzin dla pomp
 
+// Deklaracje wskaźników do funkcji obsługi
+typedef void (*PumpSwitchHandler)(bool state, HASwitch* sender);
+typedef void (*CalibrationHandler)(HANumeric value, HANumber* sender);
+
+// Tablice funkcji obsługi
+PumpSwitchHandler pumpHandlers[NUM_PUMPS];
+CalibrationHandler calibrationHandlers[NUM_PUMPS];
+
 // --- Definicje encji Home Assistant dla każdej pompy i trybu serwisowego
 HASwitch* pumpSwitch[NUM_PUMPS];      // Przełącznik dla włączania/wyłączania harmonogramu pompy
 HASensor* pumpWorkingSensor[NUM_PUMPS]; // Sensor dla stanu pracy pompy (on/off)
@@ -112,6 +120,20 @@ void setupWiFiManager() {
   ESP.wdtFeed(); // Odśwież watchdog po zakończeniu konfiguracji
 }
 
+// Funkcje obsługi przełączników pomp
+void handlePumpSwitch(bool state, HASwitch* sender, int pumpIndex) {
+    pumpEnabled[pumpIndex] = state;
+    saveSettings();
+    updateHAStates();
+}
+
+// Funkcja obsługi kalibracji
+void handleCalibration(HANumeric value, HANumber* sender, int pumpIndex) {
+    calibrationData[pumpIndex] = value.toFloat();
+    saveSettings();
+    updateHAStates();
+}
+
 // --- Konfiguracja połączenia z brokerem MQTT oraz definiuje encje dla sensorów i przełączników
 void setupMQTT() {
   char uniqueId[16];
@@ -159,29 +181,31 @@ void setupMQTT() {
 
 // --- Konfiguracja encji dla poszczególnych pomp w systemie Home Assistant
 void setupPumpEntities(int pumpIndex) {
-  char uniqueId[16];
+    char uniqueId[32];
 
-  // Konfiguracja przełącznika pompy
-  snprintf(uniqueId, sizeof(uniqueId), "pump_switch_%d", pumpIndex); // Tworzenie unikalnego identyfikatora dla przełącznika pompy
-  pumpSwitch[pumpIndex] = new HASwitch(uniqueId); // Inicjalizacja nowego przełącznika
-  pumpSwitch[pumpIndex]->setName(("Pompa " + String(pumpIndex + 1) + " Harmonogram").c_str()); // Ustawienie nazwy przełącznika
-  pumpSwitch[pumpIndex]->setIcon("mdi:power"); // Ustawienie ikony dla przełącznika
-  pumpSwitch[pumpIndex]->onCommand([pumpIndex](bool state) { // Ustawienie akcji na zmianę stanu przełącznika
-    pumpEnabled[pumpIndex] = state; // Ustawienie stanu aktywności pompy
-    saveSettings(); // Zapisanie ustawień
-    updateHAStates(); // Aktualizacja stanów w Home Assistant
-  });
+    // Konfiguracja przełącznika pompy
+    snprintf(uniqueId, sizeof(uniqueId), "pump_switch_%d", pumpIndex);
+    pumpSwitch[pumpIndex] = new HASwitch(uniqueId);
+    pumpSwitch[pumpIndex]->setName(("Pompa " + String(pumpIndex + 1) + " Harmonogram").c_str());
+    pumpSwitch[pumpIndex]->setIcon("mdi:power");
+    
+    // Konfiguracja callback'a dla przełącznika
+    pumpHandlers[pumpIndex] = [](bool state, HASwitch* sender) {
+        handlePumpSwitch(state, sender, pumpIndex);
+    };
+    pumpSwitch[pumpIndex]->onCommand(pumpHandlers[pumpIndex]);
 
-  // Konfiguracja liczby kalibracji
-  snprintf(uniqueId, sizeof(uniqueId), "calibration_%d", pumpIndex); // Tworzenie unikalnego identyfikatora dla kalibracji
-  calibrationNumber[pumpIndex] = new HANumber(uniqueId, HANumber::PrecisionP1); // Inicjalizacja nowego licznika kalibracji
-  calibrationNumber[pumpIndex]->setName(("Kalibracja Pompy " + String(pumpIndex + 1)).c_str()); // Ustawienie nazwy licznika kalibracji
-  calibrationNumber[pumpIndex]->setIcon("mdi:tune"); // Ustawienie ikony dla licznika kalibracji
-  calibrationNumber[pumpIndex]->onCommand([pumpIndex](float value) { // Ustawienie akcji na zmianę wartości kalibracji
-    calibrationData[pumpIndex] = value; // Ustawienie wartości kalibracji
-    saveSettings(); // Zapisanie ustawień
-    updateHAStates(); // Aktualizacja stanów w Home Assistant
-  });
+    // Konfiguracja kalibracji
+    snprintf(uniqueId, sizeof(uniqueId), "calibration_%d", pumpIndex);
+    calibrationNumber[pumpIndex] = new HANumber(uniqueId, HANumber::PrecisionP1);
+    calibrationNumber[pumpIndex]->setName(("Kalibracja Pompy " + String(pumpIndex + 1)).c_str());
+    calibrationNumber[pumpIndex]->setIcon("mdi:tune");
+    
+    // Konfiguracja callback'a dla kalibracji
+    calibrationHandlers[pumpIndex] = [](HANumeric value, HANumber* sender) {
+        handleCalibration(value, sender, pumpIndex);
+    };
+    calibrationNumber[pumpIndex]->onCommand(calibrationHandlers[pumpIndex]);
 }
 
 // --- Inicjalizacja modułu RTC DS3231 oraz ustawienia czasu
@@ -554,11 +578,23 @@ void setup() {
   EEPROM.begin(512);
   Wire.begin();
 
+    // Inicjalizacja funkcji obsługi dla wszystkich pomp
+    for (int i = 0; i < NUM_PUMPS; i++) {
+        pumpHandlers[i] = nullptr;
+        calibrationHandlers[i] = nullptr;
+    }
+
   loadConfig(); // Wczytanie konfiguracji MQTT z EEPROM
   setupWiFiManager(); // Konfiguracja i połączenie z Wi-Fi  
   setupMQTT(); // Konfiguracja MQTT z Home Assistant  
   setupRTC(); // Inicjalizacja RTC   
   setupLED(); // Konfiguracja diod LED
+
+    // Konfiguracja wszystkich pomp
+    for (int i = 0; i < NUM_PUMPS; i++) {
+        setupPumpEntities(i);
+    }
+
   pinMode(BUTTON_PIN, INPUT_PULLUP); // Konfiguracja przycisku serwisowego 
   loadSettings(); // Wczytanie ustawień pomp z EEPROM  
   lastRTCUpdate = millis(); // Ustawienie początkowego czasu synchronizacji RTC 
