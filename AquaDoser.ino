@@ -7,6 +7,17 @@
 #include <PCF8574.h>
 #include <Adafruit_NeoPixel.h>
 #include <WiFiManager.h>
+#include <NTPClient.h>
+#include <WiFiUdp.h>
+
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, "pool.ntp.org");
+
+// Definicje stałych
+#define MQTT_SERVER "twój_serwer_mqtt"
+#define MQTT_PORT 1883
+#define MQTT_USER "użytkownik"
+#define MQTT_PASSWORD "hasło"
 
 // --- EEPROM
 #define EEPROM_OFFSET_CONFIG 0 // Offset 0 dla konfiguracji MQTT
@@ -120,6 +131,58 @@ void setupWiFiManager() {
   ESP.wdtFeed(); // Odśwież watchdog po zakończeniu konfiguracji
 }
 
+void handlePumpSwitch0(bool state, HASwitch* sender) {
+    handlePumpSwitch(state, sender, 0);
+}
+void handlePumpSwitch1(bool state, HASwitch* sender) {
+    handlePumpSwitch(state, sender, 1);
+}
+
+void handlePumpSwitch0(bool state, HASwitch* sender) {
+    handlePumpSwitch(state, sender, 2);
+}
+void handlePumpSwitch1(bool state, HASwitch* sender) {
+    handlePumpSwitch(state, sender, 3);
+}
+
+void handlePumpSwitch0(bool state, HASwitch* sender) {
+    handlePumpSwitch(state, sender, 4);
+}
+void handlePumpSwitch1(bool state, HASwitch* sender) {
+    handlePumpSwitch(state, sender, 5);
+}
+
+void handlePumpSwitch0(bool state, HASwitch* sender) {
+    handlePumpSwitch(state, sender, 6);
+}
+void handlePumpSwitch1(bool state, HASwitch* sender) {
+    handlePumpSwitch(state, sender, 7);
+}
+
+void handleCalibration0(HANumeric value, HANumber* sender) {
+    handleCalibration(value, sender, 0);
+}
+void handleCalibration1(HANumeric value, HANumber* sender) {
+    handleCalibration(value, sender, 1);
+}
+void handleCalibration0(HANumeric value, HANumber* sender) {
+    handleCalibration(value, sender, 2);
+}
+void handleCalibration1(HANumeric value, HANumber* sender) {
+    handleCalibration(value, sender, 3);
+}
+void handleCalibration0(HANumeric value, HANumber* sender) {
+    handleCalibration(value, sender, 4);
+}
+void handleCalibration1(HANumeric value, HANumber* sender) {
+    handleCalibration(value, sender, 5);
+}
+void handleCalibration0(HANumeric value, HANumber* sender) {
+    handleCalibration(value, sender, 6);
+}
+void handleCalibration1(HANumeric value, HANumber* sender) {
+    handleCalibration(value, sender, 7);
+}
 // Funkcje obsługi przełączników pomp
 void handlePumpSwitch(bool state, HASwitch* sender, int pumpIndex) {
     pumpEnabled[pumpIndex] = state;
@@ -180,6 +243,26 @@ void setupMQTT() {
 }
 
 // --- Konfiguracja encji dla poszczególnych pomp w systemie Home Assistant
+// Na początku pliku, przed setup():
+// Funkcje callback dla przełączników
+void handlePumpSwitch0(bool state, HASwitch* sender) {
+    handlePumpSwitch(state, sender, 0);
+}
+void handlePumpSwitch1(bool state, HASwitch* sender) {
+    handlePumpSwitch(state, sender, 1);
+}
+// ... podobnie dla pozostałych pomp ...
+
+// Funkcje callback dla kalibracji
+void handleCalibration0(HANumeric value, HANumber* sender) {
+    handleCalibration(value, sender, 0);
+}
+void handleCalibration1(HANumeric value, HANumber* sender) {
+    handleCalibration(value, sender, 1);
+}
+// ... podobnie dla pozostałych pomp ...
+
+// Zmieniona funkcja setupPumpEntities
 void setupPumpEntities(int pumpIndex) {
     char uniqueId[32];
 
@@ -189,11 +272,17 @@ void setupPumpEntities(int pumpIndex) {
     pumpSwitch[pumpIndex]->setName(("Pompa " + String(pumpIndex + 1) + " Harmonogram").c_str());
     pumpSwitch[pumpIndex]->setIcon("mdi:power");
     
-    // Użycie capture [=] aby przechwycić pumpIndex
-    pumpHandlers[pumpIndex] = [=](bool state, HASwitch* sender) {
-        handlePumpSwitch(state, sender, pumpIndex);
-    };
-    pumpSwitch[pumpIndex]->onCommand(pumpHandlers[pumpIndex]);
+    // Przypisanie odpowiedniej funkcji callback
+    switch(pumpIndex) {
+        case 0: pumpSwitch[pumpIndex]->onCommand(handlePumpSwitch0); break;
+        case 1: pumpSwitch[pumpIndex]->onCommand(handlePumpSwitch1); break;
+        case 2: pumpSwitch[pumpIndex]->onCommand(handlePumpSwitch0); break;
+        case 3: pumpSwitch[pumpIndex]->onCommand(handlePumpSwitch1); break;
+        case 4: pumpSwitch[pumpIndex]->onCommand(handlePumpSwitch0); break;
+        case 5: pumpSwitch[pumpIndex]->onCommand(handlePumpSwitch1); break;
+        case 6: pumpSwitch[pumpIndex]->onCommand(handlePumpSwitch0); break;
+        case 7: pumpSwitch[pumpIndex]->onCommand(handlePumpSwitch1); break;
+    }
 
     // Konfiguracja kalibracji
     snprintf(uniqueId, sizeof(uniqueId), "calibration_%d", pumpIndex);
@@ -201,34 +290,67 @@ void setupPumpEntities(int pumpIndex) {
     calibrationNumber[pumpIndex]->setName(("Kalibracja Pompy " + String(pumpIndex + 1)).c_str());
     calibrationNumber[pumpIndex]->setIcon("mdi:tune");
     
-    calibrationHandlers[pumpIndex] = [=](HANumeric value, HANumber* sender) {
-        handleCalibration(value, sender, pumpIndex);
-    };
-    calibrationNumber[pumpIndex]->onCommand(calibrationHandlers[pumpIndex]);
+    switch(pumpIndex) {
+        case 0: calibrationNumber[pumpIndex]->onCommand(handleCalibration0); break;
+        case 1: calibrationNumber[pumpIndex]->onCommand(handleCalibration1); break;
+        case 2: calibrationNumber[pumpIndex]->onCommand(handleCalibration0); break;
+        case 3: calibrationNumber[pumpIndex]->onCommand(handleCalibration1); break;
+        case 4: calibrationNumber[pumpIndex]->onCommand(handleCalibration0); break;
+        case 5: calibrationNumber[pumpIndex]->onCommand(handleCalibration1); break;
+        case 6: calibrationNumber[pumpIndex]->onCommand(handleCalibration0); break;
+        case 7: calibrationNumber[pumpIndex]->onCommand(handleCalibration1); break;
+    }
 }
 
 // --- Inicjalizacja modułu RTC DS3231 oraz ustawienia czasu
 void setupRTC() {
     Wire.begin();
-    if (!rtc.isRunning()) {
+    
+    // Próba komunikacji z RTC
+    Wire.beginTransmission(0x68); // Adres I2C modułu DS3231
+    if (Wire.endTransmission() != 0) {
         Serial.println("Błąd! Nie można znaleźć modułu RTC DS3231");
         serviceMode = true;
-        rtcAlarmSensor->setValue("ALARM RTC");  // Zmieniono setState na setValue
+        rtcAlarmSensor.setValue("ALARM RTC");  // Zmieniono -> na .
         updateHAStates();
         return;
     }
 
-    DateTime now = rtc.now();
-    if (!rtc.isRunning()) {
+    // Sprawdzenie czy RTC działa
+    byte statusReg = rtc.getSecond(); // Próba odczytu
+    if (statusReg == 0xFF) {
         Serial.println("RTC utracił zasilanie, ustawiam czas...");
-        rtc.setDateTime(DateTime(__DATE__, __TIME__));  // Zmieniono adjust na setDateTime
+        rtc.setClockMode(false); // 24h mode
+        rtc.setSecond(0);
+        rtc.setMinute(minute(__TIME__));
+        rtc.setHour(hour(__TIME__));
+        rtc.setDate(day(__DATE__));
+        rtc.setMonth(month(__DATE__));
+        rtc.setYear(year(__DATE__) - 2000);
     }
+}
+
+void setupNTP() {
+    timeClient.begin();
+    timeClient.setTimeOffset(3600); // Ustaw odpowiedni offset czasowy
 }
 
 void synchronizeRTC() {
     if (timeClient.update()) {
         unsigned long epochTime = timeClient.getEpochTime();
-        rtc.setEpoch(epochTime);  // Zmieniono adjust na setEpoch
+        
+        // Konwersja czasu Unix na komponenty
+        time_t rawTime = (time_t)epochTime;
+        struct tm * timeinfo = localtime(&rawTime);
+        
+        rtc.setClockMode(false); // 24h mode
+        rtc.setSecond(timeinfo->tm_sec);
+        rtc.setMinute(timeinfo->tm_min);
+        rtc.setHour(timeinfo->tm_hour);
+        rtc.setDate(timeinfo->tm_mday);
+        rtc.setMonth(timeinfo->tm_mon + 1);
+        rtc.setYear(timeinfo->tm_year - 100);
+        
         Serial.println("Czas zsynchronizowany z NTP");
     }
 }
@@ -543,13 +665,15 @@ void saveConfig() {
 
 // --- Aktualizacja stanu w Home Assistant
 void updateHAStates() {
-    serviceModeSwitch->setState(serviceMode);
+    serviceModeSwitch.setState(serviceMode); // Zmieniono -> na .
     
     for (int i = 0; i < NUM_PUMPS; i++) {
         pumpSwitch[i]->setState(pumpEnabled[i]);
-        pumpWorkingSensor[i]->setValue(pumpRunning[i] ? "ON" : "OFF");  // Zmieniono setState na setValue
+        pumpWorkingSensor[i]->setValue(pumpRunning[i] ? "ON" : "OFF");
         tankLevelSensor[i]->setValue(String(doseAmount[i]).c_str());
-        calibrationNumber[i]->setValue(calibrationData[i]);
+        calibrationNumber[i]->onCommand([i](HANumeric value) {
+            calibrationData[i] = value.toInt8();
+        });
     }
 }
 
