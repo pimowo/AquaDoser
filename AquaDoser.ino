@@ -189,8 +189,8 @@ void setupPumpEntities(int pumpIndex) {
     pumpSwitch[pumpIndex]->setName(("Pompa " + String(pumpIndex + 1) + " Harmonogram").c_str());
     pumpSwitch[pumpIndex]->setIcon("mdi:power");
     
-    // Konfiguracja callback'a dla przełącznika
-    pumpHandlers[pumpIndex] = [](bool state, HASwitch* sender) {
+    // Użycie capture [=] aby przechwycić pumpIndex
+    pumpHandlers[pumpIndex] = [=](bool state, HASwitch* sender) {
         handlePumpSwitch(state, sender, pumpIndex);
     };
     pumpSwitch[pumpIndex]->onCommand(pumpHandlers[pumpIndex]);
@@ -201,8 +201,7 @@ void setupPumpEntities(int pumpIndex) {
     calibrationNumber[pumpIndex]->setName(("Kalibracja Pompy " + String(pumpIndex + 1)).c_str());
     calibrationNumber[pumpIndex]->setIcon("mdi:tune");
     
-    // Konfiguracja callback'a dla kalibracji
-    calibrationHandlers[pumpIndex] = [](HANumeric value, HANumber* sender) {
+    calibrationHandlers[pumpIndex] = [=](HANumeric value, HANumber* sender) {
         handleCalibration(value, sender, pumpIndex);
     };
     calibrationNumber[pumpIndex]->onCommand(calibrationHandlers[pumpIndex]);
@@ -210,45 +209,28 @@ void setupPumpEntities(int pumpIndex) {
 
 // --- Inicjalizacja modułu RTC DS3231 oraz ustawienia czasu
 void setupRTC() {
-  // Inicjalizacja RTC DS3231
-  if (!rtc.begin()) {
-    Serial.println("Blad! Nie mozna znalezc modulu RTC DS3231");
-    serviceMode = true;
-    rtcAlarmSensor.setState("ALARM RTC");
-    updateHAStates();
-    return;
-  }
+    Wire.begin();
+    if (!rtc.isRunning()) {
+        Serial.println("Błąd! Nie można znaleźć modułu RTC DS3231");
+        serviceMode = true;
+        rtcAlarmSensor->setValue("ALARM RTC");  // Zmieniono setState na setValue
+        updateHAStates();
+        return;
+    }
 
-  // Sprawdzenie, czy RTC jest ustawione 
-  if (rtc.lostPower()) {
-    Serial.println("RTC utracił zasilanie, ustawiam czas...");
-    rtc.adjust(DateTime(__DATE__, __TIME__)); // Ustawienie czasu
-  }
-
-  // Ustawienie strefy czasowej (Polska) z automatyczną zmianą czasu
-  configTime(3600, 3600, "pool.ntp.org", "time.nist.gov"); // Ustawienia dla serwera NTP
-  synchronizeRTC(); // Synchronizacja czasu z serwerem NTP
+    DateTime now = rtc.now();
+    if (!rtc.isRunning()) {
+        Serial.println("RTC utracił zasilanie, ustawiam czas...");
+        rtc.setDateTime(DateTime(__DATE__, __TIME__));  // Zmieniono adjust na setDateTime
+    }
 }
 
-// --- Synchronizacja czasu RTC z serwerem NTP
 void synchronizeRTC() {
-  struct tm timeInfo; // Struktura do przechowywania informacji o czasie
-  // Sprawdzenie, czy udało się pobrać lokalny czas
-  if (getLocalTime(&timeInfo)) {
-    // Ustawienie czasu RTC na podstawie pobranych danych
-    rtc.adjust(DateTime(
-      timeInfo.tm_year + 1900, // Rok
-      timeInfo.tm_mon + 1,     // Miesiąc
-      timeInfo.tm_mday,        // Dzień
-      timeInfo.tm_hour,        // Godzina
-      timeInfo.tm_min,         // Minuta
-      timeInfo.tm_sec          // Sekunda
-    ));
-    Serial.println("RTC zsynchronizowany z serwerem NTP"); // Informacja o sukcesie
-  } else {
-    Serial.println("Nie udalo sie zsynchronizowac z serwerem NTP"); // Informacja o błędzie
-  }
-  ESP.wdtFeed();  // Odśwież watchdog
+    if (timeClient.update()) {
+        unsigned long epochTime = timeClient.getEpochTime();
+        rtc.setEpoch(epochTime);  // Zmieniono adjust na setEpoch
+        Serial.println("Czas zsynchronizowany z NTP");
+    }
 }
 
 // --- Konfiguracja diody LED
@@ -272,76 +254,76 @@ void handleActiveHoursCommand(float value, HANumber* sender, int index) {
 
 // --- Zarządzanie działaniem pomp w oparciu o harmonogram
 void handlePumps() {
-  // Sprawdzenie, czy jest włączony tryb serwisowy; jeśli tak, pompy są wyłączone
-  if (serviceMode) return; // W trybie serwisowym pompy są wyłączone
+    if (serviceMode) return;
 
-  // Sprawdzenie, czy jest odpowiednia godzina i dzień tygodnia dla każdej pompy
-  for (int i = 0; i < NUM_PUMPS; i++) {
-    // Pobranie bieżącego dnia tygodnia i godziny
-    int dayOfWeek = rtc.getDayOfWeek();
-    int hour = rtc.getHour(false, false);
-
-    // Jeśli pompa jest włączona i aktualnie działa, sprawdź, czy czas podawania już minął
-    if (pumpEnabled[i] && pumpRunning[i] && (millis() - doseStartTime[i] >= dosingDuration[i] * 1000)) {
-      stopDosing(i); // Zatrzymaj podawanie, jeśli minął czas
-    } 
-    // Jeśli pompa jest włączona, jest odpowiedni dzień i godzina, a pompa nie działa, uruchom podawanie
-    else if (pumpEnabled[i] && activeDays[i] & (1 << dayOfWeek) && activeHours[i] == hour && !pumpRunning[i]) {
-      startDosing(i); // Rozpocznij podawanie nawozu
+    bool h12, PM;
+    for (int i = 0; i < NUM_PUMPS; i++) {
+        int dayOfWeek = rtc.getDoW();  // Zmieniono getDayOfWeek na getDoW
+        int hour = rtc.getHour(h12, PM);  // Poprawione wywołanie getHour
+        
+        if (pumpEnabled[i] && pumpRunning[i] && 
+            (millis() - doseStartTime[i] >= dosingDuration[i] * 1000)) {
+            stopDosing(i);
+        } 
+        else if (pumpEnabled[i] && 
+                (activeDays[i] & (1 << dayOfWeek)) && 
+                activeHours[i] == hour && 
+                !pumpRunning[i]) {
+            startDosing(i);
+        }
     }
-  }
 }
 
 void handleActiveDaysCommand0(HANumeric value, HANumber* sender) {
-  activeDays[0] = static_cast<uint8_t>(value);
-  saveSettings();
-  updateHAStates();
+    activeDays[0] = value.toInt8();  // Zamiast static_cast używamy metody toInt8
+    saveSettings();
+    updateHAStates();
 }
 
 void handleActiveDaysCommand1(HANumeric value, HANumber* sender) {
-  activeDays[1] = static_cast<uint8_t>(value);
+  activeDays[1] = value.toInt8();
   saveSettings();
   updateHAStates();
 }
 
 void handleActiveDaysCommand2(HANumeric value, HANumber* sender) {
-  activeDays[2] = static_cast<uint8_t>(value);
+  activeDays[2] = value.toInt8();
   saveSettings();
   updateHAStates();
 }
 
 void handleActiveDaysCommand3(HANumeric value, HANumber* sender) {
-  activeDays[3] = static_cast<uint8_t>(value);
+  activeDays[3] = value.toInt8();
   saveSettings();
   updateHAStates();
 }
 
 void handleActiveDaysCommand4(HANumeric value, HANumber* sender) {
-  activeDays[4] = static_cast<uint8_t>(value);
+  activeDays[4] = value.toInt8();
   saveSettings();
   updateHAStates();
 }
 
 void handleActiveDaysCommand5(HANumeric value, HANumber* sender) {
-  activeDays[5] = static_cast<uint8_t>(value);
+  activeDays[5] = value.toInt8();
   saveSettings();
   updateHAStates();
 }
 
 void handleActiveDaysCommand6(HANumeric value, HANumber* sender) {
-  activeDays[6] = static_cast<uint8_t>(value);
+  activeDays[6] = value.toInt8();
   saveSettings();
   updateHAStates();
 }
 
 void handleActiveDaysCommand7(HANumeric value, HANumber* sender) {
-  activeDays[7] = static_cast<uint8_t>(value);
+  activeDays[7] = value.toInt8();
   saveSettings();
   updateHAStates();
 }
 
 void handleActiveDaysCommand1(HANumeric value, HANumber* sender) {
-  activeDays[1] = static_cast<uint8_t>(value);
+  activeDays[1] = value.toInt8();
   saveSettings();
   updateHAStates();
 }
@@ -412,15 +394,14 @@ void startDosing(int pumpIndex) {
 
 // --- Zatrzymanie podawania nawozu dla określonej pompy
 void stopDosing(int pumpIndex) {
-  pumpRunning[pumpIndex] = false; // Ustawienie stanu pompy na "nie działa" (false)
-  pcf8574.digitalWrite(pumpIndex, LOW); // Wyłączenie pompy przez ustawienie odpowiedniego pinu na LOW
-  strip.setPixelColor(pumpIndex, COLOR_ON); // Ustawienie koloru diody LED na stan "wyłączony"
-  strip.show();
-
-  // Wypisanie informacji o zakończeniu podawania nawozu dla danej pompy
-  Serial.print("Pompa "); 
-  Serial.print(pumpIndex + 1); 
-  Serial.println(" zakończyła podawanie.");
+    pumpRunning[pumpIndex] = false;
+    pcf8574.write(pumpIndex, LOW);  // Zmieniono digitalWrite na write
+    strip.setPixelColor(pumpIndex, COLOR_ON);
+    strip.show();
+    
+    Serial.print("Pompa ");
+    Serial.print(pumpIndex + 1);
+    Serial.println(" zakończyła podawanie.");
 }
 
 // --- Obsługa przycisku
@@ -562,14 +543,14 @@ void saveConfig() {
 
 // --- Aktualizacja stanu w Home Assistant
 void updateHAStates() {
-  serviceModeSwitch.setState(serviceMode); // Aktualizacja trybu serwisowego
-  // Aktualizacja stanu każdej pompy
-  for (int i = 0; i < NUM_PUMPS; i++) {
-    pumpSwitch[i]->setState(pumpEnabled[i]); // Stan harmonogramu pompy
-    pumpWorkingSensor[i]->setState(pumpRunning[i] ? "ON" : "OFF"); // Aktualizacja stanu pracy pompy
-    tankLevelSensor[i]->setValue(String(doseAmount[i]).c_str()); // Aktualizacja poziomu wirtualnego zbiornika
-    calibrationNumber[i]->setValue(String(calibrationData[i]).c_str()); // Aktualizacja wartości kalibracji
-  }
+    serviceModeSwitch->setState(serviceMode);
+    
+    for (int i = 0; i < NUM_PUMPS; i++) {
+        pumpSwitch[i]->setState(pumpEnabled[i]);
+        pumpWorkingSensor[i]->setValue(pumpRunning[i] ? "ON" : "OFF");  // Zmieniono setState na setValue
+        tankLevelSensor[i]->setValue(String(doseAmount[i]).c_str());
+        calibrationNumber[i]->setValue(calibrationData[i]);
+    }
 }
 
 // --- Konfiguracja 
@@ -604,9 +585,9 @@ void setup() {
 // --- Główna pętla programu
 void loop() {
   // Sprawdzenie, czy MQTT jest połączone
-  if (!mqtt.connected()) {
-    mqtt.connect(); // Próba ponownego połączenia z brokerem MQTT
-  }
+    if (!mqtt.isConnected()) {  // Zmieniono connected na isConnected
+        mqtt.begin();  // Zmieniono connect na begin
+    }
   
   mqtt.loop(); // Obsługuje komunikację z MQTT
 
