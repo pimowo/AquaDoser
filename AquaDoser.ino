@@ -10,6 +10,9 @@
 #include <NTPClient.h>
 #include <WiFiUdp.h>
 
+#include <TimeLib.h>      // Do obsługi czasu
+#include <functional>     // Dla std::bind
+
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "pool.ntp.org");
 
@@ -18,6 +21,12 @@ NTPClient timeClient(ntpUDP, "pool.ntp.org");
 #define MQTT_PORT 1883
 #define MQTT_USER "użytkownik"
 #define MQTT_PASSWORD "hasło"
+
+// Tablica nazw miesięcy do parsowania daty
+const char *nazwyMiesiecy[12] = {
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+};
 
 // --- EEPROM
 #define EEPROM_OFFSET_CONFIG 0 // Offset 0 dla konfiguracji MQTT
@@ -190,9 +199,8 @@ void handlePumpSwitch(bool state, HASwitch* sender, int pumpIndex) {
     updateHAStates();
 }
 
-// Funkcja obsługi kalibracji
 void handleCalibration(HANumeric value, HANumber* sender, int pumpIndex) {
-    calibrationData[pumpIndex] = value.toFloat();
+    calibrationData[pumpIndex] = value.toInt8();
     saveSettings();
     updateHAStates();
 }
@@ -272,17 +280,11 @@ void setupPumpEntities(int pumpIndex) {
     pumpSwitch[pumpIndex]->setName(("Pompa " + String(pumpIndex + 1) + " Harmonogram").c_str());
     pumpSwitch[pumpIndex]->setIcon("mdi:power");
     
-    // Przypisanie odpowiedniej funkcji callback
-    switch(pumpIndex) {
-        case 0: pumpSwitch[pumpIndex]->onCommand(handlePumpSwitch0); break;
-        case 1: pumpSwitch[pumpIndex]->onCommand(handlePumpSwitch1); break;
-        case 2: pumpSwitch[pumpIndex]->onCommand(handlePumpSwitch0); break;
-        case 3: pumpSwitch[pumpIndex]->onCommand(handlePumpSwitch1); break;
-        case 4: pumpSwitch[pumpIndex]->onCommand(handlePumpSwitch0); break;
-        case 5: pumpSwitch[pumpIndex]->onCommand(handlePumpSwitch1); break;
-        case 6: pumpSwitch[pumpIndex]->onCommand(handlePumpSwitch0); break;
-        case 7: pumpSwitch[pumpIndex]->onCommand(handlePumpSwitch1); break;
-    }
+    // Używamy std::bind do przekazania dodatkowego parametru
+    pumpSwitch[pumpIndex]->onCommand(std::bind(handlePumpSwitch, 
+        std::placeholders::_1, 
+        std::placeholders::_2, 
+        pumpIndex));
 
     // Konfiguracja kalibracji
     snprintf(uniqueId, sizeof(uniqueId), "calibration_%d", pumpIndex);
@@ -290,44 +292,64 @@ void setupPumpEntities(int pumpIndex) {
     calibrationNumber[pumpIndex]->setName(("Kalibracja Pompy " + String(pumpIndex + 1)).c_str());
     calibrationNumber[pumpIndex]->setIcon("mdi:tune");
     
-    switch(pumpIndex) {
-        case 0: calibrationNumber[pumpIndex]->onCommand(handleCalibration0); break;
-        case 1: calibrationNumber[pumpIndex]->onCommand(handleCalibration1); break;
-        case 2: calibrationNumber[pumpIndex]->onCommand(handleCalibration0); break;
-        case 3: calibrationNumber[pumpIndex]->onCommand(handleCalibration1); break;
-        case 4: calibrationNumber[pumpIndex]->onCommand(handleCalibration0); break;
-        case 5: calibrationNumber[pumpIndex]->onCommand(handleCalibration1); break;
-        case 6: calibrationNumber[pumpIndex]->onCommand(handleCalibration0); break;
-        case 7: calibrationNumber[pumpIndex]->onCommand(handleCalibration1); break;
-    }
+    calibrationNumber[pumpIndex]->onCommand(std::bind(handleCalibration, 
+        std::placeholders::_1, 
+        std::placeholders::_2, 
+        pumpIndex));
 }
 
 // --- Inicjalizacja modułu RTC DS3231 oraz ustawienia czasu
 void setupRTC() {
     Wire.begin();
     
-    // Próba komunikacji z RTC
-    Wire.beginTransmission(0x68); // Adres I2C modułu DS3231
+    // Sprawdzenie komunikacji z RTC
+    Wire.beginTransmission(0x68);
     if (Wire.endTransmission() != 0) {
         Serial.println("Błąd! Nie można znaleźć modułu RTC DS3231");
         serviceMode = true;
-        rtcAlarmSensor.setValue("ALARM RTC");  // Zmieniono -> na .
+        rtcAlarmSensor.setValue("ALARM RTC");
         updateHAStates();
         return;
     }
 
     // Sprawdzenie czy RTC działa
-    byte statusReg = rtc.getSecond(); // Próba odczytu
-    if (statusReg == 0xFF) {
+    if (!rtc.getSecond()) {  // Jeśli odczyt się nie powiedzie
         Serial.println("RTC utracił zasilanie, ustawiam czas...");
-        rtc.setClockMode(false); // 24h mode
-        rtc.setSecond(0);
-        rtc.setMinute(minute(__TIME__));
-        rtc.setHour(hour(__TIME__));
-        rtc.setDate(day(__DATE__));
-        rtc.setMonth(month(__DATE__));
-        rtc.setYear(year(__DATE__) - 2000);
+        
+        // Parsowanie czasu kompilacji
+        tmElements_t tm;
+        if (rozlozDate(__DATE__) && rozlozTime(__TIME__)) {
+            rtc.setClockMode(false);  // tryb 24h
+            rtc.setSecond(second());
+            rtc.setMinute(minute());
+            rtc.setHour(hour());
+            rtc.setDate(day());
+            rtc.setMonth(month());
+            rtc.setYear(year() - 2000);
+        }
     }
+}
+
+// Funkcje pomocnicze do parsowania czasu
+bool rozlozTime(const char *str) {
+    int godzina, minuta, sekunda;
+    if (sscanf(str, "%d:%d:%d", &godzina, &minuta, &sekunda) != 3) return false;
+    setTime(godzina, minuta, sekunda, day(), month(), year());
+    return true;
+}
+
+bool rozlozDate(const char *str) {
+    char miesiac[12];
+    int dzien, rok;
+    uint8_t indeksMiesiaca;
+
+    if (sscanf(str, "%s %d %d", miesiac, &dzien, &rok) != 3) return false;
+    for (indeksMiesiaca = 0; indeksMiesiaca < 12; indeksMiesiaca++) {
+        if (strcmp(miesiac, nazwyMiesiecy[indeksMiesiaca]) == 0) break;
+    }
+    if (indeksMiesiaca >= 12) return false;
+    setTime(hour(), minute(), second(), dzien, indeksMiesiaca + 1, rok);
+    return true;
 }
 
 void setupNTP() {
@@ -665,15 +687,14 @@ void saveConfig() {
 
 // --- Aktualizacja stanu w Home Assistant
 void updateHAStates() {
-    serviceModeSwitch.setState(serviceMode); // Zmieniono -> na .
+    serviceModeSwitch.setState(serviceMode);
     
     for (int i = 0; i < NUM_PUMPS; i++) {
         pumpSwitch[i]->setState(pumpEnabled[i]);
         pumpWorkingSensor[i]->setValue(pumpRunning[i] ? "ON" : "OFF");
         tankLevelSensor[i]->setValue(String(doseAmount[i]).c_str());
-        calibrationNumber[i]->onCommand([i](HANumeric value) {
-            calibrationData[i] = value.toInt8();
-        });
+        HANumeric wartosc(calibrationData[i]);
+        calibrationNumber[i]->setValue(wartosc);
     }
 }
 
@@ -709,8 +730,8 @@ void setup() {
 // --- Główna pętla programu
 void loop() {
   // Sprawdzenie, czy MQTT jest połączone
-    if (!mqtt.isConnected()) {  // Zmieniono connected na isConnected
-        mqtt.begin();  // Zmieniono connect na begin
+    if (!mqtt.isConnected()) {
+        mqtt.begin(MQTT_SERVER, MQTT_PORT, MQTT_USER, MQTT_PASSWORD);
     }
   
   mqtt.loop(); // Obsługuje komunikację z MQTT
