@@ -124,6 +124,21 @@ struct NetworkConfig {
     uint16_t mqtt_port;
 };
 
+struct SystemStatus {
+    unsigned long uptime;
+    bool mqtt_connected;
+    bool wifi_connected;
+    bool rtc_synced;
+    String lastError;
+    
+    SystemStatus() : 
+        uptime(0), 
+        mqtt_connected(false),
+        wifi_connected(false),
+        rtc_synced(false),
+        lastError("") {}
+};
+
 ESP8266WebServer server(80);
 WebSocketsServer webSocket = WebSocketsServer(81);
 ESP8266HTTPUpdateServer httpUpdateServer;
@@ -137,6 +152,15 @@ struct SystemInfo {
 };
 
 SystemInfo sysInfo = {0, false};
+
+struct Config {
+    bool soundEnabled;               // Dźwięk włączony/wyłączony
+    NetworkConfig network;           // Konfiguracja sieci
+    PumpConfig pumps[NUMBER_OF_PUMPS];  // Konfiguracja pomp
+    char checksum;                  // Suma kontrolna konfiguracji
+    
+    Config() : soundEnabled(true), checksum(0) {}
+};
 
 // --- Globalne obiekty
 WiFiClient wifiClient;
@@ -153,6 +177,13 @@ NetworkConfig networkConfig;
 bool pumpRunning[NUM_PUMPS] = {false};
 unsigned long doseStartTime[NUM_PUMPS] = {0};
 unsigned long lastRtcSync = 0;
+
+// Dodaj stałe dla timeoutów i interwałów jak w HydroSense
+const unsigned long MQTT_LOOP_INTERVAL = 100;      // Obsługa MQTT co 100ms
+const unsigned long OTA_CHECK_INTERVAL = 1000;     // Sprawdzanie OTA co 1s
+const unsigned long MQTT_RETRY_INTERVAL = 10000;   // Próba połączenia MQTT co 10s
+const unsigned long MILLIS_OVERFLOW_THRESHOLD = 4294967295U - 60000; // ~49.7 dni
+
 
 // --- Deklaracje encji Home Assistant
 HASwitch* pumpSwitches[NUM_PUMPS];
@@ -175,6 +206,96 @@ const char* CONFIG_DIR = "/config";
 const char* PUMPS_FILE = "/config/pumps.json";
 const char* NETWORK_FILE = "/config/network.json";
 const char* SYSTEM_FILE = "/config/system.json";
+
+// Dodaj obsługę dźwięku jak w HydroSense
+void playShortWarningSound() {
+    if (!config.soundEnabled) return;
+    tone(BUZZER_PIN, 2000, 100);
+}
+
+void playConfirmationSound() {
+    if (!config.soundEnabled) return;
+    tone(BUZZER_PIN, 1000, 50);
+    delay(100);
+    tone(BUZZER_PIN, 2000, 50);
+}
+
+void welcomeMelody() {
+    if (!config.soundEnabled) return;
+    tone(BUZZER_PIN, 1000, 100);
+    delay(150);
+    tone(BUZZER_PIN, 1500, 100);
+    delay(150);
+    tone(BUZZER_PIN, 2000, 100);
+}
+
+// Dodaj walidację konfiguracji
+bool validateConfigValues() {
+    // Sprawdź poprawność wartości dla każdej pompy
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        if (config.pumps[i].calibration <= 0 || config.pumps[i].calibration > 10) 
+            return false;
+        if (config.pumps[i].dose < 0 || config.pumps[i].dose > 1000) 
+            return false;
+    }
+    return true;
+}
+
+void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
+    switch(type) {
+        case WStype_DISCONNECTED:
+            DEBUG_SERIAL("WebSocket client " + String(num) + " disconnected");
+            break;
+        case WStype_CONNECTED:
+            {
+                // Wyślij aktualny stan po połączeniu
+                String json = getSystemStatusJSON();
+                webSocket.sendTXT(num, json);
+            }
+            break;
+        case WStype_TEXT:
+            handleWebSocketMessage(num, payload, length);
+            break;
+    }
+}
+
+String getSystemStatusJSON() {
+    StaticJsonDocument<512> doc;
+    doc["uptime"] = status.uptime;
+    doc["mqtt"] = status.mqtt_connected;
+    
+    JsonArray pumps = doc.createNestedArray("pumps");
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        JsonObject pump = pumps.createNestedObject();
+        pump["id"] = i;
+        pump["active"] = pumpStates[i].isActive;
+        pump["lastDose"] = pumpStates[i].lastDoseTime;
+    }
+    
+    String json;
+    serializeJson(doc, json);
+    return json;
+}
+
+void updateSystemStatus() {
+    status.uptime = millis() / 1000;
+    status.wifi_connected = WiFi.status() == WL_CONNECTED;
+    // ... więcej aktualizacji statusu
+}
+
+void handleMillisOverflow() {
+    static unsigned long lastMillis = 0;
+    unsigned long currentMillis = millis();
+    
+    if (currentMillis < lastMillis) {
+        // Przepełnienie - zresetuj timery
+        lastMQTTLoop = 0;
+        lastMeasurement = 0;
+        lastOTACheck = 0;
+    }
+    
+    lastMillis = currentMillis;
+}
 
 // Zapisywanie konfiguracji MQTT
 void saveMQTTConfig() {
@@ -1006,153 +1127,44 @@ String getConfigPage() {
     page += F("<meta charset='UTF-8'>");
     page += F("<meta name='viewport' content='width=device-width, initial-scale=1.0'>");
     page += F("<title>AquaDoser</title>");
-    page += F("<style>");
     
-    // Zmienne CSS
-    page += F(":root {");
-    page += F("    --primary: #2196F3;");      // Niebieski jako kolor główny
-    page += F("    --primary-dark: #1976D2;"); 
-    page += F("    --secondary: #4CAF50;");    // Zielony jako kolor akcji
-    page += F("    --warning: #FFC107;");      // Żółty jako kolor ostrzeżeń
-    page += F("    --danger: #F44336;");       // Czerwony jako kolor błędów
-    page += F("    --gray-light: #f5f5f5;");
-    page += F("    --gray: #9e9e9e;");
-    page += F("    --text: #333333;");
-    page += F("}");
-
-    // Reset i podstawowe style
-    page += F("* {margin: 0; padding: 0; box-sizing: border-box;}");
+    // Style podobne do HydroSense
+    page += F("<style>");
     page += F("body {");
-    page += F("    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;");
-    page += F("    line-height: 1.6;");
-    page += F("    color: var(--text);");
-    page += F("    background: var(--gray-light);");
+    page += F("    font-family: -apple-system, system-ui, sans-serif;");
+    page += F("    margin: 0;");
+    page += F("    padding: 20px;");
+    page += F("    background-color: #f0f2f5;");
     page += F("}");
-
-    // Kontener główny
+    
     page += F(".container {");
-    page += F("    max-width: 1200px;");
+    page += F("    max-width: 800px;");
     page += F("    margin: 0 auto;");
-    page += F("    padding: 1rem;");
-    page += F("}");
-
-    // Nagłówek
-    page += F("header {");
-    page += F("    background: var(--primary);");
-    page += F("    color: white;");
-    page += F("    padding: 1rem;");
-    page += F("    border-radius: 8px;");
-    page += F("    margin-bottom: 1rem;");
-    page += F("    display: flex;");
-    page += F("    justify-content: space-between;");
-    page += F("    align-items: center;");
-    page += F("}");
-
-    // Karty konfiguracji
-    page += F(".card {");
     page += F("    background: white;");
-    page += F("    border-radius: 8px;");
-    page += F("    padding: 1rem;");
-    page += F("    margin-bottom: 1rem;");
+    page += F("    padding: 20px;");
+    page += F("    border-radius: 10px;");
     page += F("    box-shadow: 0 2px 4px rgba(0,0,0,0.1);");
     page += F("}");
-
-    // Formularze
-    page += F(".form-group {");
-    page += F("    margin-bottom: 1rem;");
-    page += F("}");
-
-    page += F("label {");
-    page += F("    display: block;");
-    page += F("    margin-bottom: 0.5rem;");
-    page += F("    font-weight: 500;");
-    page += F("}");
-
-    page += F("input[type='text'], input[type='number'], input[type='password'] {");
-    page += F("    width: 100%;");
-    page += F("    padding: 0.5rem;");
-    page += F("    border: 1px solid var(--gray);");
-    page += F("    border-radius: 4px;");
-    page += F("    font-size: 1rem;");
-    page += F("}");
-
-    // Przyciski
-    page += F(".btn {");
-    page += F("    display: inline-block;");
-    page += F("    padding: 0.5rem 1rem;");
-    page += F("    border: none;");
-    page += F("    border-radius: 4px;");
-    page += F("    font-size: 1rem;");
-    page += F("    cursor: pointer;");
-    page += F("    transition: background-color 0.2s;");
-    page += F("}");
-
-    page += F(".btn-primary {");
-    page += F("    background: var(--primary);");
-    page += F("    color: white;");
-    page += F("}");
-
-    page += F(".btn-primary:hover {");
-    page += F("    background: var(--primary-dark);");
-    page += F("}");
-
-    // Siatka dla pomp
-    page += F(".pumps-grid {");
-    page += F("    display: grid;");
-    page += F("    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));");
-    page += F("    gap: 1rem;");
-    page += F("}");
-
-    // Karta pompy
-    page += F(".pump-card {");
-    page += F("    background: white;");
+    
+    // Karty konfiguracji
+    page += F(".card {");
+    page += F("    background: #fff;");
     page += F("    border-radius: 8px;");
-    page += F("    padding: 1rem;");
-    page += F("    display: flex;");
-    page += F("    flex-direction: column;");
-    page += F("    gap: 0.5rem;");
+    page += F("    padding: 15px;");
+    page += F("    margin-bottom: 15px;");
+    page += F("    border: 1px solid #e0e0e0;");
     page += F("}");
-
-    // Przełączniki
-    page += F(".switch {");
-    page += F("    position: relative;");
-    page += F("    display: inline-block;");
-    page += F("    width: 60px;");
-    page += F("    height: 34px;");
-    page += F("}");
-
-    page += F(".switch input {display: none;}");
-
-    page += F(".slider {");
-    page += F("    position: absolute;");
+    
+    // Przyciski
+    page += F(".button {");
+    page += F("    background: #1a73e8;");
+    page += F("    color: white;");
+    page += F("    border: none;");
+    page += F("    padding: 10px 20px;");
+    page += F("    border-radius: 4px;");
     page += F("    cursor: pointer;");
-    page += F("    top: 0; left: 0; right: 0; bottom: 0;");
-    page += F("    background-color: var(--gray);");
-    page += F("    transition: .4s;");
-    page += F("    border-radius: 34px;");
     page += F("}");
-
-    page += F(".slider:before {");
-    page += F("    position: absolute;");
-    page += F("    content: \"\";");
-    page += F("    height: 26px;");
-    page += F("    width: 26px;");
-    page += F("    left: 4px;");
-    page += F("    bottom: 4px;");
-    page += F("    background-color: white;");
-    page += F("    transition: .4s;");
-    page += F("    border-radius: 50%;");
-    page += F("}");
-
-    page += F("input:checked + .slider {background-color: var(--secondary);}");
-    page += F("input:checked + .slider:before {transform: translateX(26px);}");
-
-    // Responsywność
-    page += F("@media (max-width: 768px) {");
-    page += F("    .container {padding: 0.5rem;}");
-    page += F("    .pumps-grid {grid-template-columns: 1fr;}");
-    page += F("}");
-
+    
     page += F("</style>");
     page += F("body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; }");
     page += F(".container { max-width: 960px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }");
@@ -1543,8 +1555,8 @@ void loop() {
     static unsigned long lastCheck = 0;
     if (millis() - lastCheck > 5000) {  // Co 5 sekund
         lastCheck = millis();
-        Serial.printf("Free Heap: %d bytes\n", ESP.getFreeHeap());
-        Serial.printf("WiFi Status: %d\n", WiFi.status());
+        //Serial.printf("Free Heap: %d bytes\n", ESP.getFreeHeap());
+        //Serial.printf("WiFi Status: %d\n", WiFi.status());
     }
 
 #ifdef TEST_MODE
