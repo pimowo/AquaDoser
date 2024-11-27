@@ -165,14 +165,15 @@ struct Config {
 // Globalna instancja konfiguracji
 Config config;
 
-// Stan pomp
 struct PumpState {
     bool isActive;
     unsigned long lastDoseTime;
+    HASensor* sensor;      // Dodajemy wskaźnik do HASensor
     
-    PumpState() : isActive(false), lastDoseTime(0) {}
+    PumpState() : isActive(false), lastDoseTime(0), sensor(nullptr) {}
 };
 
+// Tablica stanów pomp - tylko jedna deklaracja!
 PumpState pumpStates[NUMBER_OF_PUMPS];
 
 // --- Globalne obiekty
@@ -197,10 +198,13 @@ const unsigned long OTA_CHECK_INTERVAL = 1000;     // Sprawdzanie OTA co 1s
 const unsigned long MQTT_RETRY_INTERVAL = 10000;   // Próba połączenia MQTT co 10s
 const unsigned long MILLIS_OVERFLOW_THRESHOLD = 4294967295U - 60000; // ~49.7 dni
 
+unsigned long lastMQTTLoop = 0;
+unsigned long lastMeasurement = 0;
+unsigned long lastOTACheck = 0;
 
 // --- Deklaracje encji Home Assistant
 HASwitch* pumpSwitches[NUM_PUMPS];
-HASensor* pumpStates[NUM_PUMPS];
+//HASensor* pumpStates[NUM_PUMPS];
 HANumber* pumpCalibrations[NUM_PUMPS];
 HASwitch* serviceModeSwitch;
 
@@ -223,7 +227,7 @@ const char* PUMPS_FILE = "/config/pumps.json";
 const char* NETWORK_FILE = "/config/network.json";
 const char* SYSTEM_FILE = "/config/system.json";
 
-Config config;                   // Główna konfiguracja
+//Config config;                   // Główna konfiguracja
 SystemStatus systemStatus;       // Status systemu
 
 // Dodaj obsługę dźwięku jak w HydroSense
@@ -270,13 +274,11 @@ void handleWebSocketMessage(uint8_t num, uint8_t * payload, size_t length) {
         return;
     }
     
-    // Obsługa różnych typów wiadomości
     const char* type = doc["type"];
     if (strcmp(type, "getPumpStatus") == 0) {
         String status = getSystemStatusJSON();
         webSocket.sendTXT(num, status);
     }
-    // Dodaj więcej obsługi wiadomości według potrzeb
 }
 
 // Pojedyncza definicja webSocketEvent
@@ -1006,35 +1008,17 @@ void initHomeAssistant() {
     serviceModeSwitch->setIcon("mdi:wrench");
     
     // Tworzenie encji dla każdej pompy
-    for (int i = 0; i < NUM_PUMPS; i++) {
-        char entityId[20];
-        char name[20];
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        char entityId[32];
+        snprintf(entityId, sizeof(entityId), "pump_%d_state", i + 1);
         
-        // Przełącznik pompy
-        sprintf(entityId, "pump_%d", i + 1);
-        sprintf(name, "Pompa %d", i + 1);
-        pumpSwitches[i] = new HASwitch(entityId);
-        pumpSwitches[i]->setName(name);
-        pumpSwitches[i]->onCommand(onPumpSwitch);
-        pumpSwitches[i]->setIcon("mdi:water-pump");
+        char name[32];
+        snprintf(name, sizeof(name), "Pump %d State", i + 1);
         
-        // Status pompy
-        sprintf(entityId, "pump_%d_state", i + 1);
-        sprintf(name, "Stan pompy %d", i + 1);
-        pumpStates[i] = new HASensor(entityId);
-        pumpStates[i]->setName(name);
-        pumpStates[i]->setIcon("mdi:state-machine");
-        
-        // Kalibracja pompy
-        sprintf(entityId, "pump_%d_calibration", i + 1);
-        sprintf(name, "Kalibracja pompy %d", i + 1);
-        pumpCalibrations[i] = new HANumber(entityId);
-        pumpCalibrations[i]->setName(name);
-        pumpCalibrations[i]->setIcon("mdi:ruler");
-        pumpCalibrations[i]->setMin(0.1);
-        pumpCalibrations[i]->setMax(10.0);
-        pumpCalibrations[i]->setStep(0.1);
-        pumpCalibrations[i]->onCommand(onPumpCalibration);
+        // Tworzymy nowy sensor i przypisujemy go do pola sensor w PumpState
+        pumpStates[i].sensor = new HASensor(entityId);
+        pumpStates[i].sensor->setName(name);
+        pumpStates[i].sensor->setIcon("mdi:state-machine");
     }
 }
 
@@ -1052,25 +1036,11 @@ void updateHomeAssistant() {
     serviceModeSwitch->setState(serviceMode);
     
     // Aktualizacja stanów pomp
-    for (int i = 0; i < NUM_PUMPS; i++) {
-        // Stan włączenia
-        pumpSwitches[i]->setState(pumps[i].enabled);
-        
-        // Status tekstowy
-        const char* state;
-        if (serviceMode) {
-            state = "Tryb serwisowy";
-        } else if (pumpRunning[i]) {
-            state = "Dozowanie";
-        } else if (pumps[i].enabled) {
-            state = "Gotowa";
-        } else {
-            state = "Wyłączona";
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        String state = pumpStates[i].isActive ? "Active" : "Inactive";
+        if (pumpStates[i].sensor != nullptr) {
+            pumpStates[i].sensor->setValue(state);
         }
-        pumpStates[i]->setValue(state);
-        
-        // Kalibracja
-        //pumpCalibrations[i]->setValue(pumps[i].calibration);
     }
 }
 
