@@ -140,111 +140,35 @@ void setupWiFiManager() {
   ESP.wdtFeed(); // Odśwież watchdog po zakończeniu konfiguracji
 }
 
+// Funkcje obsługi przełączników pomp
 void handlePumpSwitch0(bool state, HASwitch* sender) {
     pumpEnabled[0] = state;
     saveSettings();
     updateHAStates();
 }
 
-void handlePumpSwitch0(bool state, HASwitch* sender) {
+void handlePumpSwitch1(bool state, HASwitch* sender) {
     pumpEnabled[1] = state;
     saveSettings();
     updateHAStates();
 }
 
-void handlePumpSwitch0(bool state, HASwitch* sender) {
-    pumpEnabled[2] = state;
-    saveSettings();
-    updateHAStates();
-}
-
-void handlePumpSwitch0(bool state, HASwitch* sender) {
-    pumpEnabled[3] = state;
-    saveSettings();
-    updateHAStates();
-}
-
-void handlePumpSwitch0(bool state, HASwitch* sender) {
-    pumpEnabled[4] = state;
-    saveSettings();
-    updateHAStates();
-}
-
-void handlePumpSwitch0(bool state, HASwitch* sender) {
-    pumpEnabled[5] = state;
-    saveSettings();
-    updateHAStates();
-}
-
-void handlePumpSwitch0(bool state, HASwitch* sender) {
-    pumpEnabled[6] = state;
-    saveSettings();
-    updateHAStates();
-}
-
-void handlePumpSwitch0(bool state, HASwitch* sender) {
-    pumpEnabled[7] = state;
-    saveSettings();
-    updateHAStates();
-}
-
+// Funkcje obsługi kalibracji
 void handleCalibration0(HANumeric value, HANumber* sender) {
     calibrationData[0] = value.toInt8();
     saveSettings();
     updateHAStates();
 }
 
-void handleCalibration0(HANumeric value, HANumber* sender) {
+void handleCalibration1(HANumeric value, HANumber* sender) {
     calibrationData[1] = value.toInt8();
     saveSettings();
     updateHAStates();
 }
 
-void handleCalibration0(HANumeric value, HANumber* sender) {
-    calibrationData[2] = value.toInt8();
-    saveSettings();
-    updateHAStates();
-}
-
-void handleCalibration0(HANumeric value, HANumber* sender) {
-    calibrationData[3] = value.toInt8();
-    saveSettings();
-    updateHAStates();
-}
-
-void handleCalibration0(HANumeric value, HANumber* sender) {
-    calibrationData[4] = value.toInt8();
-    saveSettings();
-    updateHAStates();
-}
-
-void handleCalibration0(HANumeric value, HANumber* sender) {
-    calibrationData[5] = value.toInt8();
-    saveSettings();
-    updateHAStates();
-}
-
-void handleCalibration0(HANumeric value, HANumber* sender) {
-    calibrationData[6] = value.toInt8();
-    saveSettings();
-    updateHAStates();
-}
-
-void handleCalibration0(HANumeric value, HANumber* sender) {
-    calibrationData[7] = value.toInt8();
-    saveSettings();
-    updateHAStates();
-}
-
-// Funkcje obsługi przełączników pomp
-void handlePumpSwitch(bool state, HASwitch* sender, int pumpIndex) {
-    pumpEnabled[pumpIndex] = state;
-    saveSettings();
-    updateHAStates();
-}
-
-void handleCalibration(HANumeric value, HANumber* sender, int pumpIndex) {
-    calibrationData[pumpIndex] = value.toInt8();
+// Tylko jedna definicja funkcji handleActiveDaysCommand1
+void handleActiveDaysCommand1(HANumeric value, HANumber* sender) {
+    activeDays[1] = value.toInt8();
     saveSettings();
     updateHAStates();
 }
@@ -295,26 +219,9 @@ void setupMQTT() {
 }
 
 // --- Konfiguracja encji dla poszczególnych pomp w systemie Home Assistant
-// Na początku pliku, przed setup():
-// Funkcje callback dla przełączników
-void handlePumpSwitch0(bool state, HASwitch* sender) {
-    handlePumpSwitch(state, sender, 0);
-}
-void handlePumpSwitch1(bool state, HASwitch* sender) {
-    handlePumpSwitch(state, sender, 1);
-}
-// ... podobnie dla pozostałych pomp ...
 
-// Funkcje callback dla kalibracji
-void handleCalibration0(HANumeric value, HANumber* sender) {
-    handleCalibration(value, sender, 0);
-}
-void handleCalibration1(HANumeric value, HANumber* sender) {
-    handleCalibration(value, sender, 1);
-}
-// ... podobnie dla pozostałych pomp ...
 
-// Zmieniona funkcja setupPumpEntities
+// Funkcja konfiguracji elementów pompy
 void setupPumpEntities(int pumpIndex) {
     char uniqueId[32];
 
@@ -324,7 +231,7 @@ void setupPumpEntities(int pumpIndex) {
     pumpSwitch[pumpIndex]->setName(("Pompa " + String(pumpIndex + 1) + " Harmonogram").c_str());
     pumpSwitch[pumpIndex]->setIcon("mdi:power");
     
-    // Używamy bezpośrednich callbacków zamiast std::bind
+    // Przypisanie odpowiedniego callbacka
     if (pumpIndex == 0) {
         pumpSwitch[pumpIndex]->onCommand(handlePumpSwitch0);
     } else {
@@ -337,6 +244,7 @@ void setupPumpEntities(int pumpIndex) {
     calibrationNumber[pumpIndex]->setName(("Kalibracja Pompy " + String(pumpIndex + 1)).c_str());
     calibrationNumber[pumpIndex]->setIcon("mdi:tune");
     
+    // Przypisanie odpowiedniego callbacka
     if (pumpIndex == 0) {
         calibrationNumber[pumpIndex]->onCommand(handleCalibration0);
     } else {
