@@ -17,6 +17,18 @@
 #include <NTPClient.h>
 #include <WiFiUDP.h>
 
+// Definicje MQTT
+#define MQTT_SERVER_LENGTH 40
+#define MQTT_USER_LENGTH 20
+#define MQTT_PASSWORD_LENGTH 20
+
+// Zmienne MQTT
+bool mqttEnabled = false;
+char mqttServer[MQTT_SERVER_LENGTH] = "";
+uint16_t mqttPort = 1883;
+char mqttUser[MQTT_USER_LENGTH] = "";
+char mqttPassword[MQTT_PASSWORD_LENGTH] = "";
+
 #define TEST_MODE  // Zakomentuj tę linię w wersji produkcyjnej
 
 #ifdef TEST_MODE
@@ -163,6 +175,72 @@ const char* CONFIG_DIR = "/config";
 const char* PUMPS_FILE = "/config/pumps.json";
 const char* NETWORK_FILE = "/config/network.json";
 const char* SYSTEM_FILE = "/config/system.json";
+
+// Zapisywanie konfiguracji MQTT
+void saveMQTTConfig() {
+    StaticJsonDocument<512> doc;
+    
+    doc["enabled"] = mqttEnabled;
+    doc["server"] = mqttServer;
+    doc["port"] = mqttPort;
+    doc["user"] = mqttUser;
+    doc["password"] = mqttPassword;
+
+    File configFile = LittleFS.open("/mqtt.json", "w");
+    if (!configFile) {
+        Serial.println("Failed to open mqtt config file for writing");
+        return;
+    }
+
+    serializeJson(doc, configFile);
+    configFile.close();
+}
+
+// Zapisywanie konfiguracji MQTT
+void saveMQTTConfig() {
+    StaticJsonDocument<512> doc;
+    
+    doc["enabled"] = mqttEnabled;
+    doc["server"] = mqttServer;
+    doc["port"] = mqttPort;
+    doc["user"] = mqttUser;
+    doc["password"] = mqttPassword;
+
+    File configFile = LittleFS.open("/mqtt.json", "w");
+    if (!configFile) {
+        Serial.println("Failed to open mqtt config file for writing");
+        return;
+    }
+
+    serializeJson(doc, configFile);
+    configFile.close();
+}
+
+// Wczytywanie konfiguracji MQTT
+void loadMQTTConfig() {
+    File configFile = LittleFS.open("/mqtt.json", "r");
+    if (!configFile) {
+        Serial.println("No mqtt config file, using defaults");
+        return;
+    }
+
+    StaticJsonDocument<512> doc;
+    DeserializationError error = deserializeJson(doc, configFile);
+    configFile.close();
+
+    if (error) {
+        Serial.println("Failed to parse mqtt config file");
+        return;
+    }
+
+    mqttEnabled = doc["enabled"] | false;
+    strlcpy(mqttServer, doc["server"] | "", sizeof(mqttServer));
+    mqttPort = doc["port"] | 1883;
+    strlcpy(mqttUser, doc["user"] | "", sizeof(mqttUser));
+    strlcpy(mqttPassword, doc["password"] | "", sizeof(mqttPassword));
+}
+
+
 
 // --- Inicjalizacja systemu plików
 bool initFileSystem() {
@@ -337,20 +415,35 @@ void handleRoot() {
 void handleSave() {
     if (server.hasArg("plain")) {
         String json = server.arg("plain");
-        DynamicJsonDocument doc(1024);
+        DynamicJsonDocument doc(2048);  // Zwiększony rozmiar dla dodatkowych danych
         DeserializationError error = deserializeJson(doc, json);
         
         if (!error) {
-            JsonArray pumpsArray = doc["pumps"].as<JsonArray>();
-            for (uint8_t i = 0; i < NUM_PUMPS && i < pumpsArray.size(); i++) {
-                pumps[i].enabled = pumpsArray[i]["enabled"] | false;
-                pumps[i].calibration = pumpsArray[i]["calibration"] | 1.0f;
-                pumps[i].dose = pumpsArray[i]["dose"] | 0.0f;
-                pumps[i].schedule_hour = pumpsArray[i]["schedule"]["hour"] | 0;
-                pumps[i].schedule_days = pumpsArray[i]["schedule"]["days"] | 0;
+            // Obsługa konfiguracji pomp
+            if (doc.containsKey("pumps")) {
+                JsonArray pumpsArray = doc["pumps"].as<JsonArray>();
+                for (uint8_t i = 0; i < NUM_PUMPS && i < pumpsArray.size(); i++) {
+                    pumps[i].enabled = pumpsArray[i]["enabled"] | false;
+                    pumps[i].calibration = pumpsArray[i]["calibration"] | 1.0f;
+                    pumps[i].dose = pumpsArray[i]["dose"] | 0.0f;
+                    pumps[i].schedule_hour = pumpsArray[i]["schedule"]["hour"] | 0;
+                    pumps[i].schedule_days = pumpsArray[i]["schedule"]["days"] | 0;
+                }
+                savePumpsConfig();
             }
-            savePumpsConfig();
-            server.send(200, "text/plain", "OK");
+
+            // Obsługa konfiguracji MQTT
+            if (doc.containsKey("mqtt")) {
+                JsonObject mqtt = doc["mqtt"];
+                mqttEnabled = mqtt["enabled"] | false;
+                strlcpy(mqttServer, mqtt["server"] | "", sizeof(mqttServer));
+                mqttPort = mqtt["port"] | 1883;
+                strlcpy(mqttUser, mqtt["user"] | "", sizeof(mqttUser));
+                strlcpy(mqttPassword, mqtt["password"] | "", sizeof(mqttPassword));
+                saveMQTTConfig();
+            }
+
+            server.send(200, "text/plain", "Configuration saved");
         } else {
             server.send(400, "text/plain", "Invalid JSON");
         }
@@ -930,82 +1023,217 @@ void setupWebServer() {
 
 String getConfigPage() {
     String page = F("<!DOCTYPE html><html><head>");
-    page += F("<title>AquaDoser Configuration</title>");
+    page += F("<meta charset='utf-8'>");
+    page += F("<meta name='viewport' content='width=device-width, initial-scale=1'>");
+    page += F("<title>AquaDoser</title>");
     page += F("<style>");
-    page += F("body { font-family: Arial, sans-serif; margin: 20px; }");
-    page += F(".pump-config { border: 1px solid #ccc; padding: 10px; margin: 10px 0; }");
+    page += F("body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; }");
+    page += F(".container { max-width: 960px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }");
+    page += F("h1, h2 { color: #2196F3; }");
+    page += F("h1 { text-align: center; margin-bottom: 30px; }");
+    page += F(".section { background: #fff; border: 1px solid #ddd; padding: 20px; margin-bottom: 20px; border-radius: 4px; }");
+    page += F(".form-group { margin-bottom: 15px; }");
+    page += F("label { display: inline-block; margin-bottom: 5px; color: #666; }");
+    page += F("input[type='text'], input[type='number'] { width: 200px; padding: 8px; border: 1px solid #ddd; border-radius: 4px; }");
+    page += F("input[type='checkbox'] { margin-right: 5px; }");
+    page += F(".days-group { margin: 10px 0; }");
+    page += F(".days-group label { margin-right: 10px; }");
+    page += F(".button-group { text-align: center; margin: 20px 0; }");
+    page += F(".button-primary { background: #2196F3; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; margin: 5px; }");
+    page += F(".button-warning { background: #f44336; color: white; }");
+    page += F(".button-primary:hover { background: #1976D2; }");
+    page += F(".button-warning:hover { background: #d32f2f; }");
+    page += F(".status-item { display: inline-block; margin-right: 20px; }");
     page += F("</style>");
     page += F("</head><body>");
-    page += F("<h1>AquaDoser Configuration</h1>");
+    page += F("<div class='container'>");
+    page += F("<h1>AquaDoser</h1>");
 
-    // Generuj sekcje dla każdej pompy
+    // Status systemu
+    page += F("<div class='section'>");
+    page += F("<h2>Status systemu</h2>");
+    page += F("<div class='status-item'><strong>Data i czas:</strong> <span id='datetime'></span></div>");
+    page += F("<div class='status-item'><strong>WiFi:</strong> ");
+    page += WiFi.SSID();
+    page += F(" (");
+    page += WiFi.RSSI();
+    page += F(" dBm)</div>");
+    page += F("<div class='status-item'><strong>IP:</strong> ");
+    page += WiFi.localIP().toString();
+    page += F("</div>");
+    page += F("<div class='status-item'><strong>Uptime:</strong> <span id='uptime'></span></div>");
+    page += F("</div>");
+
+    // Konfiguracja MQTT
+    page += F("<div class='section'>");
+    page += F("<h2>Konfiguracja MQTT</h2>");
+    page += F("<div class='form-group'>");
+    page += F("<label>MQTT Server: <input type='text' id='mqtt_server' value='");
+    page += mqttServer;
+    page += F("'></label>");
+    page += F("</div>");
+    page += F("<div class='form-group'>");
+    page += F("<label>MQTT Port: <input type='number' id='mqtt_port' value='");
+    page += String(mqttPort);
+    page += F("'></label>");
+    page += F("</div>");
+    page += F("<div class='form-group'>");
+    page += F("<label>MQTT User: <input type='text' id='mqtt_user' value='");
+    page += mqttUser;
+    page += F("'></label>");
+    page += F("</div>");
+    page += F("<div class='form-group'>");
+    page += F("<label>MQTT Password: <input type='password' id='mqtt_password' value='");
+    page += mqttPassword;
+    page += F("'></label>");
+    page += F("</div>");
+    page += F("<div class='form-group'>");
+    page += F("<label><input type='checkbox' id='mqtt_enabled'");
+    if (mqttEnabled) page += F(" checked");
+    page += F("> Enable MQTT</label>");
+    page += F("</div>");
+    page += F("</div>");
+
+    // Konfiguracja pomp
     for (uint8_t i = 0; i < NUM_PUMPS; i++) {
-        page += F("<div class='pump-config'>");
+        page += F("<div class='section'>");
         page += "<h2>Pump " + String(i + 1) + "</h2>";
-        
-        // Włącznik pompy
-        page += "<label><input type='checkbox' class='pump-enabled' data-pump='" + String(i) + "'";
-        if (pumps[i].enabled) page += F(" checked");
-        page += F("> Enable</label><br>");
-
-        // Kalibracja
-        page += "<label>Calibration (ml/min): <input type='number' class='pump-calibration' data-pump='" + String(i) + "' value='" + String(pumps[i].calibration) + "' step='0.1'></label><br>";
-
-        // Dawka
-        page += "<label>Dose (ml): <input type='number' class='pump-dose' data-pump='" + String(i) + "' value='" + String(pumps[i].dose) + "' step='0.1'></label><br>";
-
-        // Harmonogram
-        page += "<label>Hour: <input type='number' class='pump-hour' data-pump='" + String(i) + "' value='" + String(pumps[i].schedule_hour) + "' min='0' max='23'></label><br>";
-
-        // Dni tygodnia
-        page += F("<div>Days:<br>");
-        const char* days[] = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
-        for (int j = 0; j < 7; j++) {
-            page += "<label><input type='checkbox' class='pump-day' data-pump='" + String(i) + "' data-day='" + String(j) + "'";
-            if (pumps[i].schedule_days & (1 << j)) page += F(" checked");
-            page += "> " + String(days[j]) + "</label> ";
-        }
-        page += F("</div></div>");
+        // [reszta konfiguracji pompy bez zmian]
+        page += F("</div>");
     }
 
     // Przyciski
-    page += F("<button onclick='saveConfig()'>Save</button>");
-    page += F("<button onclick='location.href=\"/update\"'>Update Firmware</button>");
+    page += F("<div class='button-group'>");
+    page += F("<button class='button-primary' onclick='saveConfig()'>Save Configuration</button>");
+    page += F("<button class='button-primary' onclick='location.href=\"/update\"'>Update Firmware</button>");
+    page += F("<button class='button-primary' onclick='if(confirm(\"Restart device?\")) restartDevice()'>Restart Device</button>");
+    page += F("<button class='button-warning' onclick='if(confirm(\"Reset to factory defaults?\")) resetFactory()'>Factory Reset</button>");
+    page += F("</div>");
 
     // JavaScript
     page += F("<script>");
-    page += F("function saveConfig() {");
-    page += F("    const config = {pumps: []};");
-    page += F("    const numPumps = "); 
-    page += String(NUM_PUMPS);
+    // Aktualizacja czasu
+    page += F("function updateDateTime() {");
+    page += F("    const now = new Date();");
+    page += F("    document.getElementById('datetime').textContent = now.toLocaleString();");
+    page += F("}");
+    page += F("setInterval(updateDateTime, 1000);");
+    page += F("updateDateTime();");
+
+    // Aktualizacja uptime
+    page += F("let uptime = "); 
+    page += String(millis() / 1000);
     page += F(";");
-    page += F("    for(let i = 0; i < numPumps; i++) {");
-    page += F("        const pump = {};");
-    page += F("        pump.enabled = document.querySelector(`.pump-enabled[data-pump='${i}']`).checked;");
-    page += F("        pump.calibration = parseFloat(document.querySelector(`.pump-calibration[data-pump='${i}']`).value);");
-    page += F("        pump.dose = parseFloat(document.querySelector(`.pump-dose[data-pump='${i}']`).value);");
-    page += F("        pump.schedule = {");
-    page += F("            hour: parseInt(document.querySelector(`.pump-hour[data-pump='${i}']`).value),");
-    page += F("            days: Array.from(document.querySelectorAll(`.pump-day[data-pump='${i}']`))");
-    page += F("                  .reduce((acc, cb, idx) => acc | (cb.checked ? (1 << idx) : 0), 0)");
-    page += F("        };");
-    page += F("        config.pumps.push(pump);");
-    page += F("    }");
-    page += F("    fetch('/save', {");
-    page += F("        method: 'POST',");
-    page += F("        headers: {'Content-Type': 'application/json'},");
-    page += F("        body: JSON.stringify(config)");
-    page += F("    })");
-    page += F("    .then(response => {");
-    page += F("        if(response.ok) alert('Configuration saved');");
-    page += F("        else alert('Error saving configuration');");
-    page += F("    })");
+    page += F("function updateUptime() {");
+    page += F("    const days = Math.floor(uptime / 86400);");
+    page += F("    const hours = Math.floor((uptime % 86400) / 3600);");
+    page += F("    const minutes = Math.floor((uptime % 3600) / 60);");
+    page += F("    const seconds = Math.floor(uptime % 60);");
+    page += F("    document.getElementById('uptime').textContent = ");
+    page += F("        days + 'd ' + hours + 'h ' + minutes + 'm ' + seconds + 's';");
+    page += F("    uptime++;");
+    page += F("}");
+    page += F("setInterval(updateUptime, 1000);");
+    page += F("updateUptime();");
+
+    // Funkcje przycisków
+    page += F("function restartDevice() {");
+    page += F("    fetch('/restart', {method: 'POST'})");
+    page += F("    .then(() => alert('Device is restarting...'))");
     page += F("    .catch(error => alert('Error: ' + error));");
     page += F("}");
+
+    page += F("function resetFactory() {");
+    page += F("    fetch('/factory-reset', {method: 'POST'})");
+    page += F("    .then(() => alert('Device is resetting and will restart...'))");
+    page += F("    .catch(error => alert('Error: ' + error));");
+    page += F("}");
+
+    // Funkcja zapisu konfiguracji
+    page += F("function saveConfig() {");
+    // [istniejący kod zapisu konfiguracji]
+    page += F("}");
     page += F("</script>");
-    page += F("</body></html>");
+    page += F("</div></body></html>");
     
     return page;
+}
+
+function saveConfig() {
+    const config = {
+        pumps: [],
+        mqtt: {
+            enabled: document.getElementById('mqtt_enabled').checked,
+            server: document.getElementById('mqtt_server').value,
+            port: parseInt(document.getElementById('mqtt_port').value) || 1883,
+            user: document.getElementById('mqtt_user').value,
+            password: document.getElementById('mqtt_password').value
+        }
+    };
+
+    // Konfiguracja pomp
+    for(let i = 0; i < 4; i++) {  // NUM_PUMPS = 4
+        const pump = {
+            enabled: document.querySelector(`.pump-enabled[data-pump='${i}']`).checked,
+            calibration: parseFloat(document.querySelector(`.pump-calibration[data-pump='${i}']`).value) || 1.0,
+            dose: parseFloat(document.querySelector(`.pump-dose[data-pump='${i}']`).value) || 0.0,
+            schedule: {
+                hour: parseInt(document.querySelector(`.pump-hour[data-pump='${i}']`).value) || 0,
+                days: Array.from(document.querySelectorAll(`.pump-day[data-pump='${i}']`))
+                      .reduce((acc, cb, idx) => acc | (cb.checked ? (1 << idx) : 0), 0)
+            }
+        };
+        config.pumps.push(pump);
+    }
+
+    // Wysyłanie konfiguracji
+    fetch('/save', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(config)
+    })
+    .then(response => {
+        if (response.ok) {
+            alert('Konfiguracja zapisana');
+        } else {
+            response.text().then(text => {
+                alert('Błąd zapisu konfiguracji: ' + text);
+            });
+        }
+    })
+    .catch(error => {
+        alert('Błąd: ' + error.message);
+    });
+}
+
+void resetFactorySettings() {
+    // Usuń wszystkie pliki konfiguracyjne
+    LittleFS.remove("/config.json");
+    LittleFS.remove("/mqtt.json");
+    
+    // Resetuj struktury danych do wartości domyślnych
+    for (uint8_t i = 0; i < NUM_PUMPS; i++) {
+        pumps[i].enabled = false;
+        pumps[i].calibration = 1.0;
+        pumps[i].dose = 0.0;
+        pumps[i].schedule_hour = 0;
+        pumps[i].schedule_days = 0;
+        pumps[i].lastDosing = 0;
+        pumps[i].isRunning = false;
+    }
+    
+    // Resetuj ustawienia MQTT
+    mqttEnabled = false;
+    mqttServer[0] = '\0';
+    mqttPort = 1883;
+    mqttUser[0] = '\0';
+    mqttPassword[0] = '\0';
+    
+    // Zapisz domyślne ustawienia
+    saveConfiguration();
+    saveMQTTConfig();
 }
 
 // --- Setup
@@ -1027,6 +1255,11 @@ void setup() {
     if (!LittleFS.begin()) {
         Serial.println("Błąd inicjalizacji LittleFS!");
         return;
+    }
+
+        if (LittleFS.begin()) {
+        loadConfiguration();
+        loadMQTTConfig();  // Dodaj to
     }
     
     // Inicjalizacja RTC
@@ -1053,6 +1286,19 @@ void setup() {
     // Synchronizacja czasu
     syncRTC();
     
+    server.on("/restart", HTTP_POST, []() {
+        server.send(200, "text/plain", "Restarting...");
+        delay(1000);
+        ESP.restart();
+    });
+
+    server.on("/factory-reset", HTTP_POST, []() {
+        server.send(200, "text/plain", "Resetting to factory defaults...");
+        resetFactorySettings();  // Funkcja do zaimplementowania
+        delay(1000);
+        ESP.restart();
+    });
+
     Serial.println("Inicjalizacja zakończona");
 }
 
@@ -1070,6 +1316,16 @@ void simulateButton(uint8_t buttonPin) {
 
 // --- Loop
 void loop() {
+    server.handleClient();
+    //MDNS.update();
+
+    static unsigned long lastCheck = 0;
+    if (millis() - lastCheck > 5000) {  // Co 5 sekund
+        lastCheck = millis();
+        Serial.printf("Free Heap: %d bytes\n", ESP.getFreeHeap());
+        Serial.printf("WiFi Status: %d\n", WiFi.status());
+    }
+
 #ifdef TEST_MODE
     if (Serial.available()) {
         String cmd = Serial.readStringUntil('\n');
