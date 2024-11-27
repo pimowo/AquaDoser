@@ -1,5 +1,6 @@
 // --- Biblioteki
 
+#include <WiFiManager.h>          // Zarządzanie WiFi
 #include <ESP8266WiFi.h>          // Obsługa WiFi
 #include <ArduinoHA.h>            // Integracja z Home Assistant
 #include <ArduinoJson.h>          // Obsługa JSON
@@ -10,7 +11,6 @@
 #include <Adafruit_NeoPixel.h>    // Diody WS2812
 #include <ESPAsyncTCP.h>
 #include <ESPAsyncWebServer.h>
-#include <WiFiManager.h>          // Zarządzanie WiFi
 #include <NTPClient.h>
 #include <WiFiUdp.h>
 #include <AsyncJson.h>
@@ -31,9 +31,9 @@
 struct PumpConfig {
     bool enabled;
     float dose;
-    uint8_t hour;
-    uint8_t minute;
-    float calibration;  // Dodaj to pole
+    uint8_t schedule_days;  // Dodane pole
+    uint8_t schedule_hour;  // Dodane pole
+    float calibration;      // Dodane pole
     unsigned long lastDosing;
     bool isRunning;
     unsigned long startTime;
@@ -393,13 +393,23 @@ void servicePump(uint8_t pumpIndex, bool state) {
     }
 
     if (state) {
-        pcf8574.digitalWrite(pumpIndex, HIGH);
+        pcf8574.write(pumpIndex, HIGH);
         strip.setPixelColor(pumpIndex, COLOR_SERVICE);
     } else {
         pcf8574.digitalWrite(pumpIndex, LOW);
         strip.setPixelColor(pumpIndex, COLOR_OFF);
     }
     strip.show();
+}
+
+void toggleServiceMode() {
+    serviceMode = !serviceMode;
+    if (serviceMode) {
+        // Zatrzymaj wszystkie pompy w trybie serwisowym
+        for (uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
+            stopPump(i);
+        }
+    }
 }
 
 // --- Zatrzymanie wszystkich pomp
@@ -634,7 +644,6 @@ void initHomeAssistant() {
         sprintf(entityId, "pump_%d", i + 1);
         sprintf(name, "Pompa %d", i + 1);
 pumpSwitches[i] = new HASwitch(entityId);
-pumpSwitches[i]->setInitialState(false);
         pumpSwitches[i]->setName(name);
         pumpSwitches[i]->onCommand(onPumpSwitch);
         pumpSwitches[i]->setIcon("mdi:water-pump");
@@ -691,7 +700,7 @@ void updateHomeAssistant() {
         pumpStates[i]->setValue(state);
         
         // Kalibracja
-        pumpCalibrations[i]->setValue(pumps[i].calibration);
+        //pumpCalibrations[i]->setValue(pumps[i].calibration);
     }
 }
 
@@ -891,10 +900,10 @@ void setup() {
         Serial.println("Błąd inicjalizacji pomp!");
     }
     
-    Wire.begin();
-if (!rtc.begin(&Wire)) {
-        Serial.println("Błąd inicjalizacji RTC!");
-    }
+Wire.begin();
+if (!rtc.begin()) {
+    Serial.println("Błąd inicjalizacji RTC!");
+}
     
     initializeLEDs();
     
