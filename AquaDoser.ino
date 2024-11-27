@@ -16,6 +16,7 @@
 #include <AsyncJson.h>
 
 // --- Definicje pinów i stałych
+#define NUMBER_OF_PUMPS 8  // lub inna odpowiednia liczba
 #define NUM_PUMPS 8              // Liczba pomp
 #define LED_PIN D1               // Pin danych dla WS2812
 #define BUTTON_PIN D2            // Pin przycisku serwisowego
@@ -301,7 +302,7 @@ void startPump(uint8_t pumpIndex) {
     }
 
     // Włącz pompę
-    if (pcf8574.digitalWrite(pumpIndex, HIGH)) {
+    if (pcf8574.write(pumpIndex, HIGH)) {
         pumpRunning[pumpIndex] = true;
         doseStartTime[pumpIndex] = millis();
         
@@ -323,7 +324,7 @@ void stopPump(uint8_t pumpIndex) {
     }
 
     // Wyłącz pompę
-    if (pcf8574.digitalWrite(pumpIndex, LOW)) {
+    if (pcf8574.write(pumpIndex, LOW)) {
         pumpRunning[pumpIndex] = false;
         
         // Oblicz faktyczny czas dozowania
@@ -392,13 +393,11 @@ void servicePump(uint8_t pumpIndex, bool state) {
         return;
     }
 
-    if (state) {
-        pcf8574.write(pumpIndex, HIGH);
-        strip.setPixelColor(pumpIndex, COLOR_SERVICE);
-    } else {
-        pcf8574.digitalWrite(pumpIndex, LOW);
-        strip.setPixelColor(pumpIndex, COLOR_OFF);
-    }
+if (state) {
+    pcf8574.write(pumpIndex, HIGH);
+} else {
+    pcf8574.write(pumpIndex, LOW);
+}
     strip.show();
 }
 
@@ -896,14 +895,14 @@ void setup() {
     
     // Inicjalizacja sprzętu
     Wire.begin();
-    if (!initializePumps()) {
-        Serial.println("Błąd inicjalizacji pomp!");
-    }
+    rtc.begin();  // usuń sprawdzanie if (!rtc.begin())
     
-Wire.begin();
-if (!rtc.begin()) {
-    Serial.println("Błąd inicjalizacji RTC!");
-}
+    Wire.begin();
+    if (pcf8574.begin()) {
+        Serial.println("PCF8574 initialized");
+    } else {
+        Serial.println("PCF8574 init failed");
+    }
     
     initializeLEDs();
     
