@@ -378,12 +378,6 @@ void handleActiveDaysCommand0(HANumeric value, HANumber* sender) {
     updateHAStates();
 }
 
-void handleActiveDaysCommand1(HANumeric value, HANumber* sender) {
-  activeDays[1] = value.toInt8();
-  saveSettings();
-  updateHAStates();
-}
-
 void handleActiveDaysCommand2(HANumeric value, HANumber* sender) {
   activeDays[2] = value.toInt8();
   saveSettings();
@@ -416,12 +410,6 @@ void handleActiveDaysCommand6(HANumeric value, HANumber* sender) {
 
 void handleActiveDaysCommand7(HANumeric value, HANumber* sender) {
   activeDays[7] = value.toInt8();
-  saveSettings();
-  updateHAStates();
-}
-
-void handleActiveDaysCommand1(HANumeric value, HANumber* sender) {
-  activeDays[1] = value.toInt8();
   saveSettings();
   updateHAStates();
 }
