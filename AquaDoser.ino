@@ -1,15 +1,5 @@
 // --- Biblioteki
 
-#define WEBSERVER_H
-#define HTTP_ANY 0
-#define HTTP_GET 1
-#define HTTP_POST 2
-#define HTTP_DELETE 4
-#define HTTP_PUT 8
-#define HTTP_PATCH 16
-#define HTTP_HEAD 32
-#define HTTP_OPTIONS 64
-
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
 #include <ESPAsyncTCP.h>
@@ -18,12 +8,10 @@
 #include <Wire.h>
 #include <RTClib.h>
 #include <PCF8574.h>
-#include <ArduinoHA.h>            // Integracja z Home Assistant
-#include <ArduinoJson.h>          // Obsługa JSON
-#include <LittleFS.h>             // System plików
-#include <DS3231.h>               // Zegar RTC
-#include <Adafruit_NeoPixel.h>    // Diody WS2812
-#include <ESPAsyncTCP.h>
+#include <ArduinoHA.h>
+#include <ArduinoJson.h>
+#include <LittleFS.h>
+#include <Adafruit_NeoPixel.h>
 #include <NTPClient.h>
 #include <WiFiUdp.h>
 #include <AsyncJson.h>
@@ -77,7 +65,7 @@ SystemInfo sysInfo = {0, false};
 WiFiClient wifiClient;
 HADevice haDevice("AquaDoser");
 HAMqtt mqtt(wifiClient, haDevice);
-DS3231 rtc;
+RTC_DS3231 rtc;
 PCF8574 pcf8574(0x20);
 Adafruit_NeoPixel strip(NUM_PUMPS, LED_PIN, NEO_GRB + NEO_KHZ800);
 
@@ -292,7 +280,7 @@ bool initializePumps() {
 
     // Ustaw wszystkie piny jako wyjścia i wyłącz pompy
     for (int i = 0; i < NUM_PUMPS; i++) {
-        pcf8574.write(i, LOW);  // Nie potrzeba pinMode
+        pcf8574.digitalWrite(i, LOW);  // Nie potrzeba pinMode
     }
 
     pumpInitialized = true;
@@ -315,7 +303,7 @@ void startPump(uint8_t pumpIndex) {
     }
 
     // Włącz pompę
-    pcf8574.write(pumpIndex, HIGH);
+    pcf8574.digitalWrite(pumpIndex, HIGH);
     pumpRunning[pumpIndex] = true;
     doseStartTime[pumpIndex] = millis();
     
@@ -334,7 +322,7 @@ void stopPump(uint8_t pumpIndex) {
     }
 
     // Wyłącz pompę
-    pcf8574.write(pumpIndex, LOW);
+    pcf8574.digitalWrite(pumpIndex, LOW);
     pumpRunning[pumpIndex] = false;
     
     // Oblicz faktyczny czas dozowania
@@ -401,7 +389,7 @@ void servicePump(uint8_t pumpIndex, bool state) {
     }
 
     // Ustaw stan pompy
-    pcf8574.write(pumpIndex, state ? HIGH : LOW);
+    pcf8574.digitalWrite(pumpIndex, state ? HIGH : LOW);
     
     // Aktualizuj wyświetlanie
     strip.show();
@@ -634,8 +622,7 @@ void initHomeAssistant() {
     haDevice.setModel("AquaDoser 8-channel");
     
     // Przełącznik trybu serwisowego
-    //serviceModeSwitch = new HASwitch("service_mode", false);
-    HASwitch switchService("service_mode");
+    serviceModeSwitch = new HASwitch("service_mode");
     serviceModeSwitch->setName("Tryb serwisowy");
     serviceModeSwitch->onCommand(onServiceModeSwitch);
     serviceModeSwitch->setIcon("mdi:wrench");
@@ -648,7 +635,7 @@ void initHomeAssistant() {
         // Przełącznik pompy
         sprintf(entityId, "pump_%d", i + 1);
         sprintf(name, "Pompa %d", i + 1);
-pumpSwitches[i] = new HASwitch(entityId);
+        pumpSwitches[i] = new HASwitch(entityId);
         pumpSwitches[i]->setName(name);
         pumpSwitches[i]->onCommand(onPumpSwitch);
         pumpSwitches[i]->setIcon("mdi:water-pump");
@@ -663,7 +650,7 @@ pumpSwitches[i] = new HASwitch(entityId);
         // Kalibracja pompy
         sprintf(entityId, "pump_%d_calibration", i + 1);
         sprintf(name, "Kalibracja pompy %d", i + 1);
-        pumpCalibrations[i] = new HANumber(entityId, HANumber::PrecisionP1);
+        pumpCalibrations[i] = new HANumber(entityId);
         pumpCalibrations[i]->setName(name);
         pumpCalibrations[i]->setIcon("mdi:ruler");
         pumpCalibrations[i]->setMin(0.1);
@@ -901,6 +888,7 @@ void setup() {
     
     // Inicjalizacja sprzętu
     Wire.begin();
+    
     if (!rtc.begin()) {
         Serial.println("RTC nie działa!");
     } else {
@@ -910,7 +898,6 @@ void setup() {
         }
     }
     
-    Wire.begin();
     if (!pcf8574.begin()) {
         Serial.println("PCF8574 nie działa!");
     }
