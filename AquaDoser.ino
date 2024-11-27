@@ -201,6 +201,8 @@ void setupLED();
 void handlePumps();
 void updateHomeAssistant();
 
+const int BUZZER_PIN = D2;
+
 // --- Stałe dla systemu plików
 const char* CONFIG_DIR = "/config";
 const char* PUMPS_FILE = "/config/pumps.json";
@@ -1477,6 +1479,9 @@ void setup() {
     
     // Inicjalizacja pinów
     pinMode(BUTTON_PIN, INPUT_PULLUP);
+
+        pinMode(BUZZER_PIN, OUTPUT);  // Wyjście - buzzer
+    digitalWrite(BUZZER_PIN, LOW);  // Wyłączenie buzzera
     
     // Inicjalizacja systemu plików i wczytanie konfiguracji
     if (!initFileSystem()) {
