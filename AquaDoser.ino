@@ -1,15 +1,27 @@
 // --- Biblioteki
+#define HTTP_GET     0b00000001
+#define HTTP_POST    0b00000010
+#define HTTP_DELETE  0b00000100
+#define HTTP_PUT     0b00001000
+#define HTTP_PATCH   0b00010000
+#define HTTP_HEAD    0b00100000
+#define HTTP_OPTIONS 0b01000000
+#define HTTP_ANY     0b01111111
+
 #include <ESP8266WiFi.h>          // Obsługa WiFi
 #include <ArduinoHA.h>            // Integracja z Home Assistant
 #include <ArduinoJson.h>          // Obsługa JSON
 #include <LittleFS.h>             // System plików
 #include <Wire.h>                 // Komunikacja I2C
-#include <DS3231.h>              // Zegar RTC
-#include <PCF8574.h>             // Ekspander I/O
-#include <Adafruit_NeoPixel.h>   // Diody WS2812
-#include <WiFiManager.h>          // Zarządzanie WiFi
-#include <ESPAsyncWebServer.h>
+#include <DS3231.h>               // Zegar RTC
+#include <Arduino_PCF8574.h>      // Ekspander I/O
+#include <Adafruit_NeoPixel.h>    // Diody WS2812
 #include <ESPAsyncTCP.h>
+#include <ESPAsyncWebServer.h>
+#include <WiFiManager.h>          // Zarządzanie WiFi
+#include <NTPClient.h>
+#include <WiFiUdp.h>
+#include <AsyncJson.h>
 
 // --- Definicje pinów i stałych
 #define NUM_PUMPS 8              // Liczba pomp
@@ -613,7 +625,8 @@ void initHomeAssistant() {
     haDevice.setModel("AquaDoser 8-channel");
     
     // Przełącznik trybu serwisowego
-    serviceModeSwitch = new HASwitch("service_mode", false);
+    //serviceModeSwitch = new HASwitch("service_mode", false);
+    HASwitch switchService("service_mode");
     serviceModeSwitch->setName("Tryb serwisowy");
     serviceModeSwitch->onCommand(onServiceModeSwitch);
     serviceModeSwitch->setIcon("mdi:wrench");
