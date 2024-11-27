@@ -2,9 +2,9 @@
 
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
+#include <WiFiManager.h>         // Przenieś WiFiManager przed ESPAsyncWebServer
 #include <ESPAsyncTCP.h>
 #include <ESPAsyncWebServer.h>
-#include <WiFiManager.h>
 #include <Wire.h>
 #include <RTClib.h>
 #include <PCF8574.h>
@@ -32,10 +32,10 @@
 // --- Struktura konfiguracji pompy
 struct PumpConfig {
     bool enabled;
-    float dose;
-    uint8_t schedule_days;  // Dodane pole
-    uint8_t schedule_hour;  // Dodane pole
-    float calibration;      // Dodane pole
+    uint8_t hour;           // Dodaj pole hour
+    bool days[7];          // Dodaj tablicę days
+    float mlPerMin;
+    float targetVolume;
     unsigned long lastDosing;
     bool isRunning;
     unsigned long startTime;
@@ -52,7 +52,8 @@ struct NetworkConfig {
 };
 
 AsyncWebServer server(80);
-
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, "pool.ntp.org");
 // Struktura dla informacji systemowych
 struct SystemInfo {
     unsigned long uptime;
