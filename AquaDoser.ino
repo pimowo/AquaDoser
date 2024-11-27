@@ -17,6 +17,52 @@
 #include <NTPClient.h>
 #include <WiFiUDP.h>
 
+#define TEST_MODE  // Zakomentuj tę linię w wersji produkcyjnej
+
+#ifdef TEST_MODE
+  #define DEBUG_SERIAL(x) Serial.println(x)
+  // Emulacja RTC
+  unsigned long startupTime;
+  class RTCEmulator {
+    public:
+      RTCEmulator() {
+        startupTime = millis();
+      }
+      
+      DateTime now() {
+        // Symuluj czas od startu urządzenia
+        unsigned long currentMillis = millis();
+        unsigned long seconds = currentMillis / 1000;
+        uint8_t hour = (seconds / 3600) % 24;
+        uint8_t minute = (seconds / 60) % 60;
+        uint8_t second = seconds % 60;
+        uint8_t day = ((seconds / 86400) + 3) % 7; // Zacznij od środy
+        return DateTime(2024, 1, 1, hour, minute, second);
+      }
+  };
+  RTCEmulator rtc;
+
+  // Emulacja PCF8574
+  class PCF8574Emulator {
+    public:
+      uint8_t currentState;
+      PCF8574Emulator() : currentState(0xFF) {}
+      bool begin() { return true; }
+      uint8_t read8() { return currentState; }
+      void write(uint8_t pin, uint8_t value) {
+        if (value == HIGH) {
+          currentState |= (1 << pin);
+        } else {
+          currentState &= ~(1 << pin);
+        }
+        DEBUG_SERIAL("PCF Pin " + String(pin) + " set to " + String(value));
+      }
+  };
+  PCF8574Emulator pcf;
+#else
+  #define DEBUG_SERIAL(x)
+#endif
+
 // --- Definicje pinów i stałych
 #define NUMBER_OF_PUMPS 8  // lub inna odpowiednia liczba
 #define NUM_PUMPS 8              // Liczba pomp
@@ -995,8 +1041,56 @@ void setup() {
     Serial.println("Inicjalizacja zakończona");
 }
 
+#ifdef TEST_MODE
+void simulateButton(uint8_t buttonPin) {
+    // Symuluj naciśnięcie przycisku
+    pcf.currentState &= ~(1 << buttonPin);
+    handleButton();
+    delay(50);
+    // Symuluj zwolnienie przycisku
+    pcf.currentState |= (1 << buttonPin);
+    handleButton();
+}
+#endif
+
 // --- Loop
 void loop() {
+#ifdef TEST_MODE
+    if (Serial.available()) {
+        String cmd = Serial.readStringUntil('\n');
+        cmd.trim();
+        
+        if (cmd.startsWith("button")) {
+            int buttonNum = cmd.substring(6).toInt();
+            if (buttonNum >= 1 && buttonNum <= 4) {
+                DEBUG_SERIAL("Symulacja przycisku " + String(buttonNum));
+                simulateButton(buttonNum - 1);
+            }
+        }
+        else if (cmd == "status") {
+            DateTime now = rtc.now();
+            DEBUG_SERIAL("Czas: " + String(now.hour()) + ":" + String(now.minute()) + ":" + String(now.second()));
+            DEBUG_SERIAL("Dzień: " + String(now.dayOfTheWeek()));
+            
+            for (int i = 0; i < NUM_PUMPS; i++) {
+                DEBUG_SERIAL("Pompa " + String(i + 1) + ":");
+                DEBUG_SERIAL("  Enabled: " + String(pumps[i].enabled));
+                DEBUG_SERIAL("  Calibration: " + String(pumps[i].calibration));
+                DEBUG_SERIAL("  Dose: " + String(pumps[i].dose));
+                DEBUG_SERIAL("  Schedule Hour: " + String(pumps[i].schedule_hour));
+                DEBUG_SERIAL("  Schedule Days: " + String(pumps[i].schedule_days, BIN));
+                DEBUG_SERIAL("  Is Running: " + String(pumps[i].isRunning));
+            }
+        }
+        else if (cmd == "help") {
+            DEBUG_SERIAL("Dostępne komendy:");
+            DEBUG_SERIAL("button X - symuluj naciśnięcie przycisku X (1-4)");
+            DEBUG_SERIAL("status - pokaż aktualny stan urządzenia");
+            DEBUG_SERIAL("help - pokaż tę pomoc");
+        }
+    }
+#endif
+
     // Obsługa połączenia WiFi
     if (WiFi.status() != WL_CONNECTED) {
         Serial.println("Utracono połączenie WiFi");
