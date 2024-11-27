@@ -338,22 +338,25 @@ void stopPump(uint8_t pumpIndex) {
 
 // --- Sprawdzenie czy pompa powinna rozpocząć dozowanie
 bool shouldStartDosing(uint8_t pumpIndex) {
-    if (!pumps[pumpIndex].enabled || serviceMode) {
+    if (!pumpInitialized || pumpIndex >= NUM_PUMPS || !pumps[pumpIndex].enabled) {
         return false;
     }
 
-    // Pobierz aktualny czas z RTC
-    bool h12, PM;
-    uint8_t currentHour = rtc.getHour(h12, PM);
-    uint8_t currentDay = rtc.getDoW(); // 0 = Niedziela, 6 = Sobota
-    
-    // Sprawdź czy jest odpowiedni dzień (bit w masce dni)
-    bool isDoseDay = (pumps[pumpIndex].schedule_days & (1 << currentDay)) != 0;
-    
+    DateTime now = rtc.now();
+    uint8_t currentHour = now.hour();
+    uint8_t currentDay = now.dayOfTheWeek(); // 0 = Sunday, 6 = Saturday
+
     // Sprawdź czy jest odpowiednia godzina
-    bool isDoseHour = (currentHour == pumps[pumpIndex].schedule_hour);
-    
-    return isDoseDay && isDoseHour;
+    if (currentHour != pumps[pumpIndex].hour) {
+        return false;
+    }
+
+    // Sprawdź czy jest odpowiedni dzień
+    if (!pumps[pumpIndex].days[currentDay]) {
+        return false;
+    }
+
+    return true;
 }
 
 // --- Główna funkcja obsługi pomp
@@ -736,41 +739,37 @@ void handleButton() {
 
 // --- Synchronizacja RTC z NTP
 void syncRTC() {
-    if (WiFi.status() != WL_CONNECTED) return;
+    timeClient.update();
+    unsigned long epochTime = timeClient.getEpochTime();
     
-    static WiFiUDP ntpUDP;
-    static NTPClient timeClient(ntpUDP, "pool.ntp.org");
-    
-    timeClient.begin();
-    if (timeClient.update()) {
-        time_t epochTime = timeClient.getEpochTime();
-        struct tm *ptm = gmtime(&epochTime);
+    if (epochTime > 1600000000) { // sprawdź czy czas jest sensowny (po 2020 roku)
+        DateTime newTime(epochTime);
+        rtc.adjust(newTime);
         
-        rtc.setClockMode(false); // 24h mode
-        rtc.setYear(ptm->tm_year - 100);
-        rtc.setMonth(ptm->tm_mon + 1);
-        rtc.setDate(ptm->tm_mday);
-        rtc.setDoW(ptm->tm_wday);
-        rtc.setHour(ptm->tm_hour);
-        rtc.setMinute(ptm->tm_min);
-        rtc.setSecond(ptm->tm_sec);
-        
-        Serial.println("RTC zsynchronizowany z NTP");
+        Serial.println("RTC zsynchronizowany z NTP:");
+        DateTime now = rtc.now();
+        Serial.printf("%04d-%02d-%02d %02d:%02d:%02d\n",
+            now.year(), now.month(), now.day(),
+            now.hour(), now.minute(), now.second());
     }
-    timeClient.end();
 }
 
 // --- Inicjalizacja WiFi
+
 void setupWiFi() {
     WiFiManager wifiManager;
+    wifiManager.setConfigPortalTimeout(180); // timeout po 3 minutach
     
-    if (!wifiManager.autoConnect("AquaDoser")) {
-        Serial.println("Nie udało się połączyć i timeout");
+    String apName = "AquaDoser-" + String(ESP.getChipId(), HEX);
+    if (!wifiManager.autoConnect(apName.c_str())) {
+        Serial.println("Nie udało się połączyć i timeout został osiągnięty");
         ESP.restart();
         delay(1000);
     }
     
-    Serial.println("Połączono z WiFi");
+    Serial.println("WiFi połączone!");
+    Serial.print("IP: ");
+    Serial.println(WiFi.localIP());
 }
 
 void setupWebServer() {
@@ -890,12 +889,16 @@ void setup() {
     Wire.begin();
     
     if (!rtc.begin()) {
-        Serial.println("RTC nie działa!");
+        Serial.println("Nie można znaleźć RTC");
     } else {
         if (rtc.lostPower()) {
-            Serial.println("RTC stracił zasilanie, ustawiam czas!");
-            rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+            Serial.println("RTC stracił zasilanie!");
+            rtc.adjust(DateTime(F(__DATE__), F(__TIME__))); // ustaw czas kompilacji
         }
+        DateTime now = rtc.now();
+        Serial.printf("Czas RTC: %04d-%02d-%02d %02d:%02d:%02d\n",
+            now.year(), now.month(), now.day(),
+            now.hour(), now.minute(), now.second());
     }
     
     if (!pcf8574.begin()) {
