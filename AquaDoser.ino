@@ -14,7 +14,7 @@
 #include <LittleFS.h>             // System plików
 #include <Wire.h>                 // Komunikacja I2C
 #include <DS3231.h>               // Zegar RTC
-#include <Arduino_PCF8574.h>      // Ekspander I/O
+#include <PCF8574.h>      // Ekspander I/O
 #include <Adafruit_NeoPixel.h>    // Diody WS2812
 #include <ESPAsyncTCP.h>
 #include <ESPAsyncWebServer.h>
@@ -30,18 +30,18 @@
 #define DEBOUNCE_TIME 50         // Czas debounce w ms
 
 // --- Kolory LED
-#define COLOR_OFF    0xFF0000    // Czerwony (pompa wyłączona)
-#define COLOR_ON     0x00FF00    // Zielony (pompa włączona)
-#define COLOR_WORKING 0x0000FF   // Niebieski (pompa pracuje)
-#define COLOR_SERVICE 0xFFFF00   // Żółty (tryb serwisowy)
+#define COLOR_OFF 0xFF0000      // Czerwony (pompa wyłączona)
+#define COLOR_ON 0x00FF00       // Zielony (pompa włączona)
+#define COLOR_WORKING 0x0000FF  // Niebieski (pompa pracuje)
+#define COLOR_SERVICE 0xFFFF00  // Żółty (tryb serwisowy)
 
 // --- Struktura konfiguracji pompy
 struct PumpConfig {
-    bool enabled;                // Stan włączenia pompy
-    float calibration;          // Kalibracja (ml/s)
-    float dose;                 // Dawka (ml)
-    uint8_t schedule_days;      // Dni tygodnia (bitmaska)
-    uint8_t schedule_hour;      // Godzina dozowania
+    bool enabled;           [=phg we// Stan włączenia pompy
+    float calibration;      // Kalibracja (ml/s)
+    float dose;             // Dawka (ml)
+    uint8_t schedule_days;  // Dni tygodnia (bitmaska)
+    uint8_t schedule_hour;  // Godzina dozowania
 };
 
 // --- Struktura konfiguracji sieciowej
