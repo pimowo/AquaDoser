@@ -1003,12 +1003,157 @@ void setupWebServer() {
 
 String getConfigPage() {
     String page = F("<!DOCTYPE html><html><head>");
-    page += F("<meta charset='utf-8'>");
-    page += F("<meta name='viewport' content='width=device-width, initial-scale=1'>");
+    page += F("<meta charset='UTF-8'>");
+    page += F("<meta name='viewport' content='width=device-width, initial-scale=1.0'>");
     page += F("<title>AquaDoser</title>");
-    
-    // Style CSS
     page += F("<style>");
+    
+    // Zmienne CSS
+    page += F(":root {");
+    page += F("    --primary: #2196F3;");      // Niebieski jako kolor główny
+    page += F("    --primary-dark: #1976D2;"); 
+    page += F("    --secondary: #4CAF50;");    // Zielony jako kolor akcji
+    page += F("    --warning: #FFC107;");      // Żółty jako kolor ostrzeżeń
+    page += F("    --danger: #F44336;");       // Czerwony jako kolor błędów
+    page += F("    --gray-light: #f5f5f5;");
+    page += F("    --gray: #9e9e9e;");
+    page += F("    --text: #333333;");
+    page += F("}");
+
+    // Reset i podstawowe style
+    page += F("* {margin: 0; padding: 0; box-sizing: border-box;}");
+    page += F("body {");
+    page += F("    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;");
+    page += F("    line-height: 1.6;");
+    page += F("    color: var(--text);");
+    page += F("    background: var(--gray-light);");
+    page += F("}");
+
+    // Kontener główny
+    page += F(".container {");
+    page += F("    max-width: 1200px;");
+    page += F("    margin: 0 auto;");
+    page += F("    padding: 1rem;");
+    page += F("}");
+
+    // Nagłówek
+    page += F("header {");
+    page += F("    background: var(--primary);");
+    page += F("    color: white;");
+    page += F("    padding: 1rem;");
+    page += F("    border-radius: 8px;");
+    page += F("    margin-bottom: 1rem;");
+    page += F("    display: flex;");
+    page += F("    justify-content: space-between;");
+    page += F("    align-items: center;");
+    page += F("}");
+
+    // Karty konfiguracji
+    page += F(".card {");
+    page += F("    background: white;");
+    page += F("    border-radius: 8px;");
+    page += F("    padding: 1rem;");
+    page += F("    margin-bottom: 1rem;");
+    page += F("    box-shadow: 0 2px 4px rgba(0,0,0,0.1);");
+    page += F("}");
+
+    // Formularze
+    page += F(".form-group {");
+    page += F("    margin-bottom: 1rem;");
+    page += F("}");
+
+    page += F("label {");
+    page += F("    display: block;");
+    page += F("    margin-bottom: 0.5rem;");
+    page += F("    font-weight: 500;");
+    page += F("}");
+
+    page += F("input[type='text'], input[type='number'], input[type='password'] {");
+    page += F("    width: 100%;");
+    page += F("    padding: 0.5rem;");
+    page += F("    border: 1px solid var(--gray);");
+    page += F("    border-radius: 4px;");
+    page += F("    font-size: 1rem;");
+    page += F("}");
+
+    // Przyciski
+    page += F(".btn {");
+    page += F("    display: inline-block;");
+    page += F("    padding: 0.5rem 1rem;");
+    page += F("    border: none;");
+    page += F("    border-radius: 4px;");
+    page += F("    font-size: 1rem;");
+    page += F("    cursor: pointer;");
+    page += F("    transition: background-color 0.2s;");
+    page += F("}");
+
+    page += F(".btn-primary {");
+    page += F("    background: var(--primary);");
+    page += F("    color: white;");
+    page += F("}");
+
+    page += F(".btn-primary:hover {");
+    page += F("    background: var(--primary-dark);");
+    page += F("}");
+
+    // Siatka dla pomp
+    page += F(".pumps-grid {");
+    page += F("    display: grid;");
+    page += F("    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));");
+    page += F("    gap: 1rem;");
+    page += F("}");
+
+    // Karta pompy
+    page += F(".pump-card {");
+    page += F("    background: white;");
+    page += F("    border-radius: 8px;");
+    page += F("    padding: 1rem;");
+    page += F("    display: flex;");
+    page += F("    flex-direction: column;");
+    page += F("    gap: 0.5rem;");
+    page += F("}");
+
+    // Przełączniki
+    page += F(".switch {");
+    page += F("    position: relative;");
+    page += F("    display: inline-block;");
+    page += F("    width: 60px;");
+    page += F("    height: 34px;");
+    page += F("}");
+
+    page += F(".switch input {display: none;}");
+
+    page += F(".slider {");
+    page += F("    position: absolute;");
+    page += F("    cursor: pointer;");
+    page += F("    top: 0; left: 0; right: 0; bottom: 0;");
+    page += F("    background-color: var(--gray);");
+    page += F("    transition: .4s;");
+    page += F("    border-radius: 34px;");
+    page += F("}");
+
+    page += F(".slider:before {");
+    page += F("    position: absolute;");
+    page += F("    content: \"\";");
+    page += F("    height: 26px;");
+    page += F("    width: 26px;");
+    page += F("    left: 4px;");
+    page += F("    bottom: 4px;");
+    page += F("    background-color: white;");
+    page += F("    transition: .4s;");
+    page += F("    border-radius: 50%;");
+    page += F("}");
+
+    page += F("input:checked + .slider {background-color: var(--secondary);}");
+    page += F("input:checked + .slider:before {transform: translateX(26px);}");
+
+    // Responsywność
+    page += F("@media (max-width: 768px) {");
+    page += F("    .container {padding: 0.5rem;}");
+    page += F("    .pumps-grid {grid-template-columns: 1fr;}");
+    page += F("}");
+
+    page += F("</style>");
     page += F("body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; }");
     page += F(".container { max-width: 960px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }");
     page += F("h1, h2 { color: #2196F3; }");
@@ -1235,54 +1380,54 @@ String getConfigPage() {
     return page;
 }
 
-function saveConfig() {
-    const config = {
-        pumps: [],
-        mqtt: {
-            enabled: document.getElementById('mqtt_enabled').checked,
-            server: document.getElementById('mqtt_server').value,
-            port: parseInt(document.getElementById('mqtt_port').value) || 1883,
-            user: document.getElementById('mqtt_user').value,
-            password: document.getElementById('mqtt_password').value
-        }
-    };
+// function saveConfig() {
+//     const config = {
+//         pumps: [],
+//         mqtt: {
+//             enabled: document.getElementById('mqtt_enabled').checked,
+//             server: document.getElementById('mqtt_server').value,
+//             port: parseInt(document.getElementById('mqtt_port').value) || 1883,
+//             user: document.getElementById('mqtt_user').value,
+//             password: document.getElementById('mqtt_password').value
+//         }
+//     };
 
-    // Konfiguracja pomp
-    for(let i = 0; i < 4; i++) {  // NUM_PUMPS = 4
-        const pump = {
-            enabled: document.querySelector(`.pump-enabled[data-pump='${i}']`).checked,
-            calibration: parseFloat(document.querySelector(`.pump-calibration[data-pump='${i}']`).value) || 1.0,
-            dose: parseFloat(document.querySelector(`.pump-dose[data-pump='${i}']`).value) || 0.0,
-            schedule: {
-                hour: parseInt(document.querySelector(`.pump-hour[data-pump='${i}']`).value) || 0,
-                days: Array.from(document.querySelectorAll(`.pump-day[data-pump='${i}']`))
-                      .reduce((acc, cb, idx) => acc | (cb.checked ? (1 << idx) : 0), 0)
-            }
-        };
-        config.pumps.push(pump);
-    }
+//     // Konfiguracja pomp
+//     for(let i = 0; i < 4; i++) {  // NUM_PUMPS = 4
+//         const pump = {
+//             enabled: document.querySelector(`.pump-enabled[data-pump='${i}']`).checked,
+//             calibration: parseFloat(document.querySelector(`.pump-calibration[data-pump='${i}']`).value) || 1.0,
+//             dose: parseFloat(document.querySelector(`.pump-dose[data-pump='${i}']`).value) || 0.0,
+//             schedule: {
+//                 hour: parseInt(document.querySelector(`.pump-hour[data-pump='${i}']`).value) || 0,
+//                 days: Array.from(document.querySelectorAll(`.pump-day[data-pump='${i}']`))
+//                       .reduce((acc, cb, idx) => acc | (cb.checked ? (1 << idx) : 0), 0)
+//             }
+//         };
+//         config.pumps.push(pump);
+//     }
 
-    // Wysyłanie konfiguracji
-    fetch('/save', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(config)
-    })
-    .then(response => {
-        if (response.ok) {
-            alert('Konfiguracja zapisana');
-        } else {
-            response.text().then(text => {
-                alert('Błąd zapisu konfiguracji: ' + text);
-            });
-        }
-    })
-    .catch(error => {
-        alert('Błąd: ' + error.message);
-    });
-}
+//     // Wysyłanie konfiguracji
+//     fetch('/save', {
+//         method: 'POST',
+//         headers: {
+//             'Content-Type': 'application/json'
+//         },
+//         body: JSON.stringify(config)
+//     })
+//     .then(response => {
+//         if (response.ok) {
+//             alert('Konfiguracja zapisana');
+//         } else {
+//             response.text().then(text => {
+//                 alert('Błąd zapisu konfiguracji: ' + text);
+//             });
+//         }
+//     })
+//     .catch(error => {
+//         alert('Błąd: ' + error.message);
+//     });
+// }
 
 void resetFactorySettings() {
     // Usuń wszystkie pliki konfiguracyjne
