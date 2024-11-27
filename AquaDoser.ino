@@ -8,6 +8,8 @@
 #include <PCF8574.h>             // Ekspander I/O
 #include <Adafruit_NeoPixel.h>   // Diody WS2812
 #include <WiFiManager.h>          // Zarządzanie WiFi
+#include <ESPAsyncWebServer.h>
+#include <ESPAsyncTCP.h>
 
 // --- Definicje pinów i stałych
 #define NUM_PUMPS 8              // Liczba pomp
@@ -39,6 +41,16 @@ struct NetworkConfig {
     char mqtt_password[64];
     uint16_t mqtt_port;
 };
+
+AsyncWebServer server(80);
+
+// Struktura dla informacji systemowych
+struct SystemInfo {
+    unsigned long uptime;
+    bool mqtt_connected;
+};
+
+SystemInfo sysInfo = {0, false};
 
 // --- Globalne obiekty
 WiFiClient wifiClient;
@@ -743,31 +755,112 @@ void syncRTC() {
 void setupWiFi() {
     WiFiManager wifiManager;
     
-    // Konfiguracja parametrów MQTT
-    WiFiManagerParameter custom_mqtt_server("server", "MQTT server", networkConfig.mqtt_server, 40);
-    WiFiManagerParameter custom_mqtt_port("port", "MQTT port", String(networkConfig.mqtt_port).c_str(), 6);
-    WiFiManagerParameter custom_mqtt_user("user", "MQTT user", networkConfig.mqtt_user, 32);
-    WiFiManagerParameter custom_mqtt_pass("pass", "MQTT password", networkConfig.mqtt_password, 32);
-    
-    wifiManager.addParameter(&custom_mqtt_server);
-    wifiManager.addParameter(&custom_mqtt_port);
-    wifiManager.addParameter(&custom_mqtt_user);
-    wifiManager.addParameter(&custom_mqtt_pass);
-    
-    // Próba połączenia lub utworzenie AP do konfiguracji
-    if (!wifiManager.autoConnect("AquaDoser Setup")) {
+    if (!wifiManager.autoConnect("AquaDoser")) {
         Serial.println("Nie udało się połączyć i timeout");
         ESP.restart();
         delay(1000);
     }
     
-    // Zapisz parametry MQTT
-    strlcpy(networkConfig.mqtt_server, custom_mqtt_server.getValue(), sizeof(networkConfig.mqtt_server));
-    networkConfig.mqtt_port = atoi(custom_mqtt_port.getValue());
-    strlcpy(networkConfig.mqtt_user, custom_mqtt_user.getValue(), sizeof(networkConfig.mqtt_user));
-    strlcpy(networkConfig.mqtt_password, custom_mqtt_pass.getValue(), sizeof(networkConfig.mqtt_password));
+    Serial.println("Połączono z WiFi");
+}
+
+void setupWebServer() {
+    // Obsługa plików statycznych
+    server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html");
     
-    saveNetworkConfig();
+    // API dla pomp
+    server.on("/api/pumps", HTTP_GET, [](AsyncWebServerRequest *request) {
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        DynamicJsonDocument doc(1024);
+        JsonArray pumpsArray = doc.createNestedArray("pumps");
+        
+        for (int i = 0; i < NUM_PUMPS; i++) {
+            JsonObject pump = pumpsArray.createNestedObject();
+            pump["id"] = i;
+            pump["enabled"] = pumps[i].enabled;
+            pump["calibration"] = pumps[i].calibration;
+            pump["dose"] = pumps[i].dose;
+            pump["schedule_days"] = pumps[i].schedule_days;
+            pump["schedule_hour"] = pumps[i].schedule_hour;
+        }
+        
+        serializeJson(doc, *response);
+        request->send(response);
+    });
+
+    // Aktualizacja konfiguracji pomp
+    AsyncCallbackJsonWebHandler* pumpHandler = new AsyncCallbackJsonWebHandler("/api/pumps", [](AsyncWebServerRequest *request, JsonVariant &json) {
+        JsonObject jsonObj = json.as<JsonObject>();
+        if (jsonObj.containsKey("pumps")) {
+            JsonArray pumpsArray = jsonObj["pumps"];
+            for (JsonVariant v : pumpsArray) {
+                JsonObject pump = v.as<JsonObject>();
+                int i = pump["id"];
+                if (i >= 0 && i < NUM_PUMPS) {
+                    pumps[i].enabled = pump["enabled"] | false;
+                    pumps[i].calibration = pump["calibration"] | 1.0f;
+                    pumps[i].dose = pump["dose"] | 0.0f;
+                    pumps[i].schedule_days = pump["schedule_days"] | 0;
+                    pumps[i].schedule_hour = pump["schedule_hour"] | 0;
+                }
+            }
+            savePumpsConfig();
+            request->send(200, "application/json", "{\"status\":\"ok\"}");
+        } else {
+            request->send(400, "application/json", "{\"error\":\"Invalid data\"}");
+        }
+    });
+    server.addHandler(pumpHandler);
+
+    // API dla MQTT
+    server.on("/api/mqtt", HTTP_GET, [](AsyncWebServerRequest *request) {
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        DynamicJsonDocument doc(256);
+        
+        doc["server"] = networkConfig.mqtt_server;
+        doc["port"] = networkConfig.mqtt_port;
+        doc["user"] = networkConfig.mqtt_user;
+        doc["password"] = networkConfig.mqtt_password;
+        
+        serializeJson(doc, *response);
+        request->send(response);
+    });
+
+    // Aktualizacja konfiguracji MQTT
+    AsyncCallbackJsonWebHandler* mqttHandler = new AsyncCallbackJsonWebHandler("/api/mqtt", [](AsyncWebServerRequest *request, JsonVariant &json) {
+        JsonObject jsonObj = json.as<JsonObject>();
+        
+        strlcpy(networkConfig.mqtt_server, jsonObj["server"] | "", sizeof(networkConfig.mqtt_server));
+        networkConfig.mqtt_port = jsonObj["port"] | 1883;
+        strlcpy(networkConfig.mqtt_user, jsonObj["user"] | "", sizeof(networkConfig.mqtt_user));
+        strlcpy(networkConfig.mqtt_password, jsonObj["password"] | "", sizeof(networkConfig.mqtt_password));
+        
+        saveNetworkConfig();
+        setupMQTT(); // Ponowne połączenie z MQTT
+        
+        request->send(200, "application/json", "{\"status\":\"ok\"}");
+    });
+    server.addHandler(mqttHandler);
+
+    // API dla informacji systemowych
+    server.on("/api/system", HTTP_GET, [](AsyncWebServerRequest *request) {
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        DynamicJsonDocument doc(128);
+        
+        doc["uptime"] = millis() / 1000; // czas w sekundach
+        doc["mqtt_connected"] = mqtt.connected();
+        
+        serializeJson(doc, *response);
+        request->send(response);
+    });
+
+    // Obsługa nieznanych ścieżek
+    server.onNotFound([](AsyncWebServerRequest *request) {
+        request->send(404, "text/plain", "Not found");
+    });
+
+    server.begin();
+    Serial.println("Serwer HTTP uruchomiony");
 }
 
 // --- Setup
@@ -798,6 +891,8 @@ void setup() {
     
     // Konfiguracja WiFi i MQTT
     setupWiFi();
+
+    setupWebServer();
     
     // Inicjalizacja Home Assistant
     initHomeAssistant();
