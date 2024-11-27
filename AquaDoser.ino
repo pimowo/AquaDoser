@@ -28,6 +28,8 @@ char mqttServer[MQTT_SERVER_LENGTH] = "";
 uint16_t mqttPort = 1883;
 char mqttUser[MQTT_USER_LENGTH] = "";
 char mqttPassword[MQTT_PASSWORD_LENGTH] = "";
+bool shouldRestart = false;
+unsigned long restartTime = 0;
 
 #define TEST_MODE  // Zakomentuj tę linię w wersji produkcyjnej
 
@@ -106,12 +108,12 @@ char mqttPassword[MQTT_PASSWORD_LENGTH] = "";
 // --- Struktura konfiguracji pompy
 struct PumpConfig {
     bool enabled;
-    float calibration;     // ml/min - prędkość pompy
-    float dose;           // ml - dawka do podania
-    uint8_t schedule_days; // bitowa mapa dni tygodnia
-    uint8_t schedule_hour; // godzina dozowania
-    unsigned long lastDosing;
-    bool isRunning;
+    uint8_t hour;          // Godzina dozowania
+    uint8_t minute;        // Minuta dozowania
+    float dose;           // Ilość do dozowania
+    float calibration;    // Kalibracja pompy (ml/min)
+    
+    PumpConfig() : enabled(false), hour(12), minute(0), dose(0.0), calibration(1.0) {}
 };
 
 // --- Struktura konfiguracji sieciowej
@@ -139,6 +141,19 @@ struct SystemStatus {
         lastError("") {}
 };
 
+struct MQTTConfig {
+    char broker[64];
+    uint16_t port;
+    char username[32];
+    char password[32];
+    
+    MQTTConfig() : port(1883) {
+        broker[0] = '\0';
+        username[0] = '\0';
+        password[0] = '\0';
+    }
+};
+
 ESP8266WebServer server(80);
 WebSocketsServer webSocket = WebSocketsServer(81);
 ESP8266HTTPUpdateServer httpUpdateServer;
@@ -154,10 +169,10 @@ struct SystemInfo {
 SystemInfo sysInfo = {0, false};
 
 struct Config {
-    bool soundEnabled;               // Dźwięk włączony/wyłączony
-    NetworkConfig network;           // Konfiguracja sieci
-    PumpConfig pumps[NUMBER_OF_PUMPS];  // Konfiguracja pomp
-    char checksum;                  // Suma kontrolna konfiguracji
+    MQTTConfig mqtt;
+    PumpConfig pumps[NUMBER_OF_PUMPS];
+    bool soundEnabled;
+    uint8_t checksum;
     
     Config() : soundEnabled(true), checksum(0) {}
 };
@@ -1210,51 +1225,51 @@ void setupWebServer() {
     webSocket.onEvent(webSocketEvent);
 }
 
-String getConfigPage() {
-    String page = F("<!DOCTYPE html><html><head>");
-    page += F("<meta charset='UTF-8'>");
-    page += F("<meta name='viewport' content='width=device-width, initial-scale=1'>");
-    page += F("<title>AquaDoser Configuration</title>");
-    page += getStyles();
-    page += F("</head><body>");
-    page += F("<div class='container'>");
-    page += F("<h1>MQTT Configuration</h1>");
-    page += F("<form method='POST' action='/config'>");
+// String getConfigPage() {
+//     String page = F("<!DOCTYPE html><html><head>");
+//     page += F("<meta charset='UTF-8'>");
+//     page += F("<meta name='viewport' content='width=device-width, initial-scale=1'>");
+//     page += F("<title>AquaDoser Configuration</title>");
+//     page += getStyles();
+//     page += F("</head><body>");
+//     page += F("<div class='container'>");
+//     page += F("<h1>MQTT Configuration</h1>");
+//     page += F("<form method='POST' action='/config'>");
     
-    // MQTT configuration
-    page += F("<div class='card'>");
-    page += F("<h2>MQTT Settings</h2>");
-    page += F("<div class='form-group'>");
-    page += F("<label>Broker:</label>");
-    page += F("<input type='text' name='mqtt_broker' value='");
-    page += config.mqtt.broker;
-    page += F("'></div>");
+//     // MQTT configuration
+//     page += F("<div class='card'>");
+//     page += F("<h2>MQTT Settings</h2>");
+//     page += F("<div class='form-group'>");
+//     page += F("<label>Broker:</label>");
+//     page += F("<input type='text' name='mqtt_broker' value='");
+//     page += config.mqtt.broker;
+//     page += F("'></div>");
     
-    page += F("<div class='form-group'>");
-    page += F("<label>Port:</label>");
-    page += F("<input type='number' name='mqtt_port' value='");
-    page += String(config.mqtt.port);
-    page += F("'></div>");
+//     page += F("<div class='form-group'>");
+//     page += F("<label>Port:</label>");
+//     page += F("<input type='number' name='mqtt_port' value='");
+//     page += String(config.mqtt.port);
+//     page += F("'></div>");
     
-    page += F("<div class='form-group'>");
-    page += F("<label>Username:</label>");
-    page += F("<input type='text' name='mqtt_user' value='");
-    page += config.mqtt.username;
-    page += F("'></div>");
+//     page += F("<div class='form-group'>");
+//     page += F("<label>Username:</label>");
+//     page += F("<input type='text' name='mqtt_user' value='");
+//     page += config.mqtt.username;
+//     page += F("'></div>");
     
-    page += F("<div class='form-group'>");
-    page += F("<label>Password:</label>");
-    page += F("<input type='password' name='mqtt_password' value='");
-    page += config.mqtt.password;
-    page += F("'></div>");
-    page += F("</div>");
+//     page += F("<div class='form-group'>");
+//     page += F("<label>Password:</label>");
+//     page += F("<input type='password' name='mqtt_password' value='");
+//     page += config.mqtt.password;
+//     page += F("'></div>");
+//     page += F("</div>");
     
-    page += F("<button type='submit' class='button'>Save Configuration</button>");
-    page += F("</form>");
-    page += F("</div></body></html>");
+//     page += F("<button type='submit' class='button'>Save Configuration</button>");
+//     page += F("</form>");
+//     page += F("</div></body></html>");
     
-    return page;
-}
+//     return page;
+// }
 
 void checkMQTTConfig() {
     if (validateMQTTConfig()) {
