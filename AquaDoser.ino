@@ -1201,7 +1201,7 @@ String getConfigPage() {
     page += F("    .catch(error => alert('Error: ' + error));");
     page += F("}");
 
-    // Funkcja zapisu konfiguracji
+// Funkcja zapisu konfiguracji
     page += F("function saveConfig() {");
     page += F("    const config = {");
     page += F("        pumps: [],");
@@ -1237,15 +1237,15 @@ String getConfigPage() {
     page += F("    })");
     page += F("    .then(response => {");
     page += F("        if (response.ok) {");
-    page += F("            alert('Configuration saved');");
+    page += F("            alert('Konfiguracja zapisana');");
     page += F("        } else {");
     page += F("            response.text().then(text => {");
-    page += F("                alert('Save error: ' + text);");
+    page += F("                alert('Błąd zapisu konfiguracji: ' + text);");
     page += F("            });");
     page += F("        }");
     page += F("    })");
     page += F("    .catch(error => {");
-    page += F("        alert('Error: ' + error.message);");
+    page += F("        alert('Błąd: ' + error.message);");
     page += F("    });");
     page += F("}");
 
