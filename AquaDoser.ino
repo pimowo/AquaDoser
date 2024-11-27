@@ -22,25 +22,35 @@
 #ifdef TEST_MODE
   #define DEBUG_SERIAL(x) Serial.println(x)
   // Emulacja RTC
-  unsigned long startupTime;
   class RTCEmulator {
+    private:
+      unsigned long startupTime;
+      DateTime currentTime;
+      
     public:
       RTCEmulator() {
+        startupTime = millis();
+        currentTime = DateTime(2024, 1, 1, 0, 0, 0);
+      }
+      
+      bool begin() {
+        return true;
+      }
+      
+      void adjust(const DateTime& dt) {
+        currentTime = dt;
         startupTime = millis();
       }
       
       DateTime now() {
-        // Symuluj czas od startu urządzenia
+        // Symuluj czas od ostatniego ustawienia
         unsigned long currentMillis = millis();
-        unsigned long seconds = currentMillis / 1000;
-        uint8_t hour = (seconds / 3600) % 24;
-        uint8_t minute = (seconds / 60) % 60;
-        uint8_t second = seconds % 60;
-        uint8_t day = ((seconds / 86400) + 3) % 7; // Zacznij od środy
-        return DateTime(2024, 1, 1, hour, minute, second);
+        unsigned long secondsElapsed = (currentMillis - startupTime) / 1000;
+        
+        uint32_t totalSeconds = currentTime.unixtime() + secondsElapsed;
+        return DateTime(totalSeconds);
       }
   };
-  RTCEmulator rtc;
 
   // Emulacja PCF8574
   class PCF8574Emulator {
@@ -58,9 +68,14 @@
         DEBUG_SERIAL("PCF Pin " + String(pin) + " set to " + String(value));
       }
   };
+
+  RTCEmulator rtc;
   PCF8574Emulator pcf;
+
 #else
   #define DEBUG_SERIAL(x)
+  RTC_DS3231 rtc;
+  PCF8574 pcf(PCF8574_ADDRESS);
 #endif
 
 // --- Definicje pinów i stałych
@@ -115,7 +130,7 @@ SystemInfo sysInfo = {0, false};
 WiFiClient wifiClient;
 HADevice haDevice("AquaDoser");
 HAMqtt mqtt(wifiClient, haDevice);
-RTC_DS3231 rtc;
+//RTC_DS3231 rtc;
 PCF8574 pcf8574(0x20);
 Adafruit_NeoPixel strip(NUM_PUMPS, LED_PIN, NEO_GRB + NEO_KHZ800);
 
