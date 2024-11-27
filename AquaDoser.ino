@@ -1,16 +1,20 @@
 // --- Biblioteki
 
+#define WEBSERVER_H
+
+#include <Arduino.h>
+#include <Wire.h>
+#include <ESP8266WiFi.h>
+#include <ESPAsyncTCP.h>
+#include <ESPAsyncWebServer.h>
 #include <WiFiManager.h>          // Zarządzanie WiFi
-#include <ESP8266WiFi.h>          // Obsługa WiFi
 #include <ArduinoHA.h>            // Integracja z Home Assistant
 #include <ArduinoJson.h>          // Obsługa JSON
 #include <LittleFS.h>             // System plików
-#include <Wire.h>                 // Komunikacja I2C
 #include <DS3231.h>               // Zegar RTC
 #include <PCF8574.h>      // Ekspander I/O
 #include <Adafruit_NeoPixel.h>    // Diody WS2812
 #include <ESPAsyncTCP.h>
-#include <ESPAsyncWebServer.h>
 #include <NTPClient.h>
 #include <WiFiUdp.h>
 #include <AsyncJson.h>
@@ -302,19 +306,16 @@ void startPump(uint8_t pumpIndex) {
     }
 
     // Włącz pompę
-    if (pcf8574.write(pumpIndex, HIGH)) {
-        pumpRunning[pumpIndex] = true;
-        doseStartTime[pumpIndex] = millis();
-        
-        // Aktualizuj stan LED
-        strip.setPixelColor(pumpIndex, COLOR_WORKING);
-        strip.show();
-        
-        Serial.printf("Pompa %d rozpoczęła dozowanie. Zaplanowany czas: %.1f ms\n", 
-                     pumpIndex + 1, dosingTime);
-    } else {
-        Serial.printf("Błąd: Nie można włączyć pompy %d\n", pumpIndex + 1);
-    }
+    pcf8574.write(pumpIndex, HIGH);
+    pumpRunning[pumpIndex] = true;
+    doseStartTime[pumpIndex] = millis();
+    
+    // Aktualizuj stan LED
+    strip.setPixelColor(pumpIndex, COLOR_WORKING);
+    strip.show();
+    
+    Serial.printf("Pompa %d rozpoczęła dozowanie. Zaplanowany czas: %.1f ms\n", 
+                 pumpIndex + 1, dosingTime);
 }
 
 // --- Zatrzymanie dozowania dla pompy
@@ -324,21 +325,18 @@ void stopPump(uint8_t pumpIndex) {
     }
 
     // Wyłącz pompę
-    if (pcf8574.write(pumpIndex, LOW)) {
-        pumpRunning[pumpIndex] = false;
-        
-        // Oblicz faktyczny czas dozowania
-        unsigned long actualDoseTime = millis() - doseStartTime[pumpIndex];
-        
-        // Aktualizuj stan LED
-        strip.setPixelColor(pumpIndex, pumps[pumpIndex].enabled ? COLOR_ON : COLOR_OFF);
-        strip.show();
-        
-        Serial.printf("Pompa %d zakończyła dozowanie. Rzeczywisty czas: %lu ms\n", 
-                     pumpIndex + 1, actualDoseTime);
-    } else {
-        Serial.printf("Błąd: Nie można wyłączyć pompy %d\n", pumpIndex + 1);
-    }
+    pcf8574.write(pumpIndex, LOW);
+    pumpRunning[pumpIndex] = false;
+    
+    // Oblicz faktyczny czas dozowania
+    unsigned long actualDoseTime = millis() - doseStartTime[pumpIndex];
+    
+    // Aktualizuj stan LED
+    strip.setPixelColor(pumpIndex, pumps[pumpIndex].enabled ? COLOR_ON : COLOR_OFF);
+    strip.show();
+    
+    Serial.printf("Pompa %d zakończyła dozowanie. Rzeczywisty czas: %lu ms\n", 
+                 pumpIndex + 1, actualDoseTime);
 }
 
 // --- Sprawdzenie czy pompa powinna rozpocząć dozowanie
@@ -393,11 +391,10 @@ void servicePump(uint8_t pumpIndex, bool state) {
         return;
     }
 
-if (state) {
-    pcf8574.write(pumpIndex, HIGH);
-} else {
-    pcf8574.write(pumpIndex, LOW);
-}
+    // Ustaw stan pompy
+    pcf8574.write(pumpIndex, state ? HIGH : LOW);
+    
+    // Aktualizuj wyświetlanie
     strip.show();
 }
 
@@ -895,9 +892,11 @@ void setup() {
     
     // Inicjalizacja sprzętu
     Wire.begin();
-    rtc.begin();  // usuń sprawdzanie if (!rtc.begin())
+    if (!rtc.isrunning()) {
+        Serial.println("RTC is NOT running!");
+        // ustaw czas jeśli potrzeba
+    }
     
-    Wire.begin();
     if (pcf8574.begin()) {
         Serial.println("PCF8574 initialized");
     } else {
