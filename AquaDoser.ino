@@ -2,9 +2,11 @@
 
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
-#include <WiFiManager.h>         // Przenieś WiFiManager przed ESPAsyncWebServer
-#include <ESPAsyncTCP.h>
-#include <ESPAsyncWebServer.h>
+#include <EEPROM.h>
+#include <WiFiManager.h>
+#include <ESP8266WebServer.h>
+#include <WebSocketsServer.h>
+#include <ESP8266HTTPUpdateServer.h>
 #include <Wire.h>
 #include <RTClib.h>
 #include <PCF8574.h>
@@ -13,8 +15,7 @@
 #include <LittleFS.h>
 #include <Adafruit_NeoPixel.h>
 #include <NTPClient.h>
-#include <WiFiUdp.h>
-#include <AsyncJson.h>
+#include <WiFiUDP.h>
 
 // --- Definicje pinów i stałych
 #define NUMBER_OF_PUMPS 8  // lub inna odpowiednia liczba
@@ -51,7 +52,10 @@ struct NetworkConfig {
     uint16_t mqtt_port;
 };
 
-AsyncWebServer server(80);
+ESP8266WebServer server(80);
+WebSocketsServer webSocket = WebSocketsServer(81);
+ESP8266HTTPUpdateServer httpUpdateServer;
+
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "pool.ntp.org");
 // Struktura dla informacji systemowych
@@ -774,108 +778,24 @@ void setupWiFi() {
 }
 
 void setupWebServer() {
-    // Obsługa plików statycznych
-    server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html");
+    server.on("/", HTTP_GET, handleRoot);
+    server.on("/save", HTTP_POST, handleSave);
+    server.on("/update", HTTP_GET, []() {
+        server.sendHeader("Connection", "close");
+        server.send(200, "text/html", getUpdatePage());
+    });
     
-    // API dla pomp
-    server.on("/api/pumps", HTTP_GET, [](AsyncWebServerRequest *request) {
-        AsyncResponseStream *response = request->beginResponseStream("application/json");
-        DynamicJsonDocument doc(1024);
-        JsonArray pumpsArray = doc.createNestedArray("pumps");
-        
-        for (int i = 0; i < NUM_PUMPS; i++) {
-            JsonObject pump = pumpsArray.createNestedObject();
-            pump["id"] = i;
-            pump["enabled"] = pumps[i].enabled;
-            pump["calibration"] = pumps[i].calibration;
-            pump["dose"] = pumps[i].dose;
-            pump["schedule_days"] = pumps[i].schedule_days;
-            pump["schedule_hour"] = pumps[i].schedule_hour;
-        }
-        
-        serializeJson(doc, *response);
-        request->send(response);
-    });
-
-    // Aktualizacja konfiguracji pomp
-    AsyncCallbackJsonWebHandler* pumpHandler = new AsyncCallbackJsonWebHandler("/api/pumps", [](AsyncWebServerRequest *request, JsonVariant &json) {
-        JsonObject jsonObj = json.as<JsonObject>();
-        if (jsonObj.containsKey("pumps")) {
-            JsonArray pumpsArray = jsonObj["pumps"];
-            for (JsonVariant v : pumpsArray) {
-                JsonObject pump = v.as<JsonObject>();
-                int i = pump["id"];
-                if (i >= 0 && i < NUM_PUMPS) {
-                    pumps[i].enabled = pump["enabled"] | false;
-                    pumps[i].calibration = pump["calibration"] | 1.0f;
-                    pumps[i].dose = pump["dose"] | 0.0f;
-                    pumps[i].schedule_days = pump["schedule_days"] | 0;
-                    pumps[i].schedule_hour = pump["schedule_hour"] | 0;
-                }
-            }
-            savePumpsConfig();
-            request->send(200, "application/json", "{\"status\":\"ok\"}");
-        } else {
-            request->send(400, "application/json", "{\"error\":\"Invalid data\"}");
-        }
-    });
-    server.addHandler(pumpHandler);
-
-    // API dla MQTT
-    server.on("/api/mqtt", HTTP_GET, [](AsyncWebServerRequest *request) {
-        AsyncResponseStream *response = request->beginResponseStream("application/json");
-        DynamicJsonDocument doc(256);
-        
-        doc["server"] = networkConfig.mqtt_server;
-        doc["port"] = networkConfig.mqtt_port;
-        doc["user"] = networkConfig.mqtt_user;
-        doc["password"] = networkConfig.mqtt_password;
-        
-        serializeJson(doc, *response);
-        request->send(response);
-    });
-
-    // Aktualizacja konfiguracji MQTT
-    AsyncCallbackJsonWebHandler* mqttHandler = new AsyncCallbackJsonWebHandler("/api/mqtt", [](AsyncWebServerRequest *request, JsonVariant &json) {
-        JsonObject jsonObj = json.as<JsonObject>();
-        
-        strlcpy(networkConfig.mqtt_server, jsonObj["server"] | "", sizeof(networkConfig.mqtt_server));
-        networkConfig.mqtt_port = jsonObj["port"] | 1883;
-        strlcpy(networkConfig.mqtt_user, jsonObj["user"] | "", sizeof(networkConfig.mqtt_user));
-        strlcpy(networkConfig.mqtt_password, jsonObj["password"] | "", sizeof(networkConfig.mqtt_password));
-        
-        saveNetworkConfig();
-        setupMQTT(); // Ponowne połączenie z MQTT
-        
-        request->send(200, "application/json", "{\"status\":\"ok\"}");
-    });
-    server.addHandler(mqttHandler);
-
-    // API dla informacji systemowych
-    server.on("/api/system", HTTP_GET, [](AsyncWebServerRequest *request) {
-        AsyncResponseStream *response = request->beginResponseStream("application/json");
-        DynamicJsonDocument doc(128);
-        
-        doc["uptime"] = millis() / 1000; // czas w sekundach
-        doc["mqtt_connected"] = mqtt.isConnected();
-        
-        serializeJson(doc, *response);
-        request->send(response);
-    });
-
-    // Obsługa nieznanych ścieżek
-    server.onNotFound([](AsyncWebServerRequest *request) {
-        request->send(404, "text/plain", "Not found");
-    });
-
+    httpUpdateServer.setup(&server);
     server.begin();
-    Serial.println("Serwer HTTP uruchomiony");
+    webSocket.begin();
+    webSocket.onEvent(webSocketEvent);
 }
 
 // --- Setup
 void setup() {
     Serial.begin(115200);
     Serial.println("\nAquaDoser Start");
+    Wire.begin();
     
     // Inicjalizacja pinów
     pinMode(BUTTON_PIN, INPUT_PULLUP);
@@ -886,24 +806,20 @@ void setup() {
     }
     loadConfiguration();
     
-    // Inicjalizacja sprzętu
-    Wire.begin();
-    
-    if (!rtc.begin()) {
-        Serial.println("Nie można znaleźć RTC");
-    } else {
-        if (rtc.lostPower()) {
-            Serial.println("RTC stracił zasilanie!");
-            rtc.adjust(DateTime(F(__DATE__), F(__TIME__))); // ustaw czas kompilacji
-        }
-        DateTime now = rtc.now();
-        Serial.printf("Czas RTC: %04d-%02d-%02d %02d:%02d:%02d\n",
-            now.year(), now.month(), now.day(),
-            now.hour(), now.minute(), now.second());
+    // Inicjalizacja systemu plików
+    if (!LittleFS.begin()) {
+        Serial.println("Błąd inicjalizacji LittleFS!");
+        return;
     }
     
+    // Inicjalizacja RTC
+    if (!rtc.begin()) {
+        Serial.println("Nie znaleziono RTC!");
+    }
+    
+    // Inicjalizacja PCF8574
     if (!pcf8574.begin()) {
-        Serial.println("PCF8574 nie działa!");
+        Serial.println("Nie znaleziono PCF8574!");
     }
     
     initializeLEDs();
