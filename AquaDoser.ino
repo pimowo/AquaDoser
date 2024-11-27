@@ -35,8 +35,8 @@ struct PumpConfig {
     bool enabled;
     float calibration;     // ml/min - prędkość pompy
     float dose;           // ml - dawka do podania
-    uint8_t hour;        // godzina dozowania
-    bool days[7];        // tablica dni tygodnia [pon,wt,śr,czw,pt,sob,ndz]
+    uint8_t schedule_days; // bitowa mapa dni tygodnia
+    uint8_t schedule_hour; // godzina dozowania
     unsigned long lastDosing;
     bool isRunning;
 };
@@ -119,56 +119,58 @@ bool initFileSystem() {
 
 // --- Ładowanie konfiguracji pomp
 bool loadPumpsConfig() {
-    File file = LittleFS.open(PUMPS_FILE, "r");
+    File file = LittleFS.open("/pumps.json", "r");
     if (!file) {
-        Serial.println("Nie znaleziono pliku konfiguracji pomp");
+        Serial.println(F("Failed to open pumps config file"));
         return false;
     }
 
-    StaticJsonDocument<1024> doc;
+    DynamicJsonDocument doc(1024);
     DeserializationError error = deserializeJson(doc, file);
     file.close();
 
     if (error) {
-        Serial.println("Błąd parsowania JSON konfiguracji pomp");
+        Serial.println(F("Failed to parse pumps config file"));
         return false;
     }
 
-    JsonArray pumpsArray = doc["pumps"];
-    for (unsigned int i = 0; i < min((size_t)NUM_PUMPS, pumpsArray.size()); i++) {
+    JsonArray pumpsArray = doc["pumps"].as<JsonArray>();
+    for (uint8_t i = 0; i < NUM_PUMPS && i < pumpsArray.size(); i++) {
         pumps[i].enabled = pumpsArray[i]["enabled"] | false;
         pumps[i].calibration = pumpsArray[i]["calibration"] | 1.0f;
         pumps[i].dose = pumpsArray[i]["dose"] | 0.0f;
         pumps[i].schedule_days = pumpsArray[i]["schedule"]["days"] | 0;
         pumps[i].schedule_hour = pumpsArray[i]["schedule"]["hour"] | 0;
+        pumps[i].lastDosing = 0;
+        pumps[i].isRunning = false;
     }
+
     return true;
 }
 
 // --- Zapisywanie konfiguracji pomp
 bool savePumpsConfig() {
-    StaticJsonDocument<1024> doc;
+    DynamicJsonDocument doc(1024);
     JsonArray pumpsArray = doc.createNestedArray("pumps");
 
-    for (int i = 0; i < NUM_PUMPS; i++) {
+    for (uint8_t i = 0; i < NUM_PUMPS; i++) {
         JsonObject pumpObj = pumpsArray.createNestedObject();
         pumpObj["enabled"] = pumps[i].enabled;
         pumpObj["calibration"] = pumps[i].calibration;
         pumpObj["dose"] = pumps[i].dose;
-        
         JsonObject schedule = pumpObj.createNestedObject("schedule");
         schedule["days"] = pumps[i].schedule_days;
         schedule["hour"] = pumps[i].schedule_hour;
     }
 
-    File file = LittleFS.open(PUMPS_FILE, "w");
+    File file = LittleFS.open("/pumps.json", "w");
     if (!file) {
-        Serial.println("Błąd otwarcia pliku konfiguracji pomp do zapisu");
+        Serial.println(F("Failed to open pumps config file for writing"));
         return false;
     }
 
     if (serializeJson(doc, file) == 0) {
-        Serial.println("Błąd zapisu konfiguracji pomp");
+        Serial.println(F("Failed to write pumps config"));
         file.close();
         return false;
     }
@@ -879,49 +881,28 @@ String getConfigPage() {
         page += "<h2>Pump " + String(i + 1) + "</h2>";
         
         // Włącznik pompy
-        page += F("<label><input type='checkbox' class='pump-enabled' data-pump='");
-        page += String(i);
-        page += F("' ");
-        if (pumps[i].enabled) page += F("checked");
+        page += "<label><input type='checkbox' class='pump-enabled' data-pump='" + String(i) + "'";
+        if (pumps[i].enabled) page += F(" checked");
         page += F("> Enable</label><br>");
 
         // Kalibracja
-        page += F("<label>Calibration (ml/min): <input type='number' class='pump-calibration' data-pump='");
-        page += String(i);
-        page += F("' value='");
-        page += String(pumps[i].calibration);
-        page += F("' step='0.1'></label><br>");
+        page += "<label>Calibration (ml/min): <input type='number' class='pump-calibration' data-pump='" + String(i) + "' value='" + String(pumps[i].calibration) + "' step='0.1'></label><br>";
 
         // Dawka
-        page += F("<label>Dose (ml): <input type='number' class='pump-dose' data-pump='");
-        page += String(i);
-        page += F("' value='");
-        page += String(pumps[i].dose);
-        page += F("' step='0.1'></label><br>");
+        page += "<label>Dose (ml): <input type='number' class='pump-dose' data-pump='" + String(i) + "' value='" + String(pumps[i].dose) + "' step='0.1'></label><br>";
 
-        // Godzina dozowania
-        page += F("<label>Hour: <input type='number' class='pump-hour' data-pump='");
-        page += String(i);
-        page += F("' value='");
-        page += String(pumps[i].hour);
-        page += F("' min='0' max='23'></label><br>");
+        // Harmonogram
+        page += "<label>Hour: <input type='number' class='pump-hour' data-pump='" + String(i) + "' value='" + String(pumps[i].schedule_hour) + "' min='0' max='23'></label><br>";
 
         // Dni tygodnia
         page += F("<div>Days:<br>");
         const char* days[] = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
         for (int j = 0; j < 7; j++) {
-            page += F("<label><input type='checkbox' class='pump-day' data-pump='");
-            page += String(i);
-            page += F("' data-day='");
-            page += String(j);
-            page += F("' ");
-            if (pumps[i].days[j]) page += F("checked");
-            page += F("> ");
-            page += days[j];
-            page += F("</label> ");
+            page += "<label><input type='checkbox' class='pump-day' data-pump='" + String(i) + "' data-day='" + String(j) + "'";
+            if (pumps[i].schedule_days & (1 << j)) page += F(" checked");
+            page += "> " + String(days[j]) + "</label> ";
         }
-        page += F("</div>");
-        page += F("</div>");
+        page += F("</div></div>");
     }
 
     // Przyciski
@@ -932,14 +913,18 @@ String getConfigPage() {
     page += F("<script>");
     page += F("function saveConfig() {");
     page += F("    const config = {pumps: []};");
-    page += F("    for(let i = 0; i < " + String(NUM_PUMPS) + "; i++) {");
-    page += F("        const pump = {");
-    page += F("            enabled: document.querySelector(`.pump-enabled[data-pump='${i}']`).checked,");
-    page += F("            calibration: parseFloat(document.querySelector(`.pump-calibration[data-pump='${i}']`).value),");
-    page += F("            dose: parseFloat(document.querySelector(`.pump-dose[data-pump='${i}']`).value),");
+    page += F("    const numPumps = "); 
+    page += String(NUM_PUMPS);
+    page += F(";");
+    page += F("    for(let i = 0; i < numPumps; i++) {");
+    page += F("        const pump = {};");
+    page += F("        pump.enabled = document.querySelector(`.pump-enabled[data-pump='${i}']`).checked;");
+    page += F("        pump.calibration = parseFloat(document.querySelector(`.pump-calibration[data-pump='${i}']`).value);");
+    page += F("        pump.dose = parseFloat(document.querySelector(`.pump-dose[data-pump='${i}']`).value);");
+    page += F("        pump.schedule = {");
     page += F("            hour: parseInt(document.querySelector(`.pump-hour[data-pump='${i}']`).value),");
     page += F("            days: Array.from(document.querySelectorAll(`.pump-day[data-pump='${i}']`))");
-    page += F("                       .map(cb => cb.checked)");
+    page += F("                  .reduce((acc, cb, idx) => acc | (cb.checked ? (1 << idx) : 0), 0)");
     page += F("        };");
     page += F("        config.pumps.push(pump);");
     page += F("    }");
