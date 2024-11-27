@@ -196,26 +196,6 @@ void saveMQTTConfig() {
     configFile.close();
 }
 
-// Zapisywanie konfiguracji MQTT
-void saveMQTTConfig() {
-    StaticJsonDocument<512> doc;
-    
-    doc["enabled"] = mqttEnabled;
-    doc["server"] = mqttServer;
-    doc["port"] = mqttPort;
-    doc["user"] = mqttUser;
-    doc["password"] = mqttPassword;
-
-    File configFile = LittleFS.open("/mqtt.json", "w");
-    if (!configFile) {
-        Serial.println("Failed to open mqtt config file for writing");
-        return;
-    }
-
-    serializeJson(doc, configFile);
-    configFile.close();
-}
-
 // Wczytywanie konfiguracji MQTT
 void loadMQTTConfig() {
     File configFile = LittleFS.open("/mqtt.json", "r");
@@ -1206,46 +1186,46 @@ String getConfigPage() {
     page += F("    const config = {");
     page += F("        pumps: [],");
     page += F("        mqtt: {");
-    page += F("            enabled: document.getElementById('mqtt_enabled').checked,");
-    page += F("            server: document.getElementById('mqtt_server').value,");
-    page += F("            port: parseInt(document.getElementById('mqtt_port').value) || 1883,");
-    page += F("            user: document.getElementById('mqtt_user').value,");
-    page += F("            password: document.getElementById('mqtt_password').value");
+    page += F("            enabled: document.getElementById(\\'mqtt_enabled\\').checked,");
+    page += F("            server: document.getElementById(\\'mqtt_server\\').value,");
+    page += F("            port: parseInt(document.getElementById(\\'mqtt_port\\').value) || 1883,");
+    page += F("            user: document.getElementById(\\'mqtt_user\\').value,");
+    page += F("            password: document.getElementById(\\'mqtt_password\\').value");
     page += F("        }");
     page += F("    };");
     
     page += F("    for(let i = 0; i < 4; i++) {");
     page += F("        const pump = {");
-    page += F("            enabled: document.querySelector('.pump-enabled[data-pump=\"' + i + '\"]').checked,");
-    page += F("            calibration: parseFloat(document.querySelector('.pump-calibration[data-pump=\"' + i + '\"]').value) || 1.0,");
-    page += F("            dose: parseFloat(document.querySelector('.pump-dose[data-pump=\"' + i + '\"]').value) || 0.0,");
+    page += F("            enabled: document.querySelector(\\'.pump-enabled[data-pump=\\'' + i + \\']\\'').checked,");
+    page += F("            calibration: parseFloat(document.querySelector(\\'.pump-calibration[data-pump=\\'' + i + \\']\\'').value) || 1.0,");
+    page += F("            dose: parseFloat(document.querySelector(\\'.pump-dose[data-pump=\\'' + i + \\']\\'').value) || 0.0,");
     page += F("            schedule: {");
-    page += F("                hour: parseInt(document.querySelector('.pump-hour[data-pump=\"' + i + '\"]').value) || 0,");
-    page += F("                days: Array.from(document.querySelectorAll('.pump-day[data-pump=\"' + i + '\"]'))");
+    page += F("                hour: parseInt(document.querySelector(\\'.pump-hour[data-pump=\\'' + i + \\']\\'').value) || 0,");
+    page += F("                days: Array.from(document.querySelectorAll(\\'.pump-day[data-pump=\\'' + i + \\']\\''))");
     page += F("                      .reduce((acc, cb, idx) => acc | (cb.checked ? (1 << idx) : 0), 0)");
     page += F("            }");
     page += F("        };");
     page += F("        config.pumps.push(pump);");
     page += F("    }");
 
-    page += F("    fetch('/save', {");
-    page += F("        method: 'POST',");
+    page += F("    fetch(\\'/save\\', {");
+    page += F("        method: \\'POST\\',");
     page += F("        headers: {");
-    page += F("            'Content-Type': 'application/json'");
+    page += F("            \\'Content-Type\\': \\'application/json\\'");
     page += F("        },");
     page += F("        body: JSON.stringify(config)");
     page += F("    })");
     page += F("    .then(response => {");
     page += F("        if (response.ok) {");
-    page += F("            alert('Konfiguracja zapisana');");
+    page += F("            alert(\\'Konfiguracja zapisana\\');");
     page += F("        } else {");
     page += F("            response.text().then(text => {");
-    page += F("                alert('Błąd zapisu konfiguracji: ' + text);");
+    page += F("                alert(\\'Błąd zapisu konfiguracji: \\' + text);");
     page += F("            });");
     page += F("        }");
     page += F("    })");
     page += F("    .catch(error => {");
-    page += F("        alert('Błąd: ' + error.message);");
+    page += F("        alert(\\'Błąd: \\' + error.message);");
     page += F("    });");
     page += F("}");
 
