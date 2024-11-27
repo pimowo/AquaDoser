@@ -285,12 +285,8 @@ void handleSave() {
                 pumps[i].enabled = pumpsArray[i]["enabled"] | false;
                 pumps[i].calibration = pumpsArray[i]["calibration"] | 1.0f;
                 pumps[i].dose = pumpsArray[i]["dose"] | 0.0f;
-                pumps[i].hour = pumpsArray[i]["hour"] | 0;
-                
-                JsonArray daysArray = pumpsArray[i]["days"].as<JsonArray>();
-                for (uint8_t j = 0; j < 7 && j < daysArray.size(); j++) {
-                    pumps[i].days[j] = daysArray[j] | false;
-                }
+                pumps[i].schedule_hour = pumpsArray[i]["schedule"]["hour"] | 0;
+                pumps[i].schedule_days = pumpsArray[i]["schedule"]["days"] | 0;
             }
             savePumpsConfig();
             server.send(200, "text/plain", "OK");
@@ -417,7 +413,7 @@ void stopPump(uint8_t pumpIndex) {
 
 // --- Sprawdzenie czy pompa powinna rozpocząć dozowanie
 bool shouldStartDosing(uint8_t pumpIndex) {
-    if (!pumpInitialized || pumpIndex >= NUM_PUMPS || !pumps[pumpIndex].enabled) {
+    if (!pumps[pumpIndex].enabled) {
         return false;
     }
 
@@ -426,12 +422,18 @@ bool shouldStartDosing(uint8_t pumpIndex) {
     uint8_t currentDay = now.dayOfTheWeek(); // 0 = Sunday, 6 = Saturday
 
     // Sprawdź czy jest odpowiednia godzina
-    if (currentHour != pumps[pumpIndex].hour) {
+    if (currentHour != pumps[pumpIndex].schedule_hour) {
         return false;
     }
 
     // Sprawdź czy jest odpowiedni dzień
-    if (!pumps[pumpIndex].days[currentDay]) {
+    if (!(pumps[pumpIndex].schedule_days & (1 << currentDay))) {
+        return false;
+    }
+
+    // Sprawdź czy już nie dozowano dzisiaj
+    unsigned long currentTime = now.unixtime();
+    if (currentTime - pumps[pumpIndex].lastDosing < 24*60*60) {
         return false;
     }
 
