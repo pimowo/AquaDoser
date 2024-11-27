@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AquaDoser</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>AquaDoser</h1>
+            <div id="connection-status">
+                <span class="status-dot"></span>
+                <span class="status-text">Połączono</span>
+            </div>
+        </header>
+
+        <nav>
+            <button class="nav-btn active" data-page="pumps">Pompy</button>
+            <button class="nav-btn" data-page="mqtt">MQTT</button>
+            <button class="nav-btn" data-page="system">System</button>
+        </nav>
+
+        <main>
+            <!-- Strona pomp -->
+            <div class="page" id="pumps-page">
+                <div class="pumps-grid">
+                    <!-- Pompy będą dodawane dynamicznie przez JavaScript -->
+                </div>
+            </div>
+
+            <!-- Strona MQTT -->
+            <div class="page" id="mqtt-page" style="display:none">
+                <div class="config-form">
+                    <div class="form-group">
+                        <label for="mqtt-server">Serwer MQTT</label>
+                        <input type="text" id="mqtt-server" name="server">
+                    </div>
+                    <div class="form-group">
+                        <label for="mqtt-port">Port</label>
+                        <input type="number" id="mqtt-port" name="port" value="1883">
+                    </div>
+                    <div class="form-group">
+                        <label for="mqtt-user">Użytkownik</label>
+                        <input type="text" id="mqtt-user" name="user">
+                    </div>
+                    <div class="form-group">
+                        <label for="mqtt-password">Hasło</label>
+                        <input type="password" id="mqtt-password" name="password">
+                    </div>
+                    <button class="save-btn" onclick="saveMQTTConfig()">Zapisz</button>
+                </div>
+            </div>
+
+            <!-- Strona systemu -->
+            <div class="page" id="system-page" style="display:none">
+                <div class="system-info">
+                    <h2>Informacje systemowe</h2>
+                    <p>Wersja: 1.0.0</p>
+                    <p>Czas pracy: <span id="uptime">--:--:--</span></p>
+                    <p>Status MQTT: <span id="mqtt-status">Niepołączono</span></p>
+                </div>
+            </div>
+        </main>
+    </div>
+    <script src="js/app.js"></script>
+</body>
+</html>
