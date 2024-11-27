@@ -1,12 +1,4 @@
 // --- Biblioteki
-#define HTTP_GET     0b00000001
-#define HTTP_POST    0b00000010
-#define HTTP_DELETE  0b00000100
-#define HTTP_PUT     0b00001000
-#define HTTP_PATCH   0b00010000
-#define HTTP_HEAD    0b00100000
-#define HTTP_OPTIONS 0b01000000
-#define HTTP_ANY     0b01111111
 
 #include <ESP8266WiFi.h>          // Obsługa WiFi
 #include <ArduinoHA.h>            // Integracja z Home Assistant
@@ -37,11 +29,14 @@
 
 // --- Struktura konfiguracji pompy
 struct PumpConfig {
-    bool enabled;           [=phg we// Stan włączenia pompy
-    float calibration;      // Kalibracja (ml/s)
-    float dose;             // Dawka (ml)
-    uint8_t schedule_days;  // Dni tygodnia (bitmaska)
-    uint8_t schedule_hour;  // Godzina dozowania
+    bool enabled;
+    float dose;
+    uint8_t hour;
+    uint8_t minute;
+    float calibration;  // Dodaj to pole
+    unsigned long lastDosing;
+    bool isRunning;
+    unsigned long startTime;
 };
 
 // --- Struktura konfiguracji sieciowej
@@ -283,8 +278,7 @@ bool initializePumps() {
 
     // Ustaw wszystkie piny jako wyjścia i wyłącz pompy
     for (int i = 0; i < NUM_PUMPS; i++) {
-        pcf8574.pinMode(i, OUTPUT);
-        pcf8574.digitalWrite(i, LOW);
+        pcf8574.write(i, LOW);  // Nie potrzeba pinMode
     }
 
     pumpInitialized = true;
@@ -639,7 +633,8 @@ void initHomeAssistant() {
         // Przełącznik pompy
         sprintf(entityId, "pump_%d", i + 1);
         sprintf(name, "Pompa %d", i + 1);
-        pumpSwitches[i] = new HASwitch(entityId, false);
+pumpSwitches[i] = new HASwitch(entityId);
+pumpSwitches[i]->setInitialState(false);
         pumpSwitches[i]->setName(name);
         pumpSwitches[i]->onCommand(onPumpSwitch);
         pumpSwitches[i]->setIcon("mdi:water-pump");
@@ -861,7 +856,7 @@ void setupWebServer() {
         DynamicJsonDocument doc(128);
         
         doc["uptime"] = millis() / 1000; // czas w sekundach
-        doc["mqtt_connected"] = mqtt.connected();
+        doc["mqtt_connected"] = mqtt.isConnected();
         
         serializeJson(doc, *response);
         request->send(response);
@@ -896,7 +891,8 @@ void setup() {
         Serial.println("Błąd inicjalizacji pomp!");
     }
     
-    if (!rtc.begin()) {
+    Wire.begin();
+if (!rtc.begin(&Wire)) {
         Serial.println("Błąd inicjalizacji RTC!");
     }
     
