@@ -33,13 +33,12 @@
 // --- Struktura konfiguracji pompy
 struct PumpConfig {
     bool enabled;
-    uint8_t hour;           // Dodaj pole hour
-    bool days[7];          // Dodaj tablicę days
-    float mlPerMin;
-    float targetVolume;
+    float calibration;     // ml/min - prędkość pompy
+    float dose;           // ml - dawka do podania
+    uint8_t schedule_days; // bitowa mapa dni tygodnia
+    uint8_t schedule_hour; // godzina dozowania
     unsigned long lastDosing;
     bool isRunning;
-    unsigned long startTime;
 };
 
 // --- Struktura konfiguracji sieciowej
@@ -254,6 +253,75 @@ void loadConfiguration() {
     if (!loadNetworkConfig()) {
         Serial.println("Używam domyślnych ustawień sieciowych");
         // WiFiManager zajmie się konfiguracją sieci
+    }
+}
+
+String getUpdatePage() {
+    String page = F("<!DOCTYPE html><html><head><title>AquaDoser Update</title></head><body>");
+    page += F("<h1>AquaDoser - Aktualizacja</h1>");
+    page += F("<form method='POST' action='/update' enctype='multipart/form-data'>");
+    page += F("<input type='file' name='update'>");
+    page += F("<input type='submit' value='Aktualizuj'>");
+    page += F("</form>");
+    page += F("</body></html>");
+    return page;
+}
+
+void handleRoot() {
+    server.send(200, "text/html", getConfigPage());
+}
+
+void handleSave() {
+    if (server.hasArg("plain")) {
+        String json = server.arg("plain");
+        DynamicJsonDocument doc(1024);
+        DeserializationError error = deserializeJson(doc, json);
+        
+        if (!error) {
+            JsonArray pumpsArray = doc["pumps"].as<JsonArray>();
+            for (uint8_t i = 0; i < NUM_PUMPS && i < pumpsArray.size(); i++) {
+                pumps[i].enabled = pumpsArray[i]["enabled"] | false;
+                pumps[i].calibration = pumpsArray[i]["calibration"] | 1.0f;
+                pumps[i].dose = pumpsArray[i]["dose"] | 0.0f;
+                pumps[i].schedule_days = pumpsArray[i]["schedule_days"] | 0;
+                pumps[i].schedule_hour = pumpsArray[i]["schedule_hour"] | 0;
+            }
+            savePumpsConfig();
+            server.send(200, "text/plain", "OK");
+        } else {
+            server.send(400, "text/plain", "Invalid JSON");
+        }
+    } else {
+        server.send(400, "text/plain", "No data");
+    }
+}
+
+void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
+    switch(type) {
+        case WStype_DISCONNECTED:
+            Serial.printf("[%u] Rozłączono!\n", num);
+            break;
+        case WStype_CONNECTED:
+            {
+                IPAddress ip = webSocket.remoteIP(num);
+                Serial.printf("[%u] Połączono z %d.%d.%d.%d\n", num, ip[0], ip[1], ip[2], ip[3]);
+            }
+            break;
+        case WStype_TEXT:
+            {
+                String text = String((char*)payload);
+                DynamicJsonDocument doc(512);
+                DeserializationError error = deserializeJson(doc, text);
+                
+                if (!error) {
+                    // Tutaj możesz dodać obsługę komend WebSocket
+                    if (doc.containsKey("command")) {
+                        String command = doc["command"];
+                        // Obsługa komend...
+                    }
+                }
+            }
+            break;
     }
 }
 
