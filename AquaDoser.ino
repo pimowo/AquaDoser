@@ -162,6 +162,19 @@ struct Config {
     Config() : soundEnabled(true), checksum(0) {}
 };
 
+// Globalna instancja konfiguracji
+Config config;
+
+// Stan pomp
+struct PumpState {
+    bool isActive;
+    unsigned long lastDoseTime;
+    
+    PumpState() : isActive(false), lastDoseTime(0) {}
+};
+
+PumpState pumpStates[NUMBER_OF_PUMPS];
+
 // --- Globalne obiekty
 WiFiClient wifiClient;
 HADevice haDevice("AquaDoser");
@@ -200,6 +213,7 @@ void setupRTC();
 void setupLED();
 void handlePumps();
 void updateHomeAssistant();
+bool validateConfigValues();
 
 const int BUZZER_PIN = D2;
 
@@ -208,6 +222,9 @@ const char* CONFIG_DIR = "/config";
 const char* PUMPS_FILE = "/config/pumps.json";
 const char* NETWORK_FILE = "/config/network.json";
 const char* SYSTEM_FILE = "/config/system.json";
+
+Config config;                   // Główna konfiguracja
+SystemStatus systemStatus;       // Status systemu
 
 // Dodaj obsługę dźwięku jak w HydroSense
 void playShortWarningSound() {
@@ -243,14 +260,34 @@ bool validateConfigValues() {
     return true;
 }
 
+void handleWebSocketMessage(uint8_t num, uint8_t * payload, size_t length) {
+    String message = String((char*)payload);
+    StaticJsonDocument<200> doc;
+    DeserializationError error = deserializeJson(doc, message);
+    
+    if (error) {
+        Serial.println("Failed to parse WebSocket message");
+        return;
+    }
+    
+    // Obsługa różnych typów wiadomości
+    const char* type = doc["type"];
+    if (strcmp(type, "getPumpStatus") == 0) {
+        String status = getSystemStatusJSON();
+        webSocket.sendTXT(num, status);
+    }
+    // Dodaj więcej obsługi wiadomości według potrzeb
+}
+
+// Pojedyncza definicja webSocketEvent
 void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
     switch(type) {
         case WStype_DISCONNECTED:
-            DEBUG_SERIAL("WebSocket client " + String(num) + " disconnected");
+            Serial.printf("[WebSocket] Client #%u Disconnected\n", num);
             break;
         case WStype_CONNECTED:
             {
-                // Wyślij aktualny stan po połączeniu
+                Serial.printf("[WebSocket] Client #%u Connected\n", num);
                 String json = getSystemStatusJSON();
                 webSocket.sendTXT(num, json);
             }
@@ -263,8 +300,8 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length
 
 String getSystemStatusJSON() {
     StaticJsonDocument<512> doc;
-    doc["uptime"] = status.uptime;
-    doc["mqtt"] = status.mqtt_connected;
+    doc["uptime"] = systemStatus.uptime;
+    doc["mqtt"] = systemStatus.mqtt_connected;
     
     JsonArray pumps = doc.createNestedArray("pumps");
     for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
@@ -280,9 +317,9 @@ String getSystemStatusJSON() {
 }
 
 void updateSystemStatus() {
-    status.uptime = millis() / 1000;
-    status.wifi_connected = WiFi.status() == WL_CONNECTED;
-    // ... więcej aktualizacji statusu
+    systemStatus.uptime = millis() / 1000;
+    systemStatus.wifi_connected = WiFi.status() == WL_CONNECTED;
+    systemStatus.mqtt_connected = mqtt.isConnected();
 }
 
 void handleMillisOverflow() {
