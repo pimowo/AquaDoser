@@ -106,14 +106,26 @@ unsigned long restartTime = 0;
 #define COLOR_SERVICE 0xFFFF00  // Żółty (tryb serwisowy)
 
 // --- Struktura konfiguracji pompy
+// Struktura konfiguracji pompy
 struct PumpConfig {
-    bool enabled;
-    uint8_t hour;          // Godzina dozowania
+    bool enabled;           // Czy pompa jest włączona
+    uint8_t schedule_hour;  // Godzina dozowania
     uint8_t minute;        // Minuta dozowania
-    float dose;           // Ilość do dozowania
+    uint8_t schedule_days; // Dni tygodnia (bitmapa: 0b0000000 dla każdego dnia)
+    float dose;           // Ilość do dozowania (ml)
     float calibration;    // Kalibracja pompy (ml/min)
-    
-    PumpConfig() : enabled(false), hour(12), minute(0), dose(0.0), calibration(1.0) {}
+    unsigned long lastDosing; // Czas ostatniego dozowania (unix timestamp)
+    bool isRunning;       // Czy pompa aktualnie pracuje
+
+    PumpConfig() : 
+        enabled(false), 
+        schedule_hour(12), 
+        minute(0), 
+        schedule_days(0), 
+        dose(0.0), 
+        calibration(1.0),
+        lastDosing(0),
+        isRunning(false) {}
 };
 
 // --- Struktura konfiguracji sieciowej
