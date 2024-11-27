@@ -1,18 +1,27 @@
 // --- Biblioteki
 
 #define WEBSERVER_H
+#define HTTP_ANY 0
+#define HTTP_GET 1
+#define HTTP_POST 2
+#define HTTP_DELETE 4
+#define HTTP_PUT 8
+#define HTTP_PATCH 16
+#define HTTP_HEAD 32
+#define HTTP_OPTIONS 64
 
 #include <Arduino.h>
-#include <Wire.h>
 #include <ESP8266WiFi.h>
 #include <ESPAsyncTCP.h>
 #include <ESPAsyncWebServer.h>
-#include <WiFiManager.h>          // Zarządzanie WiFi
+#include <WiFiManager.h>
+#include <Wire.h>
+#include <RTClib.h>
+#include <PCF8574.h>
 #include <ArduinoHA.h>            // Integracja z Home Assistant
 #include <ArduinoJson.h>          // Obsługa JSON
 #include <LittleFS.h>             // System plików
 #include <DS3231.h>               // Zegar RTC
-#include <PCF8574.h>      // Ekspander I/O
 #include <Adafruit_NeoPixel.h>    // Diody WS2812
 #include <ESPAsyncTCP.h>
 #include <NTPClient.h>
@@ -892,15 +901,18 @@ void setup() {
     
     // Inicjalizacja sprzętu
     Wire.begin();
-    if (!rtc.isrunning()) {
-        Serial.println("RTC is NOT running!");
-        // ustaw czas jeśli potrzeba
+    if (!rtc.begin()) {
+        Serial.println("RTC nie działa!");
+    } else {
+        if (rtc.lostPower()) {
+            Serial.println("RTC stracił zasilanie, ustawiam czas!");
+            rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+        }
     }
     
-    if (pcf8574.begin()) {
-        Serial.println("PCF8574 initialized");
-    } else {
-        Serial.println("PCF8574 init failed");
+    Wire.begin();
+    if (!pcf8574.begin()) {
+        Serial.println("PCF8574 nie działa!");
     }
     
     initializeLEDs();
