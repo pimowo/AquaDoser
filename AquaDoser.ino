@@ -35,8 +35,8 @@ struct PumpConfig {
     bool enabled;
     float calibration;     // ml/min - prędkość pompy
     float dose;           // ml - dawka do podania
-    uint8_t schedule_days; // bitowa mapa dni tygodnia
-    uint8_t schedule_hour; // godzina dozowania
+    uint8_t hour;        // godzina dozowania
+    bool days[7];        // tablica dni tygodnia [pon,wt,śr,czw,pt,sob,ndz]
     unsigned long lastDosing;
     bool isRunning;
 };
@@ -283,8 +283,12 @@ void handleSave() {
                 pumps[i].enabled = pumpsArray[i]["enabled"] | false;
                 pumps[i].calibration = pumpsArray[i]["calibration"] | 1.0f;
                 pumps[i].dose = pumpsArray[i]["dose"] | 0.0f;
-                pumps[i].schedule_days = pumpsArray[i]["schedule_days"] | 0;
-                pumps[i].schedule_hour = pumpsArray[i]["schedule_hour"] | 0;
+                pumps[i].hour = pumpsArray[i]["hour"] | 0;
+                
+                JsonArray daysArray = pumpsArray[i]["days"].as<JsonArray>();
+                for (uint8_t j = 0; j < 7 && j < daysArray.size(); j++) {
+                    pumps[i].days[j] = daysArray[j] | false;
+                }
             }
             savePumpsConfig();
             server.send(200, "text/plain", "OK");
@@ -857,6 +861,103 @@ void setupWebServer() {
     server.begin();
     webSocket.begin();
     webSocket.onEvent(webSocketEvent);
+}
+
+String getConfigPage() {
+    String page = F("<!DOCTYPE html><html><head>");
+    page += F("<title>AquaDoser Configuration</title>");
+    page += F("<style>");
+    page += F("body { font-family: Arial, sans-serif; margin: 20px; }");
+    page += F(".pump-config { border: 1px solid #ccc; padding: 10px; margin: 10px 0; }");
+    page += F("</style>");
+    page += F("</head><body>");
+    page += F("<h1>AquaDoser Configuration</h1>");
+
+    // Generuj sekcje dla każdej pompy
+    for (uint8_t i = 0; i < NUM_PUMPS; i++) {
+        page += F("<div class='pump-config'>");
+        page += "<h2>Pump " + String(i + 1) + "</h2>";
+        
+        // Włącznik pompy
+        page += F("<label><input type='checkbox' class='pump-enabled' data-pump='");
+        page += String(i);
+        page += F("' ");
+        if (pumps[i].enabled) page += F("checked");
+        page += F("> Enable</label><br>");
+
+        // Kalibracja
+        page += F("<label>Calibration (ml/min): <input type='number' class='pump-calibration' data-pump='");
+        page += String(i);
+        page += F("' value='");
+        page += String(pumps[i].calibration);
+        page += F("' step='0.1'></label><br>");
+
+        // Dawka
+        page += F("<label>Dose (ml): <input type='number' class='pump-dose' data-pump='");
+        page += String(i);
+        page += F("' value='");
+        page += String(pumps[i].dose);
+        page += F("' step='0.1'></label><br>");
+
+        // Godzina dozowania
+        page += F("<label>Hour: <input type='number' class='pump-hour' data-pump='");
+        page += String(i);
+        page += F("' value='");
+        page += String(pumps[i].hour);
+        page += F("' min='0' max='23'></label><br>");
+
+        // Dni tygodnia
+        page += F("<div>Days:<br>");
+        const char* days[] = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
+        for (int j = 0; j < 7; j++) {
+            page += F("<label><input type='checkbox' class='pump-day' data-pump='");
+            page += String(i);
+            page += F("' data-day='");
+            page += String(j);
+            page += F("' ");
+            if (pumps[i].days[j]) page += F("checked");
+            page += F("> ");
+            page += days[j];
+            page += F("</label> ");
+        }
+        page += F("</div>");
+        page += F("</div>");
+    }
+
+    // Przyciski
+    page += F("<button onclick='saveConfig()'>Save</button>");
+    page += F("<button onclick='location.href=\"/update\"'>Update Firmware</button>");
+
+    // JavaScript
+    page += F("<script>");
+    page += F("function saveConfig() {");
+    page += F("    const config = {pumps: []};");
+    page += F("    for(let i = 0; i < " + String(NUM_PUMPS) + "; i++) {");
+    page += F("        const pump = {");
+    page += F("            enabled: document.querySelector(`.pump-enabled[data-pump='${i}']`).checked,");
+    page += F("            calibration: parseFloat(document.querySelector(`.pump-calibration[data-pump='${i}']`).value),");
+    page += F("            dose: parseFloat(document.querySelector(`.pump-dose[data-pump='${i}']`).value),");
+    page += F("            hour: parseInt(document.querySelector(`.pump-hour[data-pump='${i}']`).value),");
+    page += F("            days: Array.from(document.querySelectorAll(`.pump-day[data-pump='${i}']`))");
+    page += F("                       .map(cb => cb.checked)");
+    page += F("        };");
+    page += F("        config.pumps.push(pump);");
+    page += F("    }");
+    page += F("    fetch('/save', {");
+    page += F("        method: 'POST',");
+    page += F("        headers: {'Content-Type': 'application/json'},");
+    page += F("        body: JSON.stringify(config)");
+    page += F("    })");
+    page += F("    .then(response => {");
+    page += F("        if(response.ok) alert('Configuration saved');");
+    page += F("        else alert('Error saving configuration');");
+    page += F("    })");
+    page += F("    .catch(error => alert('Error: ' + error));");
+    page += F("}");
+    page += F("</script>");
+    page += F("</body></html>");
+    
+    return page;
 }
 
 // --- Setup
