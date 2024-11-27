@@ -594,35 +594,6 @@ void handleSave() {
     }
 }
 
-void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
-    switch(type) {
-        case WStype_DISCONNECTED:
-            Serial.printf("[%u] Rozłączono!\n", num);
-            break;
-        case WStype_CONNECTED:
-            {
-                IPAddress ip = webSocket.remoteIP(num);
-                Serial.printf("[%u] Połączono z %d.%d.%d.%d\n", num, ip[0], ip[1], ip[2], ip[3]);
-            }
-            break;
-        case WStype_TEXT:
-            {
-                String text = String((char*)payload);
-                DynamicJsonDocument doc(512);
-                DeserializationError error = deserializeJson(doc, text);
-                
-                if (!error) {
-                    // Tutaj możesz dodać obsługę komend WebSocket
-                    if (doc.containsKey("command")) {
-                        String command = doc["command"];
-                        // Obsługa komend...
-                    }
-                }
-            }
-            break;
-    }
-}
-
 // --- Ogólna funkcja zapisywania konfiguracji
 void saveConfiguration() {
     if (!savePumpsConfig()) {
@@ -1024,24 +995,132 @@ void initHomeAssistant() {
 
 // --- Aktualizacja stanów w Home Assistant
 void updateHomeAssistant() {
-    unsigned long currentMillis = millis();
+    DateTime now = rtc.now();
+    char currentTimeStr[32];
     
-    // Aktualizuj tylko co HA_UPDATE_INTERVAL
-    if (currentMillis - lastHaUpdate < HA_UPDATE_INTERVAL) {
-        return;
-    }
-    lastHaUpdate = currentMillis;
-    
-    // Aktualizacja trybu serwisowego
-    serviceModeSwitch->setState(serviceMode);
-    
-    // Aktualizacja stanów pomp
     for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-        String state = pumpStates[i].isActive ? "Active" : "Inactive";
         if (pumpStates[i].sensor != nullptr) {
-            pumpStates[i].sensor->setValue(state);
+            char statusBuffer[128];
+            
+            if (pumpStates[i].isActive) {
+                // Format: "Active (Started: 2024-11-27 20:43)"
+                snprintf(statusBuffer, sizeof(statusBuffer), 
+                    "Active (Started: %04d-%02d-%02d %02d:%02d)", 
+                    now.year(), now.month(), now.day(), 
+                    now.hour(), now.minute());
+            } else {
+                if (pumpStates[i].lastDoseTime > 0) {
+                    // Konwertujemy unix timestamp na czytelną datę
+                    time_t rawTime = pumpStates[i].lastDoseTime;
+                    struct tm* timeInfo = localtime(&rawTime);
+                    
+                    // Format: "Inactive (Last: 2024-11-27 20:43)"
+                    snprintf(statusBuffer, sizeof(statusBuffer), 
+                        "Inactive (Last: %04d-%02d-%02d %02d:%02d)",
+                        timeInfo->tm_year + 1900, timeInfo->tm_mon + 1, timeInfo->tm_mday,
+                        timeInfo->tm_hour, timeInfo->tm_min);
+                } else {
+                    strcpy(statusBuffer, "Inactive (No previous runs)");
+                }
+            }
+            
+            // Dodaj informację o następnym zaplanowanym dozowaniu
+            if (!pumpStates[i].isActive && config.pumps[i].enabled) {
+                char nextRunBuffer[64];
+                DateTime nextRun = calculateNextDosing(i);
+                snprintf(nextRunBuffer, sizeof(nextRunBuffer), 
+                    " - Next: %02d:%02d",
+                    nextRun.hour(), nextRun.minute());
+                strcat(statusBuffer, nextRunBuffer);
+            }
+            
+            pumpStates[i].sensor->setValue(statusBuffer);
+
+            // Debug info
+            Serial.print("Pump ");
+            Serial.print(i + 1);
+            Serial.print(": ");
+            Serial.println(statusBuffer);
         }
     }
+}
+
+// Pomocnicza funkcja do obliczania następnego dozowania
+DateTime calculateNextDosing(uint8_t pumpIndex) {
+    DateTime now = rtc.now();
+    uint8_t currentHour = now.hour();
+    uint8_t currentMinute = now.minute();
+    
+    // Pobierz zaplanowaną godzinę dozowania z konfiguracji
+    uint8_t schedHour = config.pumps[pumpIndex].hour;
+    uint8_t schedMinute = config.pumps[pumpIndex].minute;
+    
+    DateTime nextRun = now;
+    
+    if (currentHour > schedHour || 
+        (currentHour == schedHour && currentMinute >= schedMinute)) {
+        // Jeśli czas dozowania na dziś już minął, zaplanuj na jutro
+        nextRun = now + TimeSpan(1, 0, 0, 0);
+    }
+    
+    return DateTime(nextRun.year(), nextRun.month(), nextRun.day(), 
+                   schedHour, schedMinute, 0);
+}
+
+void handleConfigSave() {
+    String page = "";
+    bool needRestart = false;
+
+    if (server.hasArg("mqtt_broker")) {
+        // Zapisz dane MQTT
+        String mqtt_broker = server.arg("mqtt_broker");
+        String mqtt_port = server.arg("mqtt_port");
+        String mqtt_user = server.arg("mqtt_user");
+        String mqtt_password = server.arg("mqtt_password");
+        
+        // Sprawdź, czy dane się zmieniły
+        if (mqtt_broker != config.mqtt.broker || 
+            mqtt_port.toInt() != config.mqtt.port ||
+            mqtt_user != config.mqtt.username ||
+            mqtt_password != config.mqtt.password) {
+                
+            // Kopiuj dane do konfiguracji
+            strlcpy(config.mqtt.broker, mqtt_broker.c_str(), sizeof(config.mqtt.broker));
+            config.mqtt.port = mqtt_port.toInt();
+            strlcpy(config.mqtt.username, mqtt_user.c_str(), sizeof(config.mqtt.username));
+            strlcpy(config.mqtt.password, mqtt_password.c_str(), sizeof(config.mqtt.password));
+            
+            needRestart = true;
+        }
+        
+        // Zapisz konfigurację do EEPROM
+        saveConfiguration();
+        
+        page = "Configuration saved.";
+        if (needRestart) {
+            page += " Device will restart in 3 seconds...";
+            shouldRestart = true;
+            restartTime = millis() + 3000;
+        }
+    }
+    
+    server.send(200, "text/html", page);
+}
+
+bool validateMQTTConfig() {
+    // Sprawdź czy broker nie jest pusty
+    if (strlen(config.mqtt.broker) == 0) {
+        Serial.println("Brak konfiguracji MQTT - broker jest pusty");
+        return false;
+    }
+    
+    // Sprawdź czy port jest poprawny
+    if (config.mqtt.port <= 0 || config.mqtt.port > 65535) {
+        Serial.println("Brak konfiguracji MQTT - niepoprawny port");
+        return false;
+    }
+    
+    return true;
 }
 
 // --- Konfiguracja MQTT dla Home Assistant
@@ -1129,6 +1208,83 @@ void setupWebServer() {
     server.begin();
     webSocket.begin();
     webSocket.onEvent(webSocketEvent);
+}
+
+String getConfigPage() {
+    String page = F("<!DOCTYPE html><html><head>");
+    page += F("<meta charset='UTF-8'>");
+    page += F("<meta name='viewport' content='width=device-width, initial-scale=1'>");
+    page += F("<title>AquaDoser Configuration</title>");
+    page += getStyles();
+    page += F("</head><body>");
+    page += F("<div class='container'>");
+    page += F("<h1>MQTT Configuration</h1>");
+    page += F("<form method='POST' action='/config'>");
+    
+    // MQTT configuration
+    page += F("<div class='card'>");
+    page += F("<h2>MQTT Settings</h2>");
+    page += F("<div class='form-group'>");
+    page += F("<label>Broker:</label>");
+    page += F("<input type='text' name='mqtt_broker' value='");
+    page += config.mqtt.broker;
+    page += F("'></div>");
+    
+    page += F("<div class='form-group'>");
+    page += F("<label>Port:</label>");
+    page += F("<input type='number' name='mqtt_port' value='");
+    page += String(config.mqtt.port);
+    page += F("'></div>");
+    
+    page += F("<div class='form-group'>");
+    page += F("<label>Username:</label>");
+    page += F("<input type='text' name='mqtt_user' value='");
+    page += config.mqtt.username;
+    page += F("'></div>");
+    
+    page += F("<div class='form-group'>");
+    page += F("<label>Password:</label>");
+    page += F("<input type='password' name='mqtt_password' value='");
+    page += config.mqtt.password;
+    page += F("'></div>");
+    page += F("</div>");
+    
+    page += F("<button type='submit' class='button'>Save Configuration</button>");
+    page += F("</form>");
+    page += F("</div></body></html>");
+    
+    return page;
+}
+
+void checkMQTTConfig() {
+    if (validateMQTTConfig()) {
+        Serial.println("Konfiguracja MQTT znaleziona:");
+        Serial.print("Broker: ");
+        Serial.println(config.mqtt.broker);
+        Serial.print("Port: ");
+        Serial.println(config.mqtt.port);
+        Serial.print("Username: ");
+        Serial.println(config.mqtt.username);
+    } else {
+        Serial.println("Brak poprawnej konfiguracji MQTT");
+    }
+}
+
+String getStyles() {
+    return F(
+        "<style>"
+        "body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f0f2f5; }"
+        ".container { max-width: 800px; margin: 0 auto; }"
+        ".card { background: white; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }"
+        "h1 { color: #1a73e8; }"
+        "h2 { color: #5f6368; margin-top: 0; }"
+        ".form-group { margin-bottom: 15px; }"
+        "label { display: block; margin-bottom: 5px; color: #5f6368; }"
+        "input { width: 100%; padding: 8px; border: 1px solid #dadce0; border-radius: 4px; box-sizing: border-box; }"
+        ".button { background: #1a73e8; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; }"
+        ".button:hover { background: #1557b0; }"
+        "</style>"
+    );
 }
 
 String getConfigPage() {
@@ -1494,8 +1650,10 @@ void setup() {
     if (!initFileSystem()) {
         Serial.println("Błąd inicjalizacji systemu plików!");
     }
-    loadConfiguration();
-    
+
+    loadConfiguration();  // Wczytaj konfigurację z EEPROM
+    checkMQTTConfig();   // Sprawdź i wyświetl status konfiguracji MQTT
+
     // Inicjalizacja systemu plików
     if (!LittleFS.begin()) {
         Serial.println("Błąd inicjalizacji LittleFS!");
