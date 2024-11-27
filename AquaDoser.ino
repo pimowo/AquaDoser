@@ -1,692 +1,846 @@
 // --- Biblioteki
-#include <Wire.h>
-#include <EEPROM.h>
-#include <ESP8266WiFi.h>
-#include <ArduinoHA.h>
-#include <DS3231.h>
-#include <PCF8574.h>
-#include <Adafruit_NeoPixel.h>
-#include <WiFiManager.h>
-#include <NTPClient.h>
-#include <WiFiUdp.h>
+#include <ESP8266WiFi.h>          // Obsługa WiFi
+#include <ArduinoHA.h>            // Integracja z Home Assistant
+#include <ArduinoJson.h>          // Obsługa JSON
+#include <LittleFS.h>             // System plików
+#include <Wire.h>                 // Komunikacja I2C
+#include <DS3231.h>              // Zegar RTC
+#include <PCF8574.h>             // Ekspander I/O
+#include <Adafruit_NeoPixel.h>   // Diody WS2812
+#include <WiFiManager.h>          // Zarządzanie WiFi
 
-#include <TimeLib.h>      // Do obsługi czasu
-#include <functional>     // Dla std::bind
-
-WiFiUDP ntpUDP;
-NTPClient timeClient(ntpUDP, "pool.ntp.org");
-
-// Definicje stałych
-#define MQTT_SERVER "twój_serwer_mqtt"
-#define MQTT_PORT 1883
-#define MQTT_USER "użytkownik"
-#define MQTT_PASSWORD "hasło"
-
-// Tablica nazw miesięcy do parsowania daty
-const char *nazwyMiesiecy[12] = {
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
-};
-
-// --- EEPROM
-#define EEPROM_OFFSET_CONFIG 0 // Offset 0 dla konfiguracji MQTT
-#define EEPROM_OFFSET_CALIBRATION 80 // Offset 80 dla kalibracji pomp
-#define EEPROM_OFFSET_DOSE_AMOUNT 144 // Offset 144 dla ilości dawki
-#define EEPROM_OFFSET_ACTIVE_DAYS 208 // Offset 208 dla dni aktywności pomp
-#define EEPROM_OFFSET_ACTIVE_HOURS 272 // Offset 272 dla godzin aktywności pomp
-
-// --- Pompy
-#define NUM_PUMPS 8
-#define DEFAULT_CALIBRATION 0.5 // Domyślna kalibracja pomp (ml/s)
-
-// --- LED
-#define LED_PIN D1 // Pin danych dla WS2812
-
-// --- Przycisk
-#define BUTTON_PIN D2 // Pin przycisku serwisowego
-#define DEBOUNCE_TIME 50 // Czas debounce w ms
+// --- Definicje pinów i stałych
+#define NUM_PUMPS 8              // Liczba pomp
+#define LED_PIN D1               // Pin danych dla WS2812
+#define BUTTON_PIN D2            // Pin przycisku serwisowego
+#define DEBOUNCE_TIME 50         // Czas debounce w ms
 
 // --- Kolory LED
-#define COLOR_OFF 0xFF0000 // Czerwony (pompa wyłączona)
-#define COLOR_ON 0x00FF00  // Zielony (pompa włączona)
-#define COLOR_WORKING 0x0000FF // Niebieski (pompa pracuje)
+#define COLOR_OFF    0xFF0000    // Czerwony (pompa wyłączona)
+#define COLOR_ON     0x00FF00    // Zielony (pompa włączona)
+#define COLOR_WORKING 0x0000FF   // Niebieski (pompa pracuje)
+#define COLOR_SERVICE 0xFFFF00   // Żółty (tryb serwisowy)
 
-// --- Częstotliwość synchronizacji RTC
-#define RTC_SYNC_INTERVAL 86400000 // 24 godziny (w ms)
+// --- Struktura konfiguracji pompy
+struct PumpConfig {
+    bool enabled;                // Stan włączenia pompy
+    float calibration;          // Kalibracja (ml/s)
+    float dose;                 // Dawka (ml)
+    uint8_t schedule_days;      // Dni tygodnia (bitmaska)
+    uint8_t schedule_hour;      // Godzina dozowania
+};
 
-// --- Obiekty systemowe
-WiFiClient wifiClient;               // Obiekt do obsługi połączenia Wi-Fi
-HADevice haDevice("AquaDoser");      // Obiekt reprezentujący urządzenie w Home Assistant
-HAMqtt mqtt(wifiClient, haDevice);   // Obiekt do komunikacji MQTT
-DS3231 rtc;                          // Obiekt RTC (Real Time Clock) DS3231
-PCF8574 pcf8574(0x20);               // Obiekt do obsługi portu I2C PCF8574
-Adafruit_NeoPixel strip(NUM_PUMPS, LED_PIN, NEO_GRB + NEO_KHZ800); // Obiekt do obsługi taśmy LED
+// --- Struktura konfiguracji sieciowej
+struct NetworkConfig {
+    char wifi_ssid[32];
+    char wifi_password[64];
+    char mqtt_server[40];
+    char mqtt_user[32];
+    char mqtt_password[64];
+    uint16_t mqtt_port;
+};
 
-// --- Globalne zmienne
-float calibrationData[NUM_PUMPS];   // Tablica danych kalibracyjnych dla pomp
-float doseAmount[NUM_PUMPS];         // Tablica ilości podawanych nawozów dla pomp
-unsigned long doseStartTime[NUM_PUMPS]; // Tablica czasów rozpoczęcia dozowania dla pomp
-int dosingDuration[NUM_PUMPS];       // Tablica czasu dozowania dla każdej pompy
-bool pumpEnabled[NUM_PUMPS] = {true}; // Tablica stanu włączenia dla pomp (domyślnie włączone)
-bool pumpRunning[NUM_PUMPS] = {false}; // Tablica stanu pracy dla pomp (domyślnie zatrzymane)
-bool serviceMode = false;             // Flaga trybu serwisowego
-unsigned long lastRTCUpdate = 0;     // Ostatni czas aktualizacji RTC
-unsigned long lastAnimationUpdate = 0; // Ostatni czas aktualizacji animacji LED
-uint8_t currentAnimationStep = 0;     // Bieżący krok animacji LED
-uint8_t activeDays[NUM_PUMPS];       // Tablica aktywnych dni tygodnia dla pomp
-uint8_t activeHours[NUM_PUMPS];      // Tablica aktywnych godzin dla pomp
+// --- Globalne obiekty
+WiFiClient wifiClient;
+HADevice haDevice("AquaDoser");
+HAMqtt mqtt(wifiClient, haDevice);
+DS3231 rtc;
+PCF8574 pcf8574(0x20);
+Adafruit_NeoPixel strip(NUM_PUMPS, LED_PIN, NEO_GRB + NEO_KHZ800);
 
-// Deklaracje wskaźników do funkcji obsługi
-typedef void (*PumpSwitchHandler)(bool state, HASwitch* sender);
-typedef void (*CalibrationHandler)(HANumeric value, HANumber* sender);
+// --- Globalne zmienne stanu
+bool serviceMode = false;
+PumpConfig pumps[NUM_PUMPS];
+NetworkConfig networkConfig;
+bool pumpRunning[NUM_PUMPS] = {false};
+unsigned long doseStartTime[NUM_PUMPS] = {0};
+unsigned long lastRtcSync = 0;
 
-// Tablice funkcji obsługi
-PumpSwitchHandler pumpHandlers[NUM_PUMPS];
-CalibrationHandler calibrationHandlers[NUM_PUMPS];
+// --- Deklaracje encji Home Assistant
+HASwitch* pumpSwitches[NUM_PUMPS];
+HASensor* pumpStates[NUM_PUMPS];
+HANumber* pumpCalibrations[NUM_PUMPS];
+HASwitch* serviceModeSwitch;
 
-// --- Definicje encji Home Assistant dla każdej pompy i trybu serwisowego
-HASwitch* pumpSwitch[NUM_PUMPS];      // Przełącznik dla włączania/wyłączania harmonogramu pompy
-HASensor* pumpWorkingSensor[NUM_PUMPS]; // Sensor dla stanu pracy pompy (on/off)
-HASensor* tankLevelSensor[NUM_PUMPS];  // Sensor dla poziomu wirtualnego zbiornika
-HANumber* calibrationNumber[NUM_PUMPS]; // Liczba dla kalibracji pompy
-HASwitch serviceModeSwitch("service_mode"); // Przełącznik dla trybu serwisowego
-HASensor rtcAlarmSensor("rtc_alarm"); // Definicja sensora alarmu RTC
+// Deklaracje funkcji - będą zaimplementowane w kolejnych częściach
+void loadConfiguration();
+void saveConfiguration();
+void setupWiFi();
+void setupMQTT();
+void setupRTC();
+void setupLED();
+void handlePumps();
+void updateHomeAssistant();
 
-// --- Ustawienia konfiguracyjne dla połączenia MQTT
-struct Config {
-  char mqttServer[40]; // Adres serwera MQTT (maksymalnie 39 znaków + null terminator)
-  char mqttUser[20]; // Nazwa użytkownika MQTT (maksymalnie 19 znaków + null terminator)
-  char mqttPassword[20]; // Hasło użytkownika MQTT (maksymalnie 19 znaków + null terminator)
-} 
-config; // Inicjalizacja zmiennej konfiguracyjnej
+// --- Stałe dla systemu plików
+const char* CONFIG_DIR = "/config";
+const char* PUMPS_FILE = "/config/pumps.json";
+const char* NETWORK_FILE = "/config/network.json";
+const char* SYSTEM_FILE = "/config/system.json";
 
-// --- Konfiguracja menedżera Wi-Fi
-void setupWiFiManager() {
-  WiFiManager wifiManager; // Inicjalizacja obiektu WiFiManager
-
-  // Ustawienia punktu dostępowego, jeśli nie połączono się z siecią Wi-Fi
-  wifiManager.setAPCallback([](WiFiManager *wm) {
-    Serial.println("Nie można połączyć z Wi-Fi. Tryb konfiguracji AP."); // Komunikat informujący o trybie AP
-  });
-
-  // Pola dodatkowe dla konfiguracji MQTT
-  WiFiManagerParameter custom_mqtt_server("server", "MQTT Server", config.mqttServer, 40); // Pole dla serwera MQTT
-  WiFiManagerParameter custom_mqtt_user("user", "MQTT User", config.mqttUser, 20); // Pole dla użytkownika MQTT
-  WiFiManagerParameter custom_mqtt_password("password", "MQTT Password", config.mqttPassword, 20); // Pole dla hasła MQTT
-
-  // Dodanie pól do WiFiManager
-  wifiManager.addParameter(&custom_mqtt_server); // Dodanie pola serwera
-  wifiManager.addParameter(&custom_mqtt_user); // Dodanie pola użytkownika
-  wifiManager.addParameter(&custom_mqtt_password); // Dodanie pola hasła
-
-  // Uruchom konfigurator i dodaj ESP.wdtFeed() w pętli oczekiwania
-  if (!wifiManager.autoConnect("AquaDoserAP")) { // Próba połączenia z Wi-Fi
-    Serial.println("Nie udało się połączyć z Wi-Fi. Resetuję..."); // Komunikat o błędzie
-    ESP.restart(); // Restart urządzenia w przypadku niepowodzenia
-  }
-
-  // Jeśli połączono, zapisz ustawienia MQTT z formularza
-  strncpy(config.mqttServer, custom_mqtt_server.getValue(), sizeof(config.mqttServer)); // Zapis serwera MQTT
-  strncpy(config.mqttUser, custom_mqtt_user.getValue(), sizeof(config.mqttUser)); // Zapis użytkownika MQTT
-  strncpy(config.mqttPassword, custom_mqtt_password.getValue(), sizeof(config.mqttPassword)); // Zapis hasła MQTT
-  saveConfig(); // Zapisanie konfiguracji do EEPROM
-
-  Serial.println("Połączono z Wi-Fi"); // Komunikat o udanym połączeniu
-  Serial.print("MQTT Server: "); // Wyświetlenie adresu serwera MQTT
-  Serial.println(config.mqttServer);
-  Serial.print("MQTT User: "); // Wyświetlenie nazwy użytkownika MQTT
-  Serial.println(config.mqttUser);
-
-  ESP.wdtFeed(); // Odśwież watchdog po zakończeniu konfiguracji
-}
-
-// Funkcje obsługi przełączników pomp
-void handlePumpSwitch0(bool state, HASwitch* sender) {
-    pumpEnabled[0] = state;
-    saveSettings();
-    updateHAStates();
-}
-
-void handlePumpSwitch1(bool state, HASwitch* sender) {
-    pumpEnabled[1] = state;
-    saveSettings();
-    updateHAStates();
-}
-
-// Funkcje obsługi kalibracji
-void handleCalibration0(HANumeric value, HANumber* sender) {
-    calibrationData[0] = value.toInt8();
-    saveSettings();
-    updateHAStates();
-}
-
-void handleCalibration1(HANumeric value, HANumber* sender) {
-    calibrationData[1] = value.toInt8();
-    saveSettings();
-    updateHAStates();
-}
-
-// Tylko jedna definicja funkcji handleActiveDaysCommand1
-void handleActiveDaysCommand1(HANumeric value, HANumber* sender) {
-    activeDays[1] = value.toInt8();
-    saveSettings();
-    updateHAStates();
-}
-
-// --- Konfiguracja połączenia z brokerem MQTT oraz definiuje encje dla sensorów i przełączników
-void setupMQTT() {
-  char uniqueId[16];
-  // Próbujemy połączyć się z brokerem MQTT
-  if (!mqtt.begin(config.mqttServer, config.mqttUser, config.mqttPassword)) {
-    Serial.println("Blad! Nie mozna polaczyc z brokerem MQTT");
-  }
-  
-  mqtt.begin(config.mqttServer, config.mqttUser, config.mqttPassword); // Inicjalizacja MQTT z danymi konfiguracyjnymi
-
-  // Definicja sensora alarmu RTC w Home Assistant
-  rtcAlarmSensor.setName("Alarm RTC"); // Ustawienie nazwy sensora
-  rtcAlarmSensor.setIcon("mdi:alarm"); // Ustawienie ikony sensora
-  
-  // Konfiguracja encji dla trybu serwisowego
-  serviceModeSwitch.setName("Serwis"); // Ustawienie nazwy przełącznika trybu serwisowego
-  serviceModeSwitch.setIcon("mdi:wrench"); // Ustawienie ikony przełącznika
-  serviceModeSwitch.onCommand([](bool state, HASwitch* sender) { // Ustawienie akcji na zmianę stanu przełącznika
-    serviceMode = state; // Zmiana stanu trybu serwisowego
-    toggleServiceMode(); // Przełączenie trybu serwisowego
-  });
-
-  // Konfiguracja encji dla każdej pompy
-  for (int i = 0; i < NUM_PUMPS; i++) {
-    setupPumpEntities(i); // Wywołanie funkcji konfigurującej encje dla danej pompy
-  }
-
-  // Dodanie konfiguracji dni i godzin pracy dla każdej pompy
-  for (int i = 0; i < NUM_PUMPS; i++) {
-    snprintf(uniqueId, sizeof(uniqueId), "active_days_%d", i);
-    HANumber* days = new HANumber(uniqueId, HANumber::PrecisionP0);
-    
-    switch (i) {
-      case 0: days->onCommand(handleActiveDaysCommand0); break;
-      case 1: days->onCommand(handleActiveDaysCommand1); break;
-      case 2: days->onCommand(handleActiveDaysCommand2); break;
-      case 3: days->onCommand(handleActiveDaysCommand3); break;
-      case 4: days->onCommand(handleActiveDaysCommand4); break;
-      case 5: days->onCommand(handleActiveDaysCommand5); break;
-      case 6: days->onCommand(handleActiveDaysCommand6); break;
-      case 7: days->onCommand(handleActiveDaysCommand7); break;
-    }
-  }
-}
-
-// --- Konfiguracja encji dla poszczególnych pomp w systemie Home Assistant
-
-
-// Funkcja konfiguracji elementów pompy
-void setupPumpEntities(int pumpIndex) {
-    char uniqueId[32];
-
-    // Konfiguracja przełącznika pompy
-    snprintf(uniqueId, sizeof(uniqueId), "pump_switch_%d", pumpIndex);
-    pumpSwitch[pumpIndex] = new HASwitch(uniqueId);
-    pumpSwitch[pumpIndex]->setName(("Pompa " + String(pumpIndex + 1) + " Harmonogram").c_str());
-    pumpSwitch[pumpIndex]->setIcon("mdi:power");
-    
-    // Przypisanie odpowiedniego callbacka
-    if (pumpIndex == 0) {
-        pumpSwitch[pumpIndex]->onCommand(handlePumpSwitch0);
-    } else {
-        pumpSwitch[pumpIndex]->onCommand(handlePumpSwitch1);
+// --- Inicjalizacja systemu plików
+bool initFileSystem() {
+    if (!LittleFS.begin()) {
+        Serial.println("Błąd inicjalizacji LittleFS!");
+        return false;
     }
 
-    // Konfiguracja kalibracji
-    snprintf(uniqueId, sizeof(uniqueId), "calibration_%d", pumpIndex);
-    calibrationNumber[pumpIndex] = new HANumber(uniqueId, HANumber::PrecisionP1);
-    calibrationNumber[pumpIndex]->setName(("Kalibracja Pompy " + String(pumpIndex + 1)).c_str());
-    calibrationNumber[pumpIndex]->setIcon("mdi:tune");
-    
-    // Przypisanie odpowiedniego callbacka
-    if (pumpIndex == 0) {
-        calibrationNumber[pumpIndex]->onCommand(handleCalibration0);
-    } else {
-        calibrationNumber[pumpIndex]->onCommand(handleCalibration1);
+    // Sprawdź czy istnieje katalog konfiguracji
+    if (!LittleFS.exists(CONFIG_DIR)) {
+        LittleFS.mkdir(CONFIG_DIR);
     }
+    return true;
 }
 
-// --- Inicjalizacja modułu RTC DS3231 oraz ustawienia czasu
-void setupRTC() {
-    Wire.begin();
+// --- Ładowanie konfiguracji pomp
+bool loadPumpsConfig() {
+    File file = LittleFS.open(PUMPS_FILE, "r");
+    if (!file) {
+        Serial.println("Nie znaleziono pliku konfiguracji pomp");
+        return false;
+    }
+
+    StaticJsonDocument<1024> doc;
+    DeserializationError error = deserializeJson(doc, file);
+    file.close();
+
+    if (error) {
+        Serial.println("Błąd parsowania JSON konfiguracji pomp");
+        return false;
+    }
+
+    JsonArray pumpsArray = doc["pumps"];
+    for (unsigned int i = 0; i < min((size_t)NUM_PUMPS, pumpsArray.size()); i++) {
+        pumps[i].enabled = pumpsArray[i]["enabled"] | false;
+        pumps[i].calibration = pumpsArray[i]["calibration"] | 1.0f;
+        pumps[i].dose = pumpsArray[i]["dose"] | 0.0f;
+        pumps[i].schedule_days = pumpsArray[i]["schedule"]["days"] | 0;
+        pumps[i].schedule_hour = pumpsArray[i]["schedule"]["hour"] | 0;
+    }
+    return true;
+}
+
+// --- Zapisywanie konfiguracji pomp
+bool savePumpsConfig() {
+    StaticJsonDocument<1024> doc;
+    JsonArray pumpsArray = doc.createNestedArray("pumps");
+
+    for (int i = 0; i < NUM_PUMPS; i++) {
+        JsonObject pumpObj = pumpsArray.createNestedObject();
+        pumpObj["enabled"] = pumps[i].enabled;
+        pumpObj["calibration"] = pumps[i].calibration;
+        pumpObj["dose"] = pumps[i].dose;
+        
+        JsonObject schedule = pumpObj.createNestedObject("schedule");
+        schedule["days"] = pumps[i].schedule_days;
+        schedule["hour"] = pumps[i].schedule_hour;
+    }
+
+    File file = LittleFS.open(PUMPS_FILE, "w");
+    if (!file) {
+        Serial.println("Błąd otwarcia pliku konfiguracji pomp do zapisu");
+        return false;
+    }
+
+    if (serializeJson(doc, file) == 0) {
+        Serial.println("Błąd zapisu konfiguracji pomp");
+        file.close();
+        return false;
+    }
+
+    file.close();
+    return true;
+}
+
+// --- Ładowanie konfiguracji sieciowej
+bool loadNetworkConfig() {
+    File file = LittleFS.open(NETWORK_FILE, "r");
+    if (!file) {
+        Serial.println("Nie znaleziono pliku konfiguracji sieciowej");
+        return false;
+    }
+
+    StaticJsonDocument<512> doc;
+    DeserializationError error = deserializeJson(doc, file);
+    file.close();
+
+    if (error) {
+        Serial.println("Błąd parsowania JSON konfiguracji sieciowej");
+        return false;
+    }
+
+    strlcpy(networkConfig.wifi_ssid, doc["wifi_ssid"] | "", sizeof(networkConfig.wifi_ssid));
+    strlcpy(networkConfig.wifi_password, doc["wifi_password"] | "", sizeof(networkConfig.wifi_password));
+    strlcpy(networkConfig.mqtt_server, doc["mqtt_server"] | "", sizeof(networkConfig.mqtt_server));
+    strlcpy(networkConfig.mqtt_user, doc["mqtt_user"] | "", sizeof(networkConfig.mqtt_user));
+    strlcpy(networkConfig.mqtt_password, doc["mqtt_password"] | "", sizeof(networkConfig.mqtt_password));
+    networkConfig.mqtt_port = doc["mqtt_port"] | 1883;
+
+    return true;
+}
+
+// --- Zapisywanie konfiguracji sieciowej
+bool saveNetworkConfig() {
+    StaticJsonDocument<512> doc;
     
-    // Sprawdzenie komunikacji z RTC
-    Wire.beginTransmission(0x68);
-    if (Wire.endTransmission() != 0) {
-        Serial.println("Błąd! Nie można znaleźć modułu RTC DS3231");
-        serviceMode = true;
-        rtcAlarmSensor.setValue("ALARM RTC");
-        updateHAStates();
+    doc["wifi_ssid"] = networkConfig.wifi_ssid;
+    doc["wifi_password"] = networkConfig.wifi_password;
+    doc["mqtt_server"] = networkConfig.mqtt_server;
+    doc["mqtt_user"] = networkConfig.mqtt_user;
+    doc["mqtt_password"] = networkConfig.mqtt_password;
+    doc["mqtt_port"] = networkConfig.mqtt_port;
+
+    File file = LittleFS.open(NETWORK_FILE, "w");
+    if (!file) {
+        Serial.println("Błąd otwarcia pliku konfiguracji sieciowej do zapisu");
+        return false;
+    }
+
+    if (serializeJson(doc, file) == 0) {
+        Serial.println("Błąd zapisu konfiguracji sieciowej");
+        file.close();
+        return false;
+    }
+
+    file.close();
+    return true;
+}
+
+// --- Ogólna funkcja ładowania konfiguracji
+void loadConfiguration() {
+    if (!initFileSystem()) {
+        Serial.println("Używam domyślnych ustawień");
         return;
     }
 
-    // Sprawdzenie czy RTC działa
-    if (!rtc.getSecond()) {  // Jeśli odczyt się nie powiedzie
-        Serial.println("RTC utracił zasilanie, ustawiam czas...");
-        
-        // Parsowanie czasu kompilacji
-        tmElements_t tm;
-        if (rozlozDate(__DATE__) && rozlozTime(__TIME__)) {
-            rtc.setClockMode(false);  // tryb 24h
-            rtc.setSecond(second());
-            rtc.setMinute(minute());
-            rtc.setHour(hour());
-            rtc.setDate(day());
-            rtc.setMonth(month());
-            rtc.setYear(year() - 2000);
+    if (!loadPumpsConfig()) {
+        Serial.println("Używam domyślnych ustawień pomp");
+        // Tutaj możemy zainicjować domyślne wartości dla pomp
+        for (int i = 0; i < NUM_PUMPS; i++) {
+            pumps[i].enabled = false;
+            pumps[i].calibration = 1.0;
+            pumps[i].dose = 0.0;
+            pumps[i].schedule_days = 0;
+            pumps[i].schedule_hour = 0;
         }
     }
-}
 
-// Funkcje pomocnicze do parsowania czasu
-bool rozlozTime(const char *str) {
-    int godzina, minuta, sekunda;
-    if (sscanf(str, "%d:%d:%d", &godzina, &minuta, &sekunda) != 3) return false;
-    setTime(godzina, minuta, sekunda, day(), month(), year());
-    return true;
-}
-
-bool rozlozDate(const char *str) {
-    char miesiac[12];
-    int dzien, rok;
-    uint8_t indeksMiesiaca;
-
-    if (sscanf(str, "%s %d %d", miesiac, &dzien, &rok) != 3) return false;
-    for (indeksMiesiaca = 0; indeksMiesiaca < 12; indeksMiesiaca++) {
-        if (strcmp(miesiac, nazwyMiesiecy[indeksMiesiaca]) == 0) break;
-    }
-    if (indeksMiesiaca >= 12) return false;
-    setTime(hour(), minute(), second(), dzien, indeksMiesiaca + 1, rok);
-    return true;
-}
-
-void setupNTP() {
-    timeClient.begin();
-    timeClient.setTimeOffset(3600); // Ustaw odpowiedni offset czasowy
-}
-
-void synchronizeRTC() {
-    if (timeClient.update()) {
-        unsigned long epochTime = timeClient.getEpochTime();
-        
-        // Konwersja czasu Unix na komponenty
-        time_t rawTime = (time_t)epochTime;
-        struct tm * timeinfo = localtime(&rawTime);
-        
-        rtc.setClockMode(false); // 24h mode
-        rtc.setSecond(timeinfo->tm_sec);
-        rtc.setMinute(timeinfo->tm_min);
-        rtc.setHour(timeinfo->tm_hour);
-        rtc.setDate(timeinfo->tm_mday);
-        rtc.setMonth(timeinfo->tm_mon + 1);
-        rtc.setYear(timeinfo->tm_year - 100);
-        
-        Serial.println("Czas zsynchronizowany z NTP");
+    if (!loadNetworkConfig()) {
+        Serial.println("Używam domyślnych ustawień sieciowych");
+        // WiFiManager zajmie się konfiguracją sieci
     }
 }
 
-// --- Konfiguracja diody LED
-void setupLED() {
-  strip.begin(); // Inicjalizacja taśmy LED
-  strip.show(); // Wyłączenie wszystkich LED na początek
-  // Ta funkcja ustawia wszystkie diody na kolor wyłączony, co jest przydatne do resetu stanu taśmy LED
+// --- Ogólna funkcja zapisywania konfiguracji
+void saveConfiguration() {
+    if (!savePumpsConfig()) {
+        Serial.println("Błąd zapisu konfiguracji pomp!");
+    }
+    if (!saveNetworkConfig()) {
+        Serial.println("Błąd zapisu konfiguracji sieciowej!");
+    }
 }
 
-void handleActiveDaysCommand(float value, HANumber* sender, int index) {
-    activeDays[index] = static_cast<uint8_t>(value);
-    saveSettings();
-    updateHAStates();
-}
+// --- Stałe czasowe
+#define DOSE_CHECK_INTERVAL 1000    // Sprawdzanie dozowania co 1 sekundę
+#define MIN_DOSE_TIME 100          // Minimalny czas dozowania (ms)
+#define MAX_DOSE_TIME 60000        // Maksymalny czas dozowania (60 sekund)
 
-void handleActiveHoursCommand(float value, HANumber* sender, int index) {
-    activeHours[index] = static_cast<uint8_t>(value);
-    saveSettings();
-    updateHAStates();
-}
+// --- Zmienne dla obsługi pomp
+unsigned long lastDoseCheck = 0;
+bool pumpInitialized = false;
 
-// --- Zarządzanie działaniem pomp w oparciu o harmonogram
-void handlePumps() {
-    if (serviceMode) return;
+// --- Inicjalizacja PCF8574 i pomp
+bool initializePumps() {
+    if (!pcf8574.begin()) {
+        Serial.println("Błąd inicjalizacji PCF8574!");
+        return false;
+    }
 
-    bool h12, PM;
+    // Ustaw wszystkie piny jako wyjścia i wyłącz pompy
     for (int i = 0; i < NUM_PUMPS; i++) {
-        int dayOfWeek = rtc.getDoW();  // Zmieniono getDayOfWeek na getDoW
-        int hour = rtc.getHour(h12, PM);  // Poprawione wywołanie getHour
+        pcf8574.pinMode(i, OUTPUT);
+        pcf8574.digitalWrite(i, LOW);
+    }
+
+    pumpInitialized = true;
+    return true;
+}
+
+// --- Rozpoczęcie dozowania dla pompy
+void startPump(uint8_t pumpIndex) {
+    if (!pumpInitialized || pumpIndex >= NUM_PUMPS || pumpRunning[pumpIndex]) {
+        return;
+    }
+
+    // Oblicz czas dozowania na podstawie kalibracji i dawki
+    float dosingTime = (pumps[pumpIndex].dose / pumps[pumpIndex].calibration) * 1000; // konwersja na ms
+    
+    // Sprawdź czy czas dozowania mieści się w limitach
+    if (dosingTime < MIN_DOSE_TIME || dosingTime > MAX_DOSE_TIME) {
+        Serial.printf("Błąd: Nieprawidłowy czas dozowania dla pompy %d: %.1f ms\n", pumpIndex + 1, dosingTime);
+        return;
+    }
+
+    // Włącz pompę
+    if (pcf8574.digitalWrite(pumpIndex, HIGH)) {
+        pumpRunning[pumpIndex] = true;
+        doseStartTime[pumpIndex] = millis();
         
-        if (pumpEnabled[i] && pumpRunning[i] && 
-            (millis() - doseStartTime[i] >= dosingDuration[i] * 1000)) {
-            stopDosing(i);
-        } 
-        else if (pumpEnabled[i] && 
-                (activeDays[i] & (1 << dayOfWeek)) && 
-                activeHours[i] == hour && 
-                !pumpRunning[i]) {
-            startDosing(i);
+        // Aktualizuj stan LED
+        strip.setPixelColor(pumpIndex, COLOR_WORKING);
+        strip.show();
+        
+        Serial.printf("Pompa %d rozpoczęła dozowanie. Zaplanowany czas: %.1f ms\n", 
+                     pumpIndex + 1, dosingTime);
+    } else {
+        Serial.printf("Błąd: Nie można włączyć pompy %d\n", pumpIndex + 1);
+    }
+}
+
+// --- Zatrzymanie dozowania dla pompy
+void stopPump(uint8_t pumpIndex) {
+    if (!pumpInitialized || pumpIndex >= NUM_PUMPS || !pumpRunning[pumpIndex]) {
+        return;
+    }
+
+    // Wyłącz pompę
+    if (pcf8574.digitalWrite(pumpIndex, LOW)) {
+        pumpRunning[pumpIndex] = false;
+        
+        // Oblicz faktyczny czas dozowania
+        unsigned long actualDoseTime = millis() - doseStartTime[pumpIndex];
+        
+        // Aktualizuj stan LED
+        strip.setPixelColor(pumpIndex, pumps[pumpIndex].enabled ? COLOR_ON : COLOR_OFF);
+        strip.show();
+        
+        Serial.printf("Pompa %d zakończyła dozowanie. Rzeczywisty czas: %lu ms\n", 
+                     pumpIndex + 1, actualDoseTime);
+    } else {
+        Serial.printf("Błąd: Nie można wyłączyć pompy %d\n", pumpIndex + 1);
+    }
+}
+
+// --- Sprawdzenie czy pompa powinna rozpocząć dozowanie
+bool shouldStartDosing(uint8_t pumpIndex) {
+    if (!pumps[pumpIndex].enabled || serviceMode) {
+        return false;
+    }
+
+    // Pobierz aktualny czas z RTC
+    bool h12, PM;
+    uint8_t currentHour = rtc.getHour(h12, PM);
+    uint8_t currentDay = rtc.getDoW(); // 0 = Niedziela, 6 = Sobota
+    
+    // Sprawdź czy jest odpowiedni dzień (bit w masce dni)
+    bool isDoseDay = (pumps[pumpIndex].schedule_days & (1 << currentDay)) != 0;
+    
+    // Sprawdź czy jest odpowiednia godzina
+    bool isDoseHour = (currentHour == pumps[pumpIndex].schedule_hour);
+    
+    return isDoseDay && isDoseHour;
+}
+
+// --- Główna funkcja obsługi pomp
+void handlePumps() {
+    if (!pumpInitialized || serviceMode) {
+        return;
+    }
+
+    unsigned long currentMillis = millis();
+    
+    // Sprawdzaj stan pomp co DOSE_CHECK_INTERVAL
+    if (currentMillis - lastDoseCheck >= DOSE_CHECK_INTERVAL) {
+        lastDoseCheck = currentMillis;
+        
+        for (uint8_t i = 0; i < NUM_PUMPS; i++) {
+            if (pumpRunning[i]) {
+                // Sprawdź czy czas dozowania minął
+                float dosingTime = (pumps[i].dose / pumps[i].calibration) * 1000;
+                if (currentMillis - doseStartTime[i] >= dosingTime) {
+                    stopPump(i);
+                }
+            } else if (shouldStartDosing(i)) {
+                startPump(i);
+            }
         }
     }
 }
 
-void handleActiveDaysCommand0(HANumeric value, HANumber* sender) {
-    activeDays[0] = value.toInt8();  // Zamiast static_cast używamy metody toInt8
-    saveSettings();
-    updateHAStates();
-}
+// --- Obsługa trybu serwisowego dla pomp
+void servicePump(uint8_t pumpIndex, bool state) {
+    if (!pumpInitialized || pumpIndex >= NUM_PUMPS || !serviceMode) {
+        return;
+    }
 
-void handleActiveDaysCommand2(HANumeric value, HANumber* sender) {
-  activeDays[2] = value.toInt8();
-  saveSettings();
-  updateHAStates();
-}
-
-void handleActiveDaysCommand3(HANumeric value, HANumber* sender) {
-  activeDays[3] = value.toInt8();
-  saveSettings();
-  updateHAStates();
-}
-
-void handleActiveDaysCommand4(HANumeric value, HANumber* sender) {
-  activeDays[4] = value.toInt8();
-  saveSettings();
-  updateHAStates();
-}
-
-void handleActiveDaysCommand5(HANumeric value, HANumber* sender) {
-  activeDays[5] = value.toInt8();
-  saveSettings();
-  updateHAStates();
-}
-
-void handleActiveDaysCommand6(HANumeric value, HANumber* sender) {
-  activeDays[6] = value.toInt8();
-  saveSettings();
-  updateHAStates();
-}
-
-void handleActiveDaysCommand7(HANumeric value, HANumber* sender) {
-  activeDays[7] = value.toInt8();
-  saveSettings();
-  updateHAStates();
-}
-
-void handlePumpSwitchCommand0(bool state, HASwitch* sender) {
-    pumpEnabled[0] = state;
-    saveSettings();
-    updateHAStates();
-}
-
-void handlePumpSwitchCommand1(bool state, HASwitch* sender) {
-    pumpEnabled[1] = state;
-    saveSettings();
-    updateHAStates();
-}
-
-void handlePumpSwitchCommand2(bool state, HASwitch* sender) {
-    pumpEnabled[2] = state;
-    saveSettings();
-    updateHAStates();
-}
-
-void handlePumpSwitchCommand3(bool state, HASwitch* sender) {
-    pumpEnabled[3] = state;
-    saveSettings();
-    updateHAStates();
-}
-
-void handlePumpSwitchCommand4(bool state, HASwitch* sender) {
-    pumpEnabled[4] = state;
-    saveSettings();
-    updateHAStates();
-}
-
-void handlePumpSwitchCommand5(bool state, HASwitch* sender) {
-    pumpEnabled[5] = state;
-    saveSettings();
-    updateHAStates();
-}
-
-void handlePumpSwitchCommand6(bool state, HASwitch* sender) {
-    pumpEnabled[6] = state;
-    saveSettings();
-    updateHAStates();
-}
-
-void handlePumpSwitchCommand7(bool state, HASwitch* sender) {
-    pumpEnabled[7] = state;
-    saveSettings();
-    updateHAStates();
-}
-
-// --- Rozpoczęcie podawania nawozu dla określonej pompy
-void startDosing(int pumpIndex) {
-  dosingDuration[pumpIndex] = doseAmount[pumpIndex] / calibrationData[pumpIndex];
-  pumpRunning[pumpIndex] = true;
-  doseStartTime[pumpIndex] = millis();
-
-  pcf8574.write(pumpIndex, HIGH); // Alternatywna metoda
-
-  strip.setPixelColor(pumpIndex, COLOR_WORKING);
-  strip.show();
-
-  Serial.print("Pompa ");
-  Serial.print(pumpIndex + 1);
-  Serial.println(" rozpoczela podawanie");
-}
-
-// --- Zatrzymanie podawania nawozu dla określonej pompy
-void stopDosing(int pumpIndex) {
-    pumpRunning[pumpIndex] = false;
-    pcf8574.write(pumpIndex, LOW);  // Zmieniono digitalWrite na write
-    strip.setPixelColor(pumpIndex, COLOR_ON);
+    if (state) {
+        pcf8574.digitalWrite(pumpIndex, HIGH);
+        strip.setPixelColor(pumpIndex, COLOR_SERVICE);
+    } else {
+        pcf8574.digitalWrite(pumpIndex, LOW);
+        strip.setPixelColor(pumpIndex, COLOR_OFF);
+    }
     strip.show();
-    
-    Serial.print("Pompa ");
-    Serial.print(pumpIndex + 1);
-    Serial.println(" zakończyła podawanie.");
 }
+
+// --- Zatrzymanie wszystkich pomp
+void stopAllPumps() {
+    for (uint8_t i = 0; i < NUM_PUMPS; i++) {
+        if (pumpRunning[i]) {
+            stopPump(i);
+        }
+    }
+}
+
+// --- Stałe dla animacji LED
+#define LED_UPDATE_INTERVAL 50    // Aktualizacja LED co 50ms
+#define FADE_STEPS 20            // Liczba kroków w animacji fade
+#define PULSE_MIN_BRIGHTNESS 20  // Minimalna jasność podczas pulsowania (0-255)
+#define PULSE_MAX_BRIGHTNESS 255 // Maksymalna jasność podczas pulsowania
+
+// --- Struktury i zmienne dla LED
+struct LEDState {
+    uint32_t targetColor;     // Docelowy kolor
+    uint32_t currentColor;    // Aktualny kolor
+    uint8_t brightness;       // Aktualna jasność
+    bool pulsing;            // Czy LED pulsuje
+    int pulseDirection;      // Kierunek pulsowania (1 lub -1)
+};
+
+LEDState ledStates[NUM_PUMPS];
+unsigned long lastLedUpdate = 0;
+
+// --- Inicjalizacja LED
+void initializeLEDs() {
+    strip.begin();
+    
+    // Inicjalizacja stanów LED
+    for (int i = 0; i < NUM_PUMPS; i++) {
+        ledStates[i] = {
+            COLOR_OFF,    // targetColor
+            COLOR_OFF,    // currentColor
+            255,         // brightness
+            false,       // pulsing
+            1           // pulseDirection
+        };
+    }
+    
+    updateLEDs();
+}
+
+// --- Konwersja koloru na komponenty RGB
+void colorToRGB(uint32_t color, uint8_t &r, uint8_t &g, uint8_t &b) {
+    r = (color >> 16) & 0xFF;
+    g = (color >> 8) & 0xFF;
+    b = color & 0xFF;
+}
+
+// --- Konwersja komponentów RGB na kolor
+uint32_t RGBToColor(uint8_t r, uint8_t g, uint8_t b) {
+    return ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
+}
+
+// --- Interpolacja między dwoma kolorami
+uint32_t interpolateColor(uint32_t color1, uint32_t color2, float ratio) {
+    uint8_t r1, g1, b1, r2, g2, b2;
+    colorToRGB(color1, r1, g1, b1);
+    colorToRGB(color2, r2, g2, b2);
+    
+    uint8_t r = r1 + (r2 - r1) * ratio;
+    uint8_t g = g1 + (g2 - g1) * ratio;
+    uint8_t b = b1 + (b2 - b1) * ratio;
+    
+    return RGBToColor(r, g, b);
+}
+
+// --- Ustawienie koloru LED z animacją
+void setLEDColor(uint8_t index, uint32_t color, bool withPulsing = false) {
+    if (index >= NUM_PUMPS) return;
+    
+    ledStates[index].targetColor = color;
+    ledStates[index].pulsing = withPulsing;
+}
+
+// --- Aktualizacja wszystkich LED
+void updateLEDs() {
+    unsigned long currentMillis = millis();
+    
+    // Aktualizuj tylko co LED_UPDATE_INTERVAL
+    if (currentMillis - lastLedUpdate < LED_UPDATE_INTERVAL) {
+        return;
+    }
+    lastLedUpdate = currentMillis;
+    
+    // Aktualizacja każdego LED
+    for (int i = 0; i < NUM_PUMPS; i++) {
+        LEDState &state = ledStates[i];
+        
+        // Obsługa pulsowania
+        if (state.pulsing) {
+            state.brightness += state.pulseDirection * 5;
+            
+            if (state.brightness >= PULSE_MAX_BRIGHTNESS) {
+                state.brightness = PULSE_MAX_BRIGHTNESS;
+                state.pulseDirection = -1;
+            } else if (state.brightness <= PULSE_MIN_BRIGHTNESS) {
+                state.brightness = PULSE_MIN_BRIGHTNESS;
+                state.pulseDirection = 1;
+            }
+        } else {
+            state.brightness = 255;
+        }
+        
+        // Płynne przejście do docelowego koloru
+        if (state.currentColor != state.targetColor) {
+            state.currentColor = interpolateColor(
+                state.currentColor, 
+                state.targetColor, 
+                0.1 // współczynnik płynności przejścia
+            );
+        }
+        
+        // Zastosowanie jasności do koloru
+        uint8_t r, g, b;
+        colorToRGB(state.currentColor, r, g, b);
+        float brightnessRatio = state.brightness / 255.0;
+        
+        strip.setPixelColor(i, 
+            (uint8_t)(r * brightnessRatio),
+            (uint8_t)(g * brightnessRatio),
+            (uint8_t)(b * brightnessRatio)
+        );
+    }
+    
+    strip.show();
+}
+
+// --- Aktualizacja LED dla trybu serwisowego
+void updateServiceModeLEDs() {
+    uint32_t color = serviceMode ? COLOR_SERVICE : COLOR_OFF;
+    
+    for (int i = 0; i < NUM_PUMPS; i++) {
+        if (!pumpRunning[i]) {
+            setLEDColor(i, color, serviceMode);
+        }
+    }
+}
+
+// --- Aktualizacja LED dla pompy
+void updatePumpLED(uint8_t pumpIndex) {
+    if (pumpIndex >= NUM_PUMPS) return;
+    
+    if (serviceMode) {
+        setLEDColor(pumpIndex, COLOR_SERVICE, true);
+    } else if (pumpRunning[pumpIndex]) {
+        setLEDColor(pumpIndex, COLOR_WORKING, true);
+    } else {
+        setLEDColor(pumpIndex, pumps[pumpIndex].enabled ? COLOR_ON : COLOR_OFF, false);
+    }
+}
+
+// --- Aktualizacja wszystkich LED dla pomp
+void updateAllPumpLEDs() {
+    for (uint8_t i = 0; i < NUM_PUMPS; i++) {
+        updatePumpLED(i);
+    }
+}
+
+// --- Stałe dla Home Assistant
+#define HA_UPDATE_INTERVAL 30000  // Aktualizacja HA co 30 sekund
+unsigned long lastHaUpdate = 0;
+
+// --- Funkcje callback dla Home Assistant
+void onPumpSwitch(bool state, HASwitch* sender) {
+    // Znajdź indeks pompy na podstawie wskaźnika do przełącznika
+    int pumpIndex = -1;
+    for (int i = 0; i < NUM_PUMPS; i++) {
+        if (sender == pumpSwitches[i]) {
+            pumpIndex = i;
+            break;
+        }
+    }
+    
+    if (pumpIndex >= 0) {
+        pumps[pumpIndex].enabled = state;
+        updatePumpLED(pumpIndex);
+        saveConfiguration();
+    }
+}
+
+void onPumpCalibration(HANumeric value, HANumber* sender) {
+    // Znajdź indeks pompy na podstawie wskaźnika do kalibracji
+    int pumpIndex = -1;
+    for (int i = 0; i < NUM_PUMPS; i++) {
+        if (sender == pumpCalibrations[i]) {
+            pumpIndex = i;
+            break;
+        }
+    }
+    
+    if (pumpIndex >= 0) {
+        pumps[pumpIndex].calibration = value.toFloat();
+        saveConfiguration();
+    }
+}
+
+void onServiceModeSwitch(bool state, HASwitch* sender) {
+    serviceMode = state;
+    if (serviceMode) {
+        stopAllPumps();
+    }
+    updateServiceModeLEDs();
+}
+
+// --- Inicjalizacja encji Home Assistant
+void initHomeAssistant() {
+    // Konfiguracja urządzenia
+    haDevice.setName("AquaDoser");
+    haDevice.setSoftwareVersion("1.0.0");
+    haDevice.setManufacturer("DIY");
+    haDevice.setModel("AquaDoser 8-channel");
+    
+    // Przełącznik trybu serwisowego
+    serviceModeSwitch = new HASwitch("service_mode", false);
+    serviceModeSwitch->setName("Tryb serwisowy");
+    serviceModeSwitch->onCommand(onServiceModeSwitch);
+    serviceModeSwitch->setIcon("mdi:wrench");
+    
+    // Tworzenie encji dla każdej pompy
+    for (int i = 0; i < NUM_PUMPS; i++) {
+        char entityId[20];
+        char name[20];
+        
+        // Przełącznik pompy
+        sprintf(entityId, "pump_%d", i + 1);
+        sprintf(name, "Pompa %d", i + 1);
+        pumpSwitches[i] = new HASwitch(entityId, false);
+        pumpSwitches[i]->setName(name);
+        pumpSwitches[i]->onCommand(onPumpSwitch);
+        pumpSwitches[i]->setIcon("mdi:water-pump");
+        
+        // Status pompy
+        sprintf(entityId, "pump_%d_state", i + 1);
+        sprintf(name, "Stan pompy %d", i + 1);
+        pumpStates[i] = new HASensor(entityId);
+        pumpStates[i]->setName(name);
+        pumpStates[i]->setIcon("mdi:state-machine");
+        
+        // Kalibracja pompy
+        sprintf(entityId, "pump_%d_calibration", i + 1);
+        sprintf(name, "Kalibracja pompy %d", i + 1);
+        pumpCalibrations[i] = new HANumber(entityId, HANumber::PrecisionP1);
+        pumpCalibrations[i]->setName(name);
+        pumpCalibrations[i]->setIcon("mdi:ruler");
+        pumpCalibrations[i]->setMin(0.1);
+        pumpCalibrations[i]->setMax(10.0);
+        pumpCalibrations[i]->setStep(0.1);
+        pumpCalibrations[i]->onCommand(onPumpCalibration);
+    }
+}
+
+// --- Aktualizacja stanów w Home Assistant
+void updateHomeAssistant() {
+    unsigned long currentMillis = millis();
+    
+    // Aktualizuj tylko co HA_UPDATE_INTERVAL
+    if (currentMillis - lastHaUpdate < HA_UPDATE_INTERVAL) {
+        return;
+    }
+    lastHaUpdate = currentMillis;
+    
+    // Aktualizacja trybu serwisowego
+    serviceModeSwitch->setState(serviceMode);
+    
+    // Aktualizacja stanów pomp
+    for (int i = 0; i < NUM_PUMPS; i++) {
+        // Stan włączenia
+        pumpSwitches[i]->setState(pumps[i].enabled);
+        
+        // Status tekstowy
+        const char* state;
+        if (serviceMode) {
+            state = "Tryb serwisowy";
+        } else if (pumpRunning[i]) {
+            state = "Dozowanie";
+        } else if (pumps[i].enabled) {
+            state = "Gotowa";
+        } else {
+            state = "Wyłączona";
+        }
+        pumpStates[i]->setValue(state);
+        
+        // Kalibracja
+        pumpCalibrations[i]->setValue(pumps[i].calibration);
+    }
+}
+
+// --- Konfiguracja MQTT dla Home Assistant
+void setupMQTT() {
+    if (strlen(networkConfig.mqtt_server) == 0) {
+        Serial.println("Brak konfiguracji MQTT");
+        return;
+    }
+    
+    mqtt.begin(
+        networkConfig.mqtt_server,
+        networkConfig.mqtt_port,
+        networkConfig.mqtt_user,
+        networkConfig.mqtt_password
+    );
+}
+
+// --- Zmienne dla obsługi przycisku
+unsigned long lastButtonPress = 0;
+bool lastButtonState = HIGH;
 
 // --- Obsługa przycisku
 void handleButton() {
-  static bool lastButtonState = LOW; // Ostatni stan przycisku (początkowo LOW)
-  static unsigned long lastDebounceTime = 0; // Ostatni czas zmiany stanu przycisku
-
-  bool currentButtonState = digitalRead(BUTTON_PIN); // Odczyt aktualnego stanu przycisku
-  if (currentButtonState != lastButtonState) { // Sprawdzenie, czy stan przycisku się zmienił
-    lastDebounceTime = millis(); // Zapisanie czasu zmiany stanu
-  }
-
-  // Sprawdzenie, czy upłynął czas debouncingu
-  if ((millis() - lastDebounceTime) > DEBOUNCE_TIME) {
-    if (currentButtonState == HIGH) { // Sprawdzenie, czy przycisk jest naciśnięty
-      toggleServiceMode(); // Przełącz tryb serwisowy
-    }
-  }
-
-  lastButtonState = currentButtonState; // Aktualizacja ostatniego stanu przycisku
-}
-
-// --- Przełączanie trybu serwisowego
-void toggleServiceMode() {
-  serviceMode = !serviceMode; // Zmiana stanu trybu serwisowego (włączenie/wyłączenie)  
-  updateHAStates(); // Synchronizacja stanu trybu serwisowego w Home Assistant
-}
-
-// --- Animacja LED
-void showLEDAnimation() {
-  static unsigned long lastUpdate = 0; // Ostatni czas aktualizacji animacji
-  if (millis() - lastUpdate < 250) return; // Odczekaj 250ms przed aktualizacją
-
-  strip.clear(); // Wyłączenie wszystkich LED
-  if (!serviceMode) { // Sprawdzenie, czy nie jesteśmy w trybie serwisowym
-    for (int i = 0; i < NUM_PUMPS; i++) {
-      // Ustal kolor diody w zależności od kroku animacji
-      uint32_t color = (currentAnimationStep % 3 == 0) ? COLOR_WORKING : 
-                       (currentAnimationStep % 3 == 1) ? COLOR_OFF : 
-                       COLOR_ON;
-      strip.setPixelColor(i, color); // Ustawienie koloru diody
-    }
-  } else {
-    // W trybie serwisowym podświetlenie tylko jednej diody
-    strip.setPixelColor(currentAnimationStep % NUM_PUMPS, COLOR_WORKING);
-  }
-  strip.show(); // Aktualizacja diod LED
-  currentAnimationStep++; // Przejście do następnego kroku animacji
-  lastUpdate = millis(); // Zaktualizowanie czasu ostatniej aktualizacji
-}
-
-// --- Synchronizacja RTC
-void updateRTC() {
-  if (millis() - lastRTCUpdate >= RTC_SYNC_INTERVAL) {
-    synchronizeRTC(); // Wywołanie synchronizacji RTC
-    lastRTCUpdate = millis();
-  }
-}
-
-// --- Odczyt ustawień
-void loadSettings() {
-  // Odczyt ustawień z EEPROM z ustalonym offsetem
-  for (int i = 0; i < NUM_PUMPS; i++) {
-    EEPROM.get(EEPROM_OFFSET_CALIBRATION + i * sizeof(float), calibrationData[i]);
-    EEPROM.get(EEPROM_OFFSET_DOSE_AMOUNT + i * sizeof(float), doseAmount[i]);
-    EEPROM.get(EEPROM_OFFSET_ACTIVE_DAYS + i, activeDays[i]);
-    EEPROM.get(EEPROM_OFFSET_ACTIVE_HOURS + i, activeHours[i]);
-    ESP.wdtFeed(); // Odśwież watchdog po odczycie każdej sekcji
-  }
-}
-
-// --- Zapis ustawień
-void saveSettings() {
-  bool settingsChanged = false;
-
-  for (int i = 0; i < NUM_PUMPS; i++) {
-    float newCalibration = calibrationData[i];
-    float newDoseAmount = doseAmount[i];
-    uint8_t newActiveDays = activeDays[i];
-    uint8_t newActiveHours = activeHours[i];
-
-    float currentCalibration;
-    float currentDoseAmount;
-    uint8_t currentActiveDays;
-    uint8_t currentActiveHours;
-
-    // Odczyt aktualnych wartości z EEPROM
-    EEPROM.get(EEPROM_OFFSET_CALIBRATION + i * sizeof(float), currentCalibration);
-    EEPROM.get(EEPROM_OFFSET_DOSE_AMOUNT + i * sizeof(float), currentDoseAmount);
-    EEPROM.get(EEPROM_OFFSET_ACTIVE_DAYS + i, currentActiveDays);
-    EEPROM.get(EEPROM_OFFSET_ACTIVE_HOURS + i, currentActiveHours);
-
-    // Sprawdzenie, czy kalibracja się zmieniła
-    if (currentCalibration != newCalibration) {
-      EEPROM.put(EEPROM_OFFSET_CALIBRATION + i * sizeof(float), newCalibration);
-      settingsChanged = true;
-    }
-
-    // Sprawdzenie, czy ilość dawki się zmieniła
-    if (currentDoseAmount != newDoseAmount) {
-      EEPROM.put(EEPROM_OFFSET_DOSE_AMOUNT + i * sizeof(float), newDoseAmount);
-      settingsChanged = true;
-    }
-
-    // Sprawdzenie, czy dni aktywności się zmieniły
-    if (currentActiveDays != newActiveDays) {
-      EEPROM.put(EEPROM_OFFSET_ACTIVE_DAYS + i, newActiveDays);
-      settingsChanged = true;
-    }
-
-    // Sprawdzenie, czy godziny aktywności się zmieniły
-    if (currentActiveHours != newActiveHours) {
-      EEPROM.put(EEPROM_OFFSET_ACTIVE_HOURS + i, newActiveHours);
-      settingsChanged = true;
-    }
-
-    // Odśwież watchdog po odczycie każdej sekcji
-    ESP.wdtFeed();
-  }
-
-  // Zapisuj do EEPROM tylko, jeśli były zmiany
-  if (settingsChanged) {
-    EEPROM.commit();
-    Serial.println("Ustawienia zostały zapisane do EEPROM.");
-  }
-}
-
-// --- Odczyt konfiguracji MQTT z EEPROM
-void loadConfig() {
-  // Odczyt konfiguracji MQTT z EEPROM na zdefiniowanym offsetcie
-  EEPROM.get(EEPROM_OFFSET_CONFIG, config);
-}
-
-// --- Zapis konfiguracji MQTT do EEPROM
-void saveConfig() {
-  EEPROM.put(EEPROM_OFFSET_CONFIG, config); // Zapis konfiguracji MQTT do EEPROM na zdefiniowanym offsetcie
-  EEPROM.commit(); // Potwierdzenie zapisu do EEPROM, aby zapewnić, że dane zostały zapisane
-}
-
-// --- Aktualizacja stanu w Home Assistant
-void updateHAStates() {
-    serviceModeSwitch.setState(serviceMode);
+    bool currentButtonState = digitalRead(BUTTON_PIN);
     
-    for (int i = 0; i < NUM_PUMPS; i++) {
-        pumpSwitch[i]->setState(pumpEnabled[i]);
-        pumpWorkingSensor[i]->setValue(pumpRunning[i] ? "ON" : "OFF");
-        tankLevelSensor[i]->setValue(String(doseAmount[i]).c_str());
+    // Debouncing
+    if (currentButtonState != lastButtonState) {
+        if (millis() - lastButtonPress >= DEBOUNCE_TIME) {
+            lastButtonPress = millis();
+            
+            // Reaguj tylko na naciśnięcie (zmiana z HIGH na LOW)
+            if (currentButtonState == LOW) {
+                toggleServiceMode();
+            }
+        }
+    }
+    
+    lastButtonState = currentButtonState;
+}
+
+// --- Synchronizacja RTC z NTP
+void syncRTC() {
+    if (WiFi.status() != WL_CONNECTED) return;
+    
+    static WiFiUDP ntpUDP;
+    static NTPClient timeClient(ntpUDP, "pool.ntp.org");
+    
+    timeClient.begin();
+    if (timeClient.update()) {
+        time_t epochTime = timeClient.getEpochTime();
+        struct tm *ptm = gmtime(&epochTime);
         
-        // Używamy setValue z wartością numeryczną bezpośrednio
-        calibrationNumber[i]->setState(calibrationData[i]);
+        rtc.setClockMode(false); // 24h mode
+        rtc.setYear(ptm->tm_year - 100);
+        rtc.setMonth(ptm->tm_mon + 1);
+        rtc.setDate(ptm->tm_mday);
+        rtc.setDoW(ptm->tm_wday);
+        rtc.setHour(ptm->tm_hour);
+        rtc.setMinute(ptm->tm_min);
+        rtc.setSecond(ptm->tm_sec);
+        
+        Serial.println("RTC zsynchronizowany z NTP");
     }
+    timeClient.end();
 }
 
-// --- Konfiguracja 
+// --- Inicjalizacja WiFi
+void setupWiFi() {
+    WiFiManager wifiManager;
+    
+    // Konfiguracja parametrów MQTT
+    WiFiManagerParameter custom_mqtt_server("server", "MQTT server", networkConfig.mqtt_server, 40);
+    WiFiManagerParameter custom_mqtt_port("port", "MQTT port", String(networkConfig.mqtt_port).c_str(), 6);
+    WiFiManagerParameter custom_mqtt_user("user", "MQTT user", networkConfig.mqtt_user, 32);
+    WiFiManagerParameter custom_mqtt_pass("pass", "MQTT password", networkConfig.mqtt_password, 32);
+    
+    wifiManager.addParameter(&custom_mqtt_server);
+    wifiManager.addParameter(&custom_mqtt_port);
+    wifiManager.addParameter(&custom_mqtt_user);
+    wifiManager.addParameter(&custom_mqtt_pass);
+    
+    // Próba połączenia lub utworzenie AP do konfiguracji
+    if (!wifiManager.autoConnect("AquaDoser Setup")) {
+        Serial.println("Nie udało się połączyć i timeout");
+        ESP.restart();
+        delay(1000);
+    }
+    
+    // Zapisz parametry MQTT
+    strlcpy(networkConfig.mqtt_server, custom_mqtt_server.getValue(), sizeof(networkConfig.mqtt_server));
+    networkConfig.mqtt_port = atoi(custom_mqtt_port.getValue());
+    strlcpy(networkConfig.mqtt_user, custom_mqtt_user.getValue(), sizeof(networkConfig.mqtt_user));
+    strlcpy(networkConfig.mqtt_password, custom_mqtt_pass.getValue(), sizeof(networkConfig.mqtt_password));
+    
+    saveNetworkConfig();
+}
+
+// --- Setup
 void setup() {
-  Serial.begin(115200);
-  EEPROM.begin(512);
-  Wire.begin();
-
-    // Inicjalizacja funkcji obsługi dla wszystkich pomp
-    for (int i = 0; i < NUM_PUMPS; i++) {
-        pumpHandlers[i] = nullptr;
-        calibrationHandlers[i] = nullptr;
+    Serial.begin(115200);
+    Serial.println("\nAquaDoser Start");
+    
+    // Inicjalizacja pinów
+    pinMode(BUTTON_PIN, INPUT_PULLUP);
+    
+    // Inicjalizacja systemu plików i wczytanie konfiguracji
+    if (!initFileSystem()) {
+        Serial.println("Błąd inicjalizacji systemu plików!");
     }
-
-  loadConfig(); // Wczytanie konfiguracji MQTT z EEPROM
-  setupWiFiManager(); // Konfiguracja i połączenie z Wi-Fi  
-  setupMQTT(); // Konfiguracja MQTT z Home Assistant  
-  setupRTC(); // Inicjalizacja RTC   
-  setupLED(); // Konfiguracja diod LED
-
-    // Konfiguracja wszystkich pomp
-    for (int i = 0; i < NUM_PUMPS; i++) {
-        setupPumpEntities(i);
+    loadConfiguration();
+    
+    // Inicjalizacja sprzętu
+    Wire.begin();
+    if (!initializePumps()) {
+        Serial.println("Błąd inicjalizacji pomp!");
     }
-
-  pinMode(BUTTON_PIN, INPUT_PULLUP); // Konfiguracja przycisku serwisowego 
-  loadSettings(); // Wczytanie ustawień pomp z EEPROM  
-  lastRTCUpdate = millis(); // Ustawienie początkowego czasu synchronizacji RTC 
-  ESP.wdtEnable(WDTO_8S); // Inicjalizacja watchdog timer (8s)
+    
+    if (!rtc.begin()) {
+        Serial.println("Błąd inicjalizacji RTC!");
+    }
+    
+    initializeLEDs();
+    
+    // Konfiguracja WiFi i MQTT
+    setupWiFi();
+    
+    // Inicjalizacja Home Assistant
+    initHomeAssistant();
+    setupMQTT();
+    
+    // Synchronizacja czasu
+    syncRTC();
+    
+    Serial.println("Inicjalizacja zakończona");
 }
 
-// --- Główna pętla programu
+// --- Loop
 void loop() {
-  // Sprawdzenie, czy MQTT jest połączone
-    if (!mqtt.isConnected()) {
-        mqtt.begin(MQTT_SERVER, MQTT_PORT, MQTT_USER, MQTT_PASSWORD);
+    // Obsługa połączenia WiFi
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("Utracono połączenie WiFi");
+        WiFi.reconnect();
+        delay(5000);
+        return;
     }
-  
-  mqtt.loop(); // Obsługuje komunikację z MQTT
-
-  // Obsługa pomp, ale tylko jeśli nie jesteśmy w trybie serwisowym
-  if (!serviceMode) {
-    handlePumps(); // Sprawdzanie stanu pomp i ich działania
-  }
-
-  updateRTC(); // Synchronizacja czasu RTC
-  handleButton(); // Sprawdzenie stanu przycisku serwisowego
-  showLEDAnimation(); // Animacja LED
-  ESP.wdtFeed(); // Odświeżanie watchdog timer
+    
+    // Obsługa MQTT i Home Assistant
+    mqtt.loop();
+    
+    // Synchronizacja RTC co 24h
+    static unsigned long lastRtcSync = 0;
+    if (millis() - lastRtcSync >= 24*60*60*1000UL) {
+        syncRTC();
+        lastRtcSync = millis();
+    }
+    
+    // Obsługa przycisku
+    handleButton();
+    
+    // Obsługa pomp
+    handlePumps();
+    
+    // Aktualizacja LED
+    updateLEDs();
+    
+    // Aktualizacja Home Assistant
+    updateHomeAssistant();
+    
+    // Pozwól ESP8266 obsłużyć inne zadania
+    yield();
 }
-// --- KONIEC ---
