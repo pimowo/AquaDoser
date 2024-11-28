@@ -183,7 +183,7 @@ ESP8266HTTPUpdateServer httpUpdateServer;
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "pool.ntp.org");
 
-const char* dayNames[] = {"Pn", "Wt", "Sr", "Cz", "Pt", "So", "Nd"};
+const char* dayNames[] = {"Pn", "Wt", "Śr", "Cz", "Pt", "Sb", "Nd"};
 
 
 // Struktura dla informacji systemowych
@@ -1415,30 +1415,30 @@ String getConfigPage() {
 
     // Sekcja statusu systemu
     page += F("<div class='section'>");
-    page += F("<h2>System Status</h2>");
+    page += F("<h2>AquaDoser</h2>");
     page += F("<div id='systemStatus'></div>");
     page += F("</div>");
 
     // Sekcja konfiguracji MQTT
     page += F("<div class='section'>");
-    page += F("<h2>MQTT Configuration</h2>");
+    page += F("<h2>Konfiguracja MQTT</h2>");
     page += F("<div class='form-group'>");
-    page += F("<label>Server: </label>");
+    page += F("<label>Server </label>");
     page += F("<input type='text' id='mqtt_server' value='");
     page += String(config.mqtt.broker);
     page += F("'></div>");
     page += F("<div class='form-group'>");
-    page += F("<label>Port: </label>");
+    page += F("<label>Port </label>");
     page += F("<input type='number' id='mqtt_port' value='");
     page += String(mqttConfig.port);
     page += F("'></div>");
     page += F("<div class='form-group'>");
-    page += F("<label>Username: </label>");
+    page += F("<label>Użytkownik </label>");
     page += F("<input type='text' id='mqtt_user' value='");
     page += String(mqttConfig.username);
     page += F("'></div>");
     page += F("<div class='form-group'>");
-    page += F("<label>Password: </label>");
+    page += F("<label>Hasło </label>");
     page += F("<input type='password' id='mqtt_pass' value='");
     page += String(mqttConfig.password);
     page += F("'></div>");
@@ -1447,39 +1447,39 @@ String getConfigPage() {
     // Sekcje konfiguracji pomp
     for(int i = 0; i < NUM_PUMPS; i++) {
         page += F("<div class='section'>");
-        page += F("<h2>Pump ");
+        page += F("<h2>Pompa ");
         page += String(i + 1);
-        page += F(" Configuration</h2>");
+        page += F(" Konfiguracja</h2>");
         page += F("<div class='form-group'>");
-        page += F("<label>Name: </label>");
+        page += F("<label>Nazwa </label>");
         page += F("<input type='text' id='pump_name_");
         page += String(i);
         page += F("' value='");
         page += String(config.pumps[i].name);
         page += F("'></div>");
         page += F("<div class='form-group'>");
-        page += F("<label>Dose (ml): </label>");
+        page += F("<label>Dozowanie (ml) </label>");
         page += F("<input type='number' id='pump_dose_");
         page += String(i);
         page += F("' value='");
         page += String(config.pumps[i].dose);
         page += F("' step='0.1'></div>");
         page += F("<div class='form-group'>");
-        page += F("<label>Hour: </label>");
+        page += F("<label>Godzina </label>");
         page += F("<input type='number' id='pump_hour_");
         page += String(i);
         page += F("' value='");
         page += String(config.pumps[i].schedule_hour);
         page += F("' min='0' max='23'></div>");
         page += F("<div class='form-group'>");
-        page += F("<label>Minute: </label>");
+        page += F("<label>Minuta </label>");
         page += F("<input type='number' id='pump_minute_");
         page += String(i);
         page += F("' value='");
         page += String(config.pumps[i].minute);
         page += F("' min='0' max='59'></div>");
         page += F("<div class='days-group'>");
-        page += F("<label>Days: </label>");
+        page += F("<label>Dzień </label>");
 
         for(int j = 0; j < 7; j++) {
             page += F("<label><input type='checkbox' id='pump_day_");
@@ -1495,7 +1495,7 @@ String getConfigPage() {
 
         page += F("</div>");
         page += F("<div class='form-group'>");
-        page += F("<label>Enabled: </label>");
+        page += F("<label>Włączone </label>");
         page += F("<input type='checkbox' id='pump_enabled_");
         page += String(i);
         page += (config.pumps[i].enabled ? F("' checked>") : F("'>"));
