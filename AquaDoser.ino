@@ -115,18 +115,20 @@ bool firstRun = true;
 struct PumpConfig {
     char name[20];
     float calibration;      // kalibracja pompy (ml/s)
-    float dose;            // dawka w ml
-    uint8_t schedule_hour;  // godzina dozowania
-    uint8_t schedule_days;  // dni tygodnia (bitmaska)
+    float doseAmount;       // dawka w ml (zmienione z 'dose' na 'doseAmount')
+    uint8_t hour;          // godzina dozowania (zmienione z 'schedule_hour')
+    uint8_t minute;        // minuta dozowania (dodane)
+    uint8_t days;          // dni tygodnia (bitmaska) (zmienione z 'schedule_days')
     time_t lastDosing;     // timestamp ostatniego dozowania
     bool isRunning;        // czy pompa aktualnie pracuje
     bool enabled;          // czy pompa jest włączona
 
     PumpConfig() : 
         calibration(1.0),
-        dose(0.0),
-        schedule_hour(0),
-        schedule_days(0),
+        doseAmount(0.0),
+        hour(0),
+        minute(0),
+        days(0),
         lastDosing(0),
         isRunning(false),
         enabled(false) {
@@ -1423,7 +1425,7 @@ void checkMQTTConfig() {
 }
 
 String getStyles() {
-    return F("body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; }"
+    return F("body { font-family: Arial, sans-serif; margin: 0;      padding: 20px; background-color: #f5f5f5; }"
             ".container { max-width: 960px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }"
             "h1, h2 { color: #2196F3; }"
             "h1 { text-align: center; margin-bottom: 30px; }"
