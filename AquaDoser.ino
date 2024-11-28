@@ -1795,8 +1795,8 @@ String getConfigPage() {
     page += F("<div class='section'>");
     page += F("<h2>Konfiguracja MQTT</h2>");
     page += F("<table class='config-table'>");
-    page += F("<tr><td>Broker MQTT</td><td><input type='text' name='mqtt_server' value='");
-    page += mqttConfig.server;
+    page += F("<tr><td>Broker MQTT</td><td><input type='text' name='mqtt_broker' value='");
+    page += mqttConfig.broker;
     page += F("'></td></tr>");
     page += F("<tr><td>Port MQTT</td><td><input type='number' name='mqtt_port' value='");
     page += String(mqttConfig.port);
@@ -1821,29 +1821,51 @@ String getConfigPage() {
         page += F("<tr><td>Nazwa</td><td><input type='text' name='pump_name_");
         page += String(i);
         page += F("' value='");
-        page += pumpConfig[i].name;
+        page += pumps[i].name;
         page += F("' maxlength='19'></td></tr>");
 
         // Status aktywności
         page += F("<tr><td>Aktywna</td><td><input type='checkbox' name='pump_enabled_");
         page += String(i);
         page += F("' ");
-        page += (pumpConfig[i].enabled ? F("checked") : F(""));
+        page += (pumps[i].enabled ? F("checked") : F(""));
         page += F("></td></tr>");
 
-        // Czas dozowania
-        page += F("<tr><td>Czas dozowania (ms)</td><td><input type='number' name='pump_dose_time_");
+        // Dawka
+        page += F("<tr><td>Dawka (ml)</td><td><input type='number' step='0.1' name='pump_dose_");
         page += String(i);
         page += F("' value='");
-        page += String(pumpConfig[i].doseTime);
+        page += String(pumps[i].dose);
         page += F("' min='0'></td></tr>");
 
-        // Interwał dozowania
-        page += F("<tr><td>Interwał dozowania (min)</td><td><input type='number' name='pump_interval_");
+        // Godzina
+        page += F("<tr><td>Godzina dozowania</td><td><input type='number' name='pump_schedule_hour_");
         page += String(i);
         page += F("' value='");
-        page += String(pumpConfig[i].interval);
-        page += F("' min='1'></td></tr>");
+        page += String(pumps[i].schedule_hour);
+        page += F("' min='0' max='23'></td></tr>");
+
+        // Minuta
+        page += F("<tr><td>Minuta dozowania</td><td><input type='number' name='pump_minute_");
+        page += String(i);
+        page += F("' value='");
+        page += String(pumps[i].minute);
+        page += F("' min='0' max='59'></td></tr>");
+        
+        // Dni tygodnia
+        page += F("<tr><td>Dni dozowania</td><td>");
+        for(int day = 0; day < 7; day++) {
+            page += F("<label><input type='checkbox' name='pump_day_");
+            page += String(i);
+            page += F("_");
+            page += String(day);
+            page += F("' ");
+            page += ((pumps[i].schedule_days & (1 << day)) ? F("checked") : F(""));
+            page += F("> ");
+            page += dayNames[day];
+            page += F("</label> ");
+        }
+        page += F("</td></tr>");
         
         page += F("</table></div>");
     }
