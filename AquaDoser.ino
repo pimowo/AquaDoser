@@ -112,20 +112,23 @@ bool firstRun = true;
 #define COLOR_SERVICE 0xFFFF00  // Żółty (tryb serwisowy)
 
 // --- Struktura konfiguracji pompy
-// Struktura konfiguracji pompy
 struct PumpConfig {
     char name[20];
-    float doseAmount;
-    uint8_t hour;
-    uint8_t minute;
-    uint8_t days;
-    bool enabled;
-    
+    float calibration;      // kalibracja pompy (ml/s)
+    float dose;            // dawka w ml
+    uint8_t schedule_hour;  // godzina dozowania
+    uint8_t schedule_days;  // dni tygodnia (bitmaska)
+    time_t lastDosing;     // timestamp ostatniego dozowania
+    bool isRunning;        // czy pompa aktualnie pracuje
+    bool enabled;          // czy pompa jest włączona
+
     PumpConfig() : 
-        doseAmount(0),
-        hour(0),
-        minute(0),
-        days(0),
+        calibration(1.0),
+        dose(0.0),
+        schedule_hour(0),
+        schedule_days(0),
+        lastDosing(0),
+        isRunning(false),
         enabled(false) {
         name[0] = '\0';
     }
@@ -1466,7 +1469,7 @@ String getConfigPage() {
     page += F("<div class='form-group'>");
     page += F("<label>Server: </label>");
     page += F("<input type='text' id='mqtt_server' value='");
-                    ffddczsccsd     page += String(mqttConfig.server);
+    page += String(config.mqtt.broker);
     page += F("'></div>");
     page += F("<div class='form-group'>");
     page += F("<label>Port: </label>");
