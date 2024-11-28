@@ -112,28 +112,26 @@ bool firstRun = true;
 #define COLOR_SERVICE 0xFFFF00  // Żółty (tryb serwisowy)
 
 // --- Struktura konfiguracji pompy
+// Struktura konfiguracji pompy
 struct PumpConfig {
-    char name[20];
-    float calibration;      // kalibracja pompy (ml/s)
-    float dose;            // dawka w ml
-    uint8_t schedule_hour;  // godzina dozowania
-    uint8_t minute;        // minuta dozowania
-    uint8_t schedule_days;  // dni tygodnia (bitmaska)
-    time_t lastDosing;     // timestamp ostatniego dozowania
-    bool isRunning;        // czy pompa aktualnie pracuje
-    bool enabled;          // czy pompa jest włączona
+    bool enabled;           // Czy pompa jest włączona
+    uint8_t schedule_hour;  // Godzina dozowania
+    uint8_t minute;        // Minuta dozowania
+    uint8_t schedule_days; // Dni tygodnia (bitmapa: 0b0000000 dla każdego dnia)
+    float dose;           // Ilość do dozowania (ml)
+    float calibration;    // Kalibracja pompy (ml/min)
+    unsigned long lastDosing; // Czas ostatniego dozowania (unix timestamp)
+    bool isRunning;       // Czy pompa aktualnie pracuje
 
     PumpConfig() : 
+        enabled(false), 
+        schedule_hour(12), 
+        minute(0), 
+        schedule_days(0), 
+        dose(0.0), 
         calibration(1.0),
-        dose(0.0),
-        schedule_hour(0),
-        minute(0),
-        schedule_days(0),
         lastDosing(0),
-        isRunning(false),
-        enabled(false) {
-        name[0] = '\0';
-    }
+        isRunning(false) {}
 };
 
 // --- Struktura konfiguracji sieciowej
@@ -162,10 +160,10 @@ struct SystemStatus {
 };
 
 struct MQTTConfig {
-    char broker[40];
-    int port;
-    char username[20];
-    char password[20];
+    char broker[64];
+    uint16_t port;
+    char username[32];
+    char password[32];
     
     MQTTConfig() : port(1883) {
         broker[0] = '\0';
@@ -174,18 +172,12 @@ struct MQTTConfig {
     }
 };
 
-MQTTConfig mqttConfig;
-
 ESP8266WebServer server(80);
 WebSocketsServer webSocket = WebSocketsServer(81);
 ESP8266HTTPUpdateServer httpUpdateServer;
 
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "pool.ntp.org");
-
-const char* dayNames[] = {"Pn", "Wt", "Śr", "Cz", "Pt", "Sb", "Nd"};
-
-
 // Struktura dla informacji systemowych
 struct SystemInfo {
     unsigned long uptime;
@@ -195,10 +187,10 @@ struct SystemInfo {
 SystemInfo sysInfo = {0, false};
 
 struct Config {
-    PumpConfig pumps[NUM_PUMPS];
-    MQTTConfig mqtt;  // Dodaj to pole
+    MQTTConfig mqtt;
+    PumpConfig pumps[NUMBER_OF_PUMPS];
     bool soundEnabled;
-    uint32_t checksum;
+    uint8_t checksum;
     
     Config() : soundEnabled(true), checksum(0) {}
 };
@@ -266,10 +258,96 @@ bool hasIntervalPassed(unsigned long current, unsigned long previous, unsigned l
     return (current - previous >= interval);
 }
 
-// Stałe dla systemu logowania
-//const unsigned long LOG_INTERVAL = 60000; // 60 sekund między wyświetlaniem statusu
-//unsigned long lastLogTime = 0;
-//bool firstRun = true;
+void saveConfig() {
+    EEPROM.begin(1024); // Zwiększamy rozmiar do 1024 bajtów
+    
+    // Zapisz znacznik walidacji
+    int addr = 0;
+    uint32_t validationMark = 0x12345678;
+    EEPROM.put(addr, validationMark);
+    addr += sizeof(validationMark);
+    
+    // Zapisz konfigurację MQTT
+    EEPROM.put(addr, mqttConfig);
+    addr += sizeof(mqttConfig);
+
+    // Zapisz konfigurację pomp
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        EEPROM.put(addr, pumps[i]);
+        addr += sizeof(PumpConfig);
+    }
+
+    bool success = EEPROM.commit();
+    EEPROM.end();
+    
+    if (!success) {
+        Serial.println(F("Błąd zapisu do EEPROM"));
+    } else {
+        Serial.println(F("Konfiguracja zapisana"));
+    }
+}
+
+void loadConfig() {
+    EEPROM.begin(1024);
+    
+    // Sprawdź znacznik walidacji
+    int addr = 0;
+    uint32_t validationMark;
+    EEPROM.get(addr, validationMark);
+    addr += sizeof(validationMark);
+    
+    if (validationMark != 0x12345678) {
+        Serial.println(F("Brak zapisanej konfiguracji - używam domyślnych wartości"));
+        // Ustaw domyślne wartości
+        strlcpy(mqttConfig.broker, "mqtt.example.com", sizeof(mqttConfig.broker));
+        mqttConfig.port = 1883;
+        strlcpy(mqttConfig.username, "", sizeof(mqttConfig.username));
+        strlcpy(mqttConfig.password, "", sizeof(mqttConfig.password));
+        
+        for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+            snprintf(pumps[i].name, sizeof(pumps[i].name), "Pompa %d", i + 1);
+            pumps[i].enabled = false;
+            pumps[i].calibration = 1.0;
+            pumps[i].dose = 0.0;
+            pumps[i].schedule_hour = 12;
+            pumps[i].minute = 0;
+            pumps[i].schedule_days = 0;
+        }
+        
+        // Zapisz domyślną konfigurację
+        saveConfig();
+        return;
+    }
+
+    // Wczytaj konfigurację MQTT
+    EEPROM.get(addr, mqttConfig);
+    addr += sizeof(mqttConfig);
+
+    // Wczytaj konfigurację pomp
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        EEPROM.get(addr, pumps[i]);
+        addr += sizeof(PumpConfig);
+    }
+
+    EEPROM.end();
+    
+    // Debug - wyświetl wczytane wartości
+    Serial.println(F("Wczytana konfiguracja:"));
+    Serial.print(F("MQTT Broker: "));
+    Serial.println(mqttConfig.broker);
+    Serial.print(F("MQTT Port: "));
+    Serial.println(mqttConfig.port);
+    
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        Serial.print(F("Pompa "));
+        Serial.print(i + 1);
+        Serial.print(F(": "));
+        Serial.print(pumps[i].name);
+        Serial.print(F(" (enabled: "));
+        Serial.print(pumps[i].enabled ? "tak" : "nie");
+        Serial.println(F(")"));
+    }
+}
 
 // Funkcja formatująca czas
 String formatDateTime(const DateTime& dt) {
@@ -699,80 +777,95 @@ void handleSave() {
         DeserializationError error = deserializeJson(doc, json);
         
         if (!error) {
+            bool configChanged = false;
+            
+            // Obsługa konfiguracji MQTT
+            if (doc.containsKey("mqtt")) {
+                JsonObject mqtt = doc["mqtt"];
+                if (mqtt.containsKey("broker") && mqtt["broker"].as<String>() != mqttConfig.broker) {
+                    strlcpy(mqttConfig.broker, mqtt["broker"] | "", sizeof(mqttConfig.broker));
+                    configChanged = true;
+                }
+                if (mqtt.containsKey("port") && mqtt["port"].as<int>() != mqttConfig.port) {
+                    mqttConfig.port = mqtt["port"] | 1883;
+                    configChanged = true;
+                }
+                if (mqtt.containsKey("username")) {
+                    strlcpy(mqttConfig.username, mqtt["username"] | "", sizeof(mqttConfig.username));
+                    configChanged = true;
+                }
+                if (mqtt.containsKey("password")) {
+                    strlcpy(mqttConfig.password, mqtt["password"] | "", sizeof(mqttConfig.password));
+                    configChanged = true;
+                }
+            }
+
             // Obsługa konfiguracji pomp
             if (doc.containsKey("pumps")) {
                 JsonArray pumpsArray = doc["pumps"].as<JsonArray>();
-                for (uint8_t i = 0; i < NUM_PUMPS && i < pumpsArray.size(); i++) {
-                    // Kopiowanie danych do struktury config
-                    pumps[i].enabled = pumpsArray[i]["enabled"] | false;
-                    pumps[i].calibration = pumpsArray[i]["calibration"] | 1.0f;
-                    pumps[i].dose = pumpsArray[i]["dose"] | 0.0f;
-                    pumps[i].schedule_hour = pumpsArray[i]["schedule_hour"] | 0;
-                    pumps[i].minute = pumpsArray[i]["minute"] | 0;
-                    pumps[i].schedule_days = pumpsArray[i]["schedule_days"] | 0;
+                for (uint8_t i = 0; i < NUMBER_OF_PUMPS && i < pumpsArray.size(); i++) {
+                    JsonObject pump = pumpsArray[i];
                     
-                    if (pumpsArray[i].containsKey("name")) {
-                        strlcpy(pumps[i].name, pumpsArray[i]["name"] | "", sizeof(pumps[i].name));
+                    if (pump.containsKey("name")) {
+                        String newName = pump["name"].as<String>();
+                        if (strcmp(pumps[i].name, newName.c_str()) != 0) {
+                            strlcpy(pumps[i].name, newName.c_str(), sizeof(pumps[i].name));
+                            configChanged = true;
+                        }
+                    }
+                    
+                    if (pump.containsKey("enabled") && pump["enabled"].as<bool>() != pumps[i].enabled) {
+                        pumps[i].enabled = pump["enabled"].as<bool>();
+                        configChanged = true;
+                    }
+                    
+                    if (pump.containsKey("calibration") && pump["calibration"].as<float>() != pumps[i].calibration) {
+                        pumps[i].calibration = pump["calibration"].as<float>();
+                        configChanged = true;
+                    }
+                    
+                    if (pump.containsKey("dose") && pump["dose"].as<float>() != pumps[i].dose) {
+                        pumps[i].dose = pump["dose"].as<float>();
+                        configChanged = true;
+                    }
+                    
+                    if (pump.containsKey("schedule_hour") && pump["schedule_hour"].as<int>() != pumps[i].schedule_hour) {
+                        pumps[i].schedule_hour = pump["schedule_hour"].as<int>();
+                        configChanged = true;
+                    }
+                    
+                    if (pump.containsKey("minute") && pump["minute"].as<int>() != pumps[i].minute) {
+                        pumps[i].minute = pump["minute"].as<int>();
+                        configChanged = true;
+                    }
+                    
+                    if (pump.containsKey("schedule_days") && pump["schedule_days"].as<uint8_t>() != pumps[i].schedule_days) {
+                        pumps[i].schedule_days = pump["schedule_days"].as<uint8_t>();
+                        configChanged = true;
                     }
                 }
             }
 
-            // Obsługa konfiguracji MQTT
-            if (doc.containsKey("mqtt")) {
-                JsonObject mqtt = doc["mqtt"];
-                strlcpy(mqttConfig.broker, mqtt["broker"] | "", sizeof(mqttConfig.broker));
-                mqttConfig.port = mqtt["port"] | 1883;
-                strlcpy(mqttConfig.username, mqtt["username"] | "", sizeof(mqttConfig.username));
-                strlcpy(mqttConfig.password, mqtt["password"] | "", sizeof(mqttConfig.password));
+            if (configChanged) {
+                saveConfig();
+                // Jeśli zmieniła się konfiguracja MQTT, zainicjuj ponownie połączenie
+                if (doc.containsKey("mqtt")) {
+                    setupMQTT();
+                }
             }
 
-            // Zapisz konfigurację do EEPROM
-            saveConfig();
-
-            // Przygotuj odpowiedź JSON
             DynamicJsonDocument response(256);
             response["status"] = "success";
             response["message"] = "Configuration saved";
-            
             String responseJson;
             serializeJson(response, responseJson);
             server.send(200, "application/json", responseJson);
         } else {
-            DynamicJsonDocument response(256);
-            response["status"] = "error";
-            response["message"] = "Invalid JSON format";
-            
-            String responseJson;
-            serializeJson(response, responseJson);
-            server.send(400, "application/json", responseJson);
+            server.send(400, "text/plain", "Invalid JSON");
         }
     } else {
-        DynamicJsonDocument response(256);
-        response["status"] = "error";
-        response["message"] = "No data received";
-        
-        String responseJson;
-        serializeJson(response, responseJson);
-        server.send(400, "application/json", responseJson);
+        server.send(400, "text/plain", "No data");
     }
-}
-
-void saveConfig() {
-    EEPROM.begin(512);
-    
-    // Zapisz konfigurację MQTT
-    int addr = 0;
-    EEPROM.put(addr, mqttConfig);
-    addr += sizeof(mqttConfig);
-
-    // Zapisz konfigurację pomp
-    for (int i = 0; i < NUM_PUMPS; i++) {
-        EEPROM.put(addr, pumps[i]);
-        addr += sizeof(PumpConfig);
-    }
-
-    EEPROM.commit();
-    EEPROM.end();
 }
 
 // --- Ogólna funkcja zapisywania konfiguracji
@@ -1412,6 +1505,52 @@ void setupWebServer() {
     webSocket.onEvent(webSocketEvent);
 }
 
+// String getConfigPage() {
+//     String page = F("<!DOCTYPE html><html><head>");
+//     page += F("<meta charset='UTF-8'>");
+//     page += F("<meta name='viewport' content='width=device-width, initial-scale=1'>");
+//     page += F("<title>AquaDoser Configuration</title>");
+//     page += getStyles();
+//     page += F("</head><body>");
+//     page += F("<div class='container'>");
+//     page += F("<h1>MQTT Configuration</h1>");
+//     page += F("<form method='POST' action='/config'>");
+    
+//     // MQTT configuration
+//     page += F("<div class='card'>");
+//     page += F("<h2>MQTT Settings</h2>");
+//     page += F("<div class='form-group'>");
+//     page += F("<label>Broker:</label>");
+//     page += F("<input type='text' name='mqtt_broker' value='");
+//     page += config.mqtt.broker;
+//     page += F("'></div>");
+    
+//     page += F("<div class='form-group'>");
+//     page += F("<label>Port:</label>");
+//     page += F("<input type='number' name='mqtt_port' value='");
+//     page += String(config.mqtt.port);
+//     page += F("'></div>");
+    
+//     page += F("<div class='form-group'>");
+//     page += F("<label>Username:</label>");
+//     page += F("<input type='text' name='mqtt_user' value='");
+//     page += config.mqtt.username;
+//     page += F("'></div>");
+    
+//     page += F("<div class='form-group'>");
+//     page += F("<label>Password:</label>");
+//     page += F("<input type='password' name='mqtt_password' value='");
+//     page += config.mqtt.password;
+//     page += F("'></div>");
+//     page += F("</div>");
+    
+//     page += F("<button type='submit' class='button'>Save Configuration</button>");
+//     page += F("</form>");
+//     page += F("</div></body></html>");
+    
+//     return page;
+// }
+
 void checkMQTTConfig() {
     if (validateMQTTConfig()) {
         Serial.println("Konfiguracja MQTT znaleziona:");
@@ -1426,567 +1565,192 @@ void checkMQTTConfig() {
     }
 }
 
-// String getStyles() {
-//     String styles = F(
-//         "body { "
-//         "    font-family: Arial, sans-serif; "
-//         "    margin: 0; "
-//         "    padding: 20px; "
-//         "    background-color: #1a1a1a;"
-//         "    color: #ffffff;"
-//         "}"
-
-//         ".buttons-container {"
-//         "    display: flex;"
-//         "    justify-content: space-between;"
-//         "    margin: -5px;"
-//         "}"
-
-//         ".container { "
-//         "    max-width: 800px; "
-//         "    margin: 0 auto; "
-//         "    padding: 0 15px;"
-//         "}"
-
-//         ".section {"
-//         "    background-color: #2a2a2a;"
-//         "    padding: 20px;"
-//         "    margin-bottom: 20px;"
-//         "    border-radius: 8px;"
-//         "    width: 100%;"
-//         "    box-sizing: border-box;"
-//         "}"
-
-//         "h1 { "
-//         "    color: #ffffff; "
-//         "    text-align: center;"
-//         "    margin-bottom: 30px;"
-//         "    font-size: 2.5em;"
-//         "    background-color: #2d2d2d;"
-//         "    padding: 20px;"
-//         "    border-radius: 8px;"
-//         "    box-shadow: 0 2px 4px rgba(0,0,0,0.2);"
-//         "}"
-
-//         "h2 { "
-//         "    color: #2196F3;"
-//         "    margin-top: 0;"
-//         "    font-size: 1.5em;"
-//         "}"
-
-//         ".config-table {"
-//         "    width: 100%;"
-//         "    border-collapse: collapse;"
-//         "    table-layout: fixed;"
-//         "}"
-
-//         ".config-table td {"
-//         "    padding: 8px;"
-//         "    border-bottom: 1px solid #3d3d3d;"
-//         "}"
-
-//         ".config-table td:first-child {"
-//         "    width: 65%;"
-//         "}"
-
-//         ".config-table td:last-child {"
-//         "    width: 35%;"
-//         "}"
-
-//         "input[type='text'],"
-//         "input[type='password'],"
-//         "input[type='number'] {"
-//         "    width: 100%;"
-//         "    padding: 8px;"
-//         "    border: 1px solid #3d3d3d;"
-//         "    border-radius: 4px;"
-//         "    background-color: #1a1a1a;"
-//         "    color: #ffffff;"
-//         "    box-sizing: border-box;"
-//         "    text-align: left;"
-//         "}"
-
-//         ".btn {"
-//         "    padding: 12px 24px;"
-//         "    border: none;"
-//         "    border-radius: 4px;"
-//         "    cursor: pointer;"
-//         "    font-size: 14px;"
-//         "    width: calc(50% - 10px);"
-//         "    display: inline-block;"
-//         "    margin: 5px;"
-//         "    text-align: center;"
-//         "}"
-
-//         ".btn-blue { "
-//         "    background-color: #2196F3;"
-//         "    color: white; "
-//         "}"
-
-//         ".btn-red { "
-//         "    background-color: #F44336;"
-//         "    color: white; "
-//         "}"
-
-//         ".status {"
-//         "    padding: 4px 8px;"
-//         "    border-radius: 4px;"
-//         "}"
-
-//         ".success { "
-//         "    color: #4CAF50; "
-//         "}"
-
-//         ".error { "
-//         "    color: #F44336;"
-//         "}"
-
-//         ".days-group {"
-//         "    margin: 15px 0;"
-//         "    display: flex;"
-//         "    flex-wrap: wrap;"
-//         "    gap: 10px;"
-//         "    align-items: center;"
-//         "}"
-
-//         ".days-group label {"
-//         "    color: #ffffff;"
-//         "    margin-right: 15px;"
-//         "}"
-
-//         ".message {"
-//         "    position: fixed;"
-//         "    top: 20px;"
-//         "    left: 50%;"
-//         "    transform: translateX(-50%);"
-//         "    padding: 15px 30px;"
-//         "    border-radius: 5px;"
-//         "    color: white;"
-//         "    opacity: 0;"
-//         "    transition: opacity 0.3s ease-in-out;"
-//         "    z-index: 1000;"
-//         "}"
-
-//         "@media (max-width: 600px) {"
-//         "    body { padding: 10px; }"
-//         "    .container { padding: 0; }"
-//         "    .section { padding: 15px; margin-bottom: 15px; }"
-//         "}"
-//     );
-//     return styles;
-// }
-
 String getStyles() {
-    String styles = F(
-        "body { "
-        "    font-family: Arial, sans-serif; "
-        "    margin: 0; "
-        "    padding: 20px; "
-        "    background-color: #1a1a1a;"
-        "    color: #ffffff;"
-        "}"
-
-        ".buttons-container {"
-        "    display: flex;"
-        "    justify-content: space-between;"
-        "    margin: -5px;"
-        "}"
-
-        ".container { "
-        "    max-width: 800px; "
-        "    margin: 0 auto; "
-        "    padding: 0 15px;"
-        "}"
-
-        ".section {"
-        "    background-color: #2a2a2a;"
-        "    padding: 20px;"
-        "    margin-bottom: 20px;"
-        "    border-radius: 8px;"
-        "    width: 100%;"
-        "    box-sizing: border-box;"
-        "}"
-
-        "h1 { "
-        "    color: #ffffff; "
-        "    text-align: center;"
-        "    margin-bottom: 30px;"
-        "    font-size: 2.5em;"
-        "    background-color: #2d2d2d;"
-        "    padding: 20px;"
-        "    border-radius: 8px;"
-        "    box-shadow: 0 2px 4px rgba(0,0,0,0.2);"
-        "}"
-
-        "h2 { "
-        "    color: #2196F3;"
-        "    margin-top: 0;"
-        "    font-size: 1.5em;"
-        "}"
-
-        ".config-table {"
-        "    width: 100%;"
-        "    border-collapse: collapse;"
-        "    table-layout: fixed;"
-        "}"
-
-        ".config-table td {"
-        "    padding: 8px;"
-        "    border-bottom: 1px solid #3d3d3d;"
-        "}"
-
-        ".config-table td:first-child {"
-        "    width: 65%;"
-        "}"
-
-        ".config-table td:last-child {"
-        "    width: 35%;"
-        "}"
-
-        "input[type='text'],"
-        "input[type='password'],"
-        "input[type='number'] {"
-        "    width: 100%;"
-        "    padding: 8px;"
-        "    border: 1px solid #3d3d3d;"
-        "    border-radius: 4px;"
-        "    background-color: #1a1a1a;"
-        "    color: #ffffff;"
-        "    box-sizing: border-box;"
-        "    text-align: left;"
-        "}"
-
-        "input[type='checkbox'] {"
-        "    width: 20px;"
-        "    height: 20px;"
-        "    margin: 0;"
-        "    vertical-align: middle;"
-        "}"
-
-        ".btn {"
-        "    padding: 12px 24px;"
-        "    border: none;"
-        "    border-radius: 4px;"
-        "    cursor: pointer;"
-        "    font-size: 14px;"
-        "    width: calc(50% - 10px);"
-        "    display: inline-block;"
-        "    margin: 5px;"
-        "    text-align: center;"
-        "}"
-
-        ".btn-blue { "
-        "    background-color: #2196F3;"
-        "    color: white; "
-        "}"
-
-        ".btn-red { "
-        "    background-color: #F44336;"
-        "    color: white; "
-        "}"
-
-        ".status {"
-        "    padding: 4px 8px;"
-        "    border-radius: 4px;"
-        "    display: inline-block;"
-        "}"
-
-        ".success { "
-        "    color: #4CAF50; "
-        "}"
-
-        ".error { "
-        "    color: #F44336;"
-        "}"
-
-        ".message {"
-        "    position: fixed;"
-        "    top: 20px;"
-        "    left: 50%;"
-        "    transform: translateX(-50%);"
-        "    padding: 15px 30px;"
-        "    border-radius: 5px;"
-        "    color: white;"
-        "    opacity: 0;"
-        "    transition: opacity 0.3s ease-in-out;"
-        "    z-index: 1000;"
-        "}"
-
-        "@media (max-width: 600px) {"
-        "    body { padding: 10px; }"
-        "    .container { padding: 0; }"
-        "    .section { padding: 15px; margin-bottom: 15px; }"
-        "    .config-table td:first-child { width: 50%; }"
-        "    .config-table td:last-child { width: 50%; }"
-        "    .btn { width: 100%; margin: 5px 0; }"
-        "    .buttons-container { flex-direction: column; }"
-        "}"
+    return F(
+        "<style>"
+        "body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f0f2f5; }"
+        ".container { max-width: 800px; margin: 0 auto; }"
+        ".card { background: white; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }"
+        "h1 { color: #1a73e8; }"
+        "h2 { color: #5f6368; margin-top: 0; }"
+        ".form-group { margin-bottom: 15px; }"
+        "label { display: block; margin-bottom: 5px; color: #5f6368; }"
+        "input { width: 100%; padding: 8px; border: 1px solid #dadce0; border-radius: 4px; box-sizing: border-box; }"
+        ".button { background: #1a73e8; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; }"
+        ".button:hover { background: #1557b0; }"
+        "</style>"
     );
-    return styles;
 }
 
-// String getConfigPage() {
-//     String page = F("<!DOCTYPE html><html lang='en'><head>");
-//     page += F("<meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1'>");
-//     page += F("<title>AquaDoser</title><style>");
-//     page += getStyles();
-//     page += F("</style></head><body>");
-    
-//     // Tytuł
-//     page += F("<div class='container'>");
-//     page += F("<h1>AquaDoser</h1>");
-
-//     // Status systemu
-//     page += F("<div class='section'>");
-//     page += F("<h2>Status systemu</h2>");
-//     page += F("<table class='config-table'>");
-//     page += F("<tr><td>Status MQTT</td><td><span class='status ");
-//     page += (systemStatus.mqtt_connected ? F("success'>Połączony") : F("error'>Rozłączony"));
-//     page += F("</span></td></tr>");
-//     page += F("</table></div>");
-
-//     // Formularz konfiguracji
-//     page += F("<form method='POST' action='/save'>");
-    
-//     // Konfiguracja MQTT
-//     page += F("<div class='section'>");
-//     page += F("<h2>Konfiguracja MQTT</h2>");
-//     page += F("<table class='config-table'>");
-//     page += F("<tr><td>Broker MQTT</td><td><input type='text' name='mqtt_server' value='");
-//     page += mqttConfig.server;
-//     page += F("'></td></tr>");
-//     page += F("<tr><td>Port MQTT</td><td><input type='number' name='mqtt_port' value='");
-//     page += String(mqttConfig.port);
-//     page += F("'></td></tr>");
-//     page += F("<tr><td>Użytkownik MQTT</td><td><input type='text' name='mqtt_user' value='");
-//     page += mqttConfig.username;
-//     page += F("'></td></tr>");
-//     page += F("<tr><td>Hasło MQTT</td><td><input type='password' name='mqtt_pass' value='");
-//     page += mqttConfig.password;
-//     page += F("'></td></tr>");
-//     page += F("</table></div>");
-
-//     // Konfiguracja pomp
-//     for(int i = 0; i < NUM_PUMPS; i++) {
-//         page += F("<div class='section'>");
-//         page += F("<h2>Pompa "); 
-//         page += String(i + 1);
-//         page += F("</h2>");
-//         page += F("<table class='config-table'>");
-        
-//         page += F("<tr><td>Nazwa</td><td><input type='text' name='pump_name_");
-//         page += String(i);
-//         page += F("' value='");
-//         page += pumpConfig[i].name;
-//         page += F("'></td></tr>");
-
-//         page += F("<tr><td>Aktywna</td><td><input type='checkbox' name='pump_enabled_");
-//         page += String(i);
-//         page += F("' ");
-//         page += (pumpConfig[i].enabled ? F("checked") : F(""));
-//         page += F("></td></tr>");
-
-//         page += F("<tr><td>Czas dozowania (ms)</td><td><input type='number' name='pump_dose_time_");
-//         page += String(i);
-//         page += F("' value='");
-//         page += String(pumpConfig[i].doseTime);
-//         page += F("'></td></tr>");
-
-//         page += F("<tr><td>Interwał dozowania (min)</td><td><input type='number' name='pump_interval_");
-//         page += String(i);
-//         page += F("' value='");
-//         page += String(pumpConfig[i].interval);
-//         page += F("'></td></tr>");
-        
-//         page += F("</table></div>");
-//     }
-
-//     // Przyciski akcji
-//     page += F("<div class='section'>");
-//     page += F("<div class='buttons-container'>");
-//     page += F("<input type='submit' value='Zapisz ustawienia' class='btn btn-blue'>");
-//     page += F("<button type='button' onclick='if(confirm(\"Czy na pewno chcesz zresetować urządzenie?\")) { fetch(\"/reset\"); }' class='btn btn-red'>Reset urządzenia</button>");
-//     page += F("</div></div>");
-    
-//     page += F("</form></div></body></html>");
-//     return page;
-// }
+String getStyles() {
+    return F("body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; }"
+            ".container { max-width: 960px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }"
+            "h1, h2 { color: #2196F3; }"
+            "h1 { text-align: center; margin-bottom: 30px; }"
+            ".section { background: #fff; border: 1px solid #ddd; padding: 20px; margin-bottom: 20px; border-radius: 4px; }"
+            ".form-group { margin-bottom: 15px; }"
+            "label { display: inline-block; margin-bottom: 5px; color: #666; }"
+            "input[type='text'], input[type='number'], input[type='password'] { width: 200px; padding: 8px; border: 1px solid #ddd; border-radius: 4px; }"
+            "input[type='checkbox'] { margin-right: 5px; }"
+            ".days-group { margin: 10px 0; }"
+            ".days-group label { margin-right: 10px; }"
+            ".button-group { text-align: center; margin: 20px 0; }"
+            ".button-primary { background: #2196F3; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; margin: 5px; }"
+            ".button-warning { background: #f44336; color: white; }"
+            ".button-primary:hover { background: #1976D2; }"
+            ".button-warning:hover { background: #d32f2f; }"
+            ".status-item { display: inline-block; margin-right: 20px; }");
+}
 
 String getConfigPage() {
-    String page = F("<!DOCTYPE html><html lang='pl'><head>");
-    page += F("<meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1'>");
-    page += F("<title>AquaDoser</title><style>");
-    page += getStyles();
-    page += F("</style>");
+    String page = F("<!DOCTYPE html>"
+                   "<html lang='en'>"
+                   "<head>"
+                   "<meta charset='UTF-8'>"
+                   "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+                   "<title>AquaDoser Configuration</title>"
+                   "<style>");
     
-    // Dodajemy skrypt JavaScript
-    page += F("<script>");
-    page += F("function saveConfig() {");
-    page += F("    let pumpsData = [];");
-    page += F("    for(let i = 0; i < ");
-    page += String(NUM_PUMPS);
-    page += F("; i++) {");
-    page += F("        let pumpData = {");
-    page += F("            name: document.querySelector(`input[name='pump_name_${i}']`).value,");
-    page += F("            enabled: document.querySelector(`input[name='pump_enabled_${i}']`).checked,");
-    page += F("            calibration: parseFloat(document.querySelector(`input[name='pump_calibration_${i}']`).value),");
-    page += F("            dose: parseFloat(document.querySelector(`input[name='pump_dose_${i}']`).value),");
-    page += F("            schedule_hour: parseInt(document.querySelector(`input[name='pump_schedule_hour_${i}']`).value),");
-    page += F("            minute: parseInt(document.querySelector(`input[name='pump_minute_${i}']`).value),");
-    page += F("            schedule_days: 0");
-    page += F("        };");
-    page += F("        // Oblicz dni tygodnia");
-    page += F("        for(let day = 0; day < 7; day++) {");
-    page += F("            if(document.querySelector(`input[name='pump_day_${i}_${day}']`).checked) {");
-    page += F("                pumpData.schedule_days |= (1 << day);");
-    page += F("            }");
-    page += F("        }");
-    page += F("        pumpsData.push(pumpData);");
-    page += F("    }");
-    page += F("    let mqttData = {");
-    page += F("        broker: document.querySelector('input[name=\"mqtt_broker\"]').value,");
-    page += F("        port: parseInt(document.querySelector('input[name=\"mqtt_port\"]').value),");
-    page += F("        username: document.querySelector('input[name=\"mqtt_user\"]').value,");
-    page += F("        password: document.querySelector('input[name=\"mqtt_pass\"]').value");
-    page += F("    };");
-    page += F("    let configData = {");
-    page += F("        pumps: pumpsData,");
-    page += F("        mqtt: mqttData");
-    page += F("    };");
-    page += F("    fetch('/save', {");
-    page += F("        method: 'POST',");
-    page += F("        headers: {");
-    page += F("            'Content-Type': 'application/json'");
-    page += F("        },");
-    page += F("        body: JSON.stringify(configData)");
-    page += F("    })");
-    page += F("    .then(response => response.json())");
-    page += F("    .then(data => {");
-    page += F("        if(data.status === 'success') {");
-    page += F("            alert('Konfiguracja została zapisana');");
-    page += F("            window.location.reload();");
-    page += F("        } else {");
-    page += F("            alert('Błąd: ' + data.message);");
-    page += F("        }");
-    page += F("    })");
-    page += F("    .catch(error => {");
-    page += F("        alert('Wystąpił błąd podczas zapisywania konfiguracji');");
-    page += F("        console.error('Error:', error);");
-    page += F("    });");
-    page += F("    return false;");
-    page += F("}");
-    page += F("</script></head><body>");
-    
-    // Strona główna
-    page += F("<div class='container'>");
-    page += F("<h1>AquaDoser</h1>");
+    page += getStyles();  // Dodanie stylów CSS
 
-    // Status systemu
-    page += F("<div class='section'>");
-    page += F("<h2>Status systemu</h2>");
-    page += F("<table class='config-table'>");
-    page += F("<tr><td>Status MQTT</td><td><span class='status ");
-    page += (systemStatus.mqtt_connected ? F("success'>Połączony") : F("error'>Rozłączony"));
-    page += F("</span></td></tr>");
-    page += F("</table></div>");
+    page += F("</style>"
+              "</head>"
+              "<body>"
+              "<div class='container'>");
 
-    // Formularz konfiguracji
-    page += F("<form onsubmit='return saveConfig()'>");
-    
-    // Konfiguracja MQTT
-    page += F("<div class='section'>");
-    page += F("<h2>Konfiguracja MQTT</h2>");
-    page += F("<table class='config-table'>");
-    page += F("<tr><td>Broker MQTT</td><td><input type='text' name='mqtt_broker' value='");
-    page += mqttConfig.broker;
-    page += F("'></td></tr>");
-    page += F("<tr><td>Port MQTT</td><td><input type='number' name='mqtt_port' value='");
-    page += String(mqttConfig.port);
-    page += F("'></td></tr>");
-    page += F("<tr><td>Użytkownik MQTT</td><td><input type='text' name='mqtt_user' value='");
-    page += mqttConfig.username;
-    page += F("'></td></tr>");
-    page += F("<tr><td>Hasło MQTT</td><td><input type='password' name='mqtt_pass' value='");
-    page += mqttConfig.password;
-    page += F("'></td></tr>");
-    page += F("</table></div>");
+    // Sekcja statusu systemu
+    page += F("<div class='section'>"
+             "<h2>System Status</h2>"
+             "<div id='systemStatus'></div>"
+             "</div>");
 
-    // Konfiguracja pomp
+    // Sekcja konfiguracji MQTT
+    page += F("<div class='section'>"
+             "<h2>MQTT Configuration</h2>"
+             "<div class='form-group'>"
+             "<label>Server: </label>"
+             "<input type='text' id='mqtt_server' value='") + String(mqttConfig.server) + F("'>"
+             "</div>"
+             "<div class='form-group'>"
+             "<label>Port: </label>"
+             "<input type='number' id='mqtt_port' value='") + String(mqttConfig.port) + F("'>"
+             "</div>"
+             "<div class='form-group'>"
+             "<label>Username: </label>"
+             "<input type='text' id='mqtt_user' value='") + String(mqttConfig.username) + F("'>"
+             "</div>"
+             "<div class='form-group'>"
+             "<label>Password: </label>"
+             "<input type='password' id='mqtt_pass' value='") + String(mqttConfig.password) + F("'>"
+             "</div>"
+             "</div>");
+
+    // Sekcje konfiguracji pomp
     for(int i = 0; i < NUM_PUMPS; i++) {
-        page += F("<div class='section'>");
-        page += F("<h2>Pompa "); 
-        page += String(i + 1);
-        page += F("</h2>");
-        page += F("<table class='config-table'>");
-        
-        // Nazwa pompy
-        page += F("<tr><td>Nazwa</td><td><input type='text' name='pump_name_");
-        page += String(i);
-        page += F("' value='");
-        page += pumps[i].name;
-        page += F("' maxlength='19'></td></tr>");
+        page += F("<div class='section'>"
+                 "<h2>Pump ") + String(i + 1) + F(" Configuration</h2>"
+                 "<div class='form-group'>"
+                 "<label>Name: </label>"
+                 "<input type='text' id='pump_name_") + String(i) + F("' value='") + String(config.pumps[i].name) + F("'>"
+                 "</div>"
+                 "<div class='form-group'>"
+                 "<label>Dose (ml): </label>"
+                 "<input type='number' id='pump_dose_") + String(i) + F("' value='") + String(config.pumps[i].doseAmount) + F("' step='0.1'>"
+                 "</div>"
+                 "<div class='form-group'>"
+                 "<label>Hour: </label>"
+                 "<input type='number' id='pump_hour_") + String(i) + F("' value='") + String(config.pumps[i].hour) + F("' min='0' max='23'>"
+                 "</div>"
+                 "<div class='form-group'>"
+                 "<label>Minute: </label>"
+                 "<input type='number' id='pump_minute_") + String(i) + F("' value='") + String(config.pumps[i].minute) + F("' min='0' max='59'>"
+                 "</div>"
+                 "<div class='days-group'>"
+                 "<label>Days: </label>");
 
-        // Status aktywności
-        page += F("<tr><td>Aktywna</td><td><input type='checkbox' name='pump_enabled_");
-        page += String(i);
-        page += F("' ");
-        page += (pumps[i].enabled ? F("checked") : F(""));
-        page += F("></td></tr>");
-
-        // Kalibracja
-        page += F("<tr><td>Kalibracja (ml/s)</td><td><input type='number' step='0.01' name='pump_calibration_");
-        page += String(i);
-        page += F("' value='");
-        page += String(pumps[i].calibration);
-        page += F("' min='0.01'></td></tr>");
-
-        // Dawka
-        page += F("<tr><td>Dawka (ml)</td><td><input type='number' step='0.1' name='pump_dose_");
-        page += String(i);
-        page += F("' value='");
-        page += String(pumps[i].dose);
-        page += F("' min='0'></td></tr>");
-
-        // Godzina dozowania
-        page += F("<tr><td>Godzina dozowania</td><td><input type='number' name='pump_schedule_hour_");
-        page += String(i);
-        page += F("' value='");
-        page += String(pumps[i].schedule_hour);
-        page += F("' min='0' max='23'></td></tr>");
-
-        // Minuta dozowania
-        page += F("<tr><td>Minuta dozowania</td><td><input type='number' name='pump_minute_");
-        page += String(i);
-        page += F("' value='");
-        page += String(pumps[i].minute);
-        page += F("' min='0' max='59'></td></tr>");
-
-        // Dni tygodnia
-        page += F("<tr><td>Dni dozowania</td><td>");
-        for(int day = 0; day < 7; day++) {
-            page += F("<label style='margin-right: 5px;'><input type='checkbox' name='pump_day_");
-            page += String(i);
-            page += F("_");
-            page += String(day);
-            page += F("' ");
-            page += ((pumps[i].schedule_days & (1 << day)) ? F("checked") : F(""));
-            page += F("> ");
-            page += dayNames[day];
-            page += F("</label> ");
+        for(int j = 0; j < 7; j++) {
+            page += F("<label><input type='checkbox' id='pump_day_") + String(i) + F("_") + String(j) + F("'") + 
+                    (config.pumps[i].days & (1 << j) ? F(" checked") : F("")) + F(">") + 
+                    dayNames[j] + F("</label>");
         }
-        page += F("</td></tr>");
-        
-        page += F("</table></div>");
+
+        page += F("</div>"
+                 "<div class='form-group'>"
+                 "<label>Enabled: </label>"
+                 "<input type='checkbox' id='pump_enabled_") + String(i) + F("'") + 
+                 (config.pumps[i].enabled ? F(" checked") : F("")) + F(">"
+                 "</div>"
+                 "</div>");
     }
 
-    // Przyciski akcji
-    page += F("<div class='section'>");
-    page += F("<div class='buttons-container'>");
-    page += F("<input type='submit' value='Zapisz ustawienia' class='btn btn-blue'>");
-    page += F("<button type='button' onclick='if(confirm(\"Czy na pewno chcesz zresetować urządzenie?\")) { fetch(\"/reset\"); }' class='btn btn-red'>Reset urządzenia</button>");
-    page += F("</div></div>");
-    
-    page += F("</form></div></body></html>");
+    // Przyciski
+    page += F("<div class='button-group'>"
+             "<button class='button-primary' onclick='saveConfig()'>Save Configuration</button>"
+             "<button class='button-primary button-warning' onclick='resetESP()'>Reset ESP</button>"
+             "</div>");
+
+    // JavaScript
+    page += F("<script>"
+             "let ws = new WebSocket('ws://' + window.location.hostname + ':81/');"
+             "ws.onmessage = function(event) {"
+             "    let data = JSON.parse(event.data);"
+             "    updateSystemStatus(data);"
+             "};"
+             
+             "function updateSystemStatus(data) {"
+             "    let statusHtml = '';"
+             "    statusHtml += '<div class=\"status-item\">Uptime: ' + data.uptime + '</div>';"
+             "    statusHtml += '<div class=\"status-item\">MQTT: ' + (data.mqtt_connected ? 'Connected' : 'Disconnected') + '</div>';"
+             "    document.getElementById('systemStatus').innerHTML = statusHtml;"
+             "}"
+             
+             "function saveConfig() {"
+             "    let config = {"
+             "        mqtt: {"
+             "            server: document.getElementById('mqtt_server').value,"
+             "            port: parseInt(document.getElementById('mqtt_port').value),"
+             "            username: document.getElementById('mqtt_user').value,"
+             "            password: document.getElementById('mqtt_pass').value"
+             "        },"
+             "        pumps: []"
+             "    };"
+             
+             "    for(let i = 0; i < " + String(NUM_PUMPS) + F("; i++) {"
+             "        let pump = {"
+             "            name: document.getElementById('pump_name_' + i).value,"
+             "            doseAmount: parseFloat(document.getElementById('pump_dose_' + i).value),"
+             "            hour: parseInt(document.getElementById('pump_hour_' + i).value),"
+             "            minute: parseInt(document.getElementById('pump_minute_' + i).value),"
+             "            days: 0,"
+             "            enabled: document.getElementById('pump_enabled_' + i).checked"
+             "        };"
+             "        for(let j = 0; j < 7; j++) {"
+             "            if(document.getElementById('pump_day_' + i + '_' + j).checked) {"
+             "                pump.days |= (1 << j);"
+             "            }"
+             "        }"
+             "        config.pumps.push(pump);"
+             "    }"
+             
+             "    fetch('/save', {"
+             "        method: 'POST',"
+             "        headers: {'Content-Type': 'application/json'},"
+             "        body: JSON.stringify(config)"
+             "    })"
+             "    .then(response => response.text())"
+             "    .then(data => alert(data));"
+             "}"
+             
+             "function resetESP() {"
+             "    if(confirm('Are you sure you want to reset the ESP?')) {"
+             "        fetch('/reset')"
+             "        .then(response => response.text())"
+             "        .then(data => alert(data));"
+             "    }"
+             "}"
+             "</script>");
+
+    page += F("</div></body></html>");
     return page;
 }
 
@@ -2073,8 +1837,6 @@ void setup() {
     // Synchronizacja czasu
     syncRTC();
     
-    server.on("/save", HTTP_POST, handleSave);
-
     server.on("/restart", HTTP_POST, []() {
         server.send(200, "text/plain", "Restarting...");
         delay(1000);
