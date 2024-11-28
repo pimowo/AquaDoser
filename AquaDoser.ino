@@ -160,17 +160,19 @@ struct SystemStatus {
 };
 
 struct MQTTConfig {
-    char broker[64];
-    uint16_t port;
-    char username[32];
-    char password[32];
+    char server[40];
+    int port;
+    char username[20];
+    char password[20];
     
     MQTTConfig() : port(1883) {
-        broker[0] = '\0';
+        server[0] = '\0';
         username[0] = '\0';
         password[0] = '\0';
     }
 };
+
+MQTTConfig mqttConfig;
 
 ESP8266WebServer server(80);
 WebSocketsServer webSocket = WebSocketsServer(81);
@@ -178,6 +180,10 @@ ESP8266HTTPUpdateServer httpUpdateServer;
 
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "pool.ntp.org");
+
+const char* dayNames[] = {"Pn", "Wt", "Sr", "Cz", "Pt", "So", "Nd"};
+
+
 // Struktura dla informacji systemowych
 struct SystemInfo {
     unsigned long uptime;
@@ -187,10 +193,9 @@ struct SystemInfo {
 SystemInfo sysInfo = {0, false};
 
 struct Config {
-    MQTTConfig mqtt;
-    PumpConfig pumps[NUMBER_OF_PUMPS];
+    PumpConfig pumps[NUM_PUMPS];
     bool soundEnabled;
-    uint8_t checksum;
+    uint32_t checksum;
     
     Config() : soundEnabled(true), checksum(0) {}
 };
@@ -1417,23 +1422,6 @@ void checkMQTTConfig() {
 }
 
 String getStyles() {
-    return F(
-        "<style>"
-        "body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f0f2f5; }"
-        ".container { max-width: 800px; margin: 0 auto; }"
-        ".card { background: white; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }"
-        "h1 { color: #1a73e8; }"
-        "h2 { color: #5f6368; margin-top: 0; }"
-        ".form-group { margin-bottom: 15px; }"
-        "label { display: block; margin-bottom: 5px; color: #5f6368; }"
-        "input { width: 100%; padding: 8px; border: 1px solid #dadce0; border-radius: 4px; box-sizing: border-box; }"
-        ".button { background: #1a73e8; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; }"
-        ".button:hover { background: #1557b0; }"
-        "</style>"
-    );
-}
-
-String getStyles() {
     return F("body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; }"
             ".container { max-width: 960px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }"
             "h1, h2 { color: #2196F3; }"
@@ -1454,154 +1442,183 @@ String getStyles() {
 }
 
 String getConfigPage() {
-    String page = F("<!DOCTYPE html>"
-                   "<html lang='en'>"
-                   "<head>"
-                   "<meta charset='UTF-8'>"
-                   "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-                   "<title>AquaDoser Configuration</title>"
-                   "<style>");
+    String page;
     
-    page += getStyles();  // Dodanie stylów CSS
-
-    page += F("</style>"
-              "</head>"
-              "<body>"
-              "<div class='container'>");
+    // Początek strony
+    page += F("<!DOCTYPE html>");
+    page += F("<html lang='en'>");
+    page += F("<head>");
+    page += F("<meta charset='UTF-8'>");
+    page += F("<meta name='viewport' content='width=device-width, initial-scale=1'>");
+    page += F("<title>AquaDoser Configuration</title>");
+    page += F("<style>");
+    page += getStyles();
+    page += F("</style>");
+    page += F("</head>");
+    page += F("<body>");
+    page += F("<div class='container'>");
 
     // Sekcja statusu systemu
-    page += F("<div class='section'>"
-             "<h2>System Status</h2>"
-             "<div id='systemStatus'></div>"
-             "</div>");
+    page += F("<div class='section'>");
+    page += F("<h2>System Status</h2>");
+    page += F("<div id='systemStatus'></div>");
+    page += F("</div>");
 
     // Sekcja konfiguracji MQTT
-    page += F("<div class='section'>"
-             "<h2>MQTT Configuration</h2>"
-             "<div class='form-group'>"
-             "<label>Server: </label>"
-             "<input type='text' id='mqtt_server' value='") + String(mqttConfig.server) + F("'>"
-             "</div>"
-             "<div class='form-group'>"
-             "<label>Port: </label>"
-             "<input type='number' id='mqtt_port' value='") + String(mqttConfig.port) + F("'>"
-             "</div>"
-             "<div class='form-group'>"
-             "<label>Username: </label>"
-             "<input type='text' id='mqtt_user' value='") + String(mqttConfig.username) + F("'>"
-             "</div>"
-             "<div class='form-group'>"
-             "<label>Password: </label>"
-             "<input type='password' id='mqtt_pass' value='") + String(mqttConfig.password) + F("'>"
-             "</div>"
-             "</div>");
+    page += F("<div class='section'>");
+    page += F("<h2>MQTT Configuration</h2>");
+    page += F("<div class='form-group'>");
+    page += F("<label>Server: </label>");
+    page += F("<input type='text' id='mqtt_server' value='");
+                    ffddczsccsd     page += String(mqttConfig.server);
+    page += F("'></div>");
+    page += F("<div class='form-group'>");
+    page += F("<label>Port: </label>");
+    page += F("<input type='number' id='mqtt_port' value='");
+    page += String(mqttConfig.port);
+    page += F("'></div>");
+    page += F("<div class='form-group'>");
+    page += F("<label>Username: </label>");
+    page += F("<input type='text' id='mqtt_user' value='");
+    page += String(mqttConfig.username);
+    page += F("'></div>");
+    page += F("<div class='form-group'>");
+    page += F("<label>Password: </label>");
+    page += F("<input type='password' id='mqtt_pass' value='");
+    page += String(mqttConfig.password);
+    page += F("'></div>");
+    page += F("</div>");
 
     // Sekcje konfiguracji pomp
     for(int i = 0; i < NUM_PUMPS; i++) {
-        page += F("<div class='section'>"
-                 "<h2>Pump ") + String(i + 1) + F(" Configuration</h2>"
-                 "<div class='form-group'>"
-                 "<label>Name: </label>"
-                 "<input type='text' id='pump_name_") + String(i) + F("' value='") + String(config.pumps[i].name) + F("'>"
-                 "</div>"
-                 "<div class='form-group'>"
-                 "<label>Dose (ml): </label>"
-                 "<input type='number' id='pump_dose_") + String(i) + F("' value='") + String(config.pumps[i].doseAmount) + F("' step='0.1'>"
-                 "</div>"
-                 "<div class='form-group'>"
-                 "<label>Hour: </label>"
-                 "<input type='number' id='pump_hour_") + String(i) + F("' value='") + String(config.pumps[i].hour) + F("' min='0' max='23'>"
-                 "</div>"
-                 "<div class='form-group'>"
-                 "<label>Minute: </label>"
-                 "<input type='number' id='pump_minute_") + String(i) + F("' value='") + String(config.pumps[i].minute) + F("' min='0' max='59'>"
-                 "</div>"
-                 "<div class='days-group'>"
-                 "<label>Days: </label>");
+        page += F("<div class='section'>");
+        page += F("<h2>Pump ");
+        page += String(i + 1);
+        page += F(" Configuration</h2>");
+        page += F("<div class='form-group'>");
+        page += F("<label>Name: </label>");
+        page += F("<input type='text' id='pump_name_");
+        page += String(i);
+        page += F("' value='");
+        page += String(config.pumps[i].name);
+        page += F("'></div>");
+        page += F("<div class='form-group'>");
+        page += F("<label>Dose (ml): </label>");
+        page += F("<input type='number' id='pump_dose_");
+        page += String(i);
+        page += F("' value='");
+        page += String(config.pumps[i].doseAmount);
+        page += F("' step='0.1'></div>");
+        page += F("<div class='form-group'>");
+        page += F("<label>Hour: </label>");
+        page += F("<input type='number' id='pump_hour_");
+        page += String(i);
+        page += F("' value='");
+        page += String(config.pumps[i].hour);
+        page += F("' min='0' max='23'></div>");
+        page += F("<div class='form-group'>");
+        page += F("<label>Minute: </label>");
+        page += F("<input type='number' id='pump_minute_");
+        page += String(i);
+        page += F("' value='");
+        page += String(config.pumps[i].minute);
+        page += F("' min='0' max='59'></div>");
+        page += F("<div class='days-group'>");
+        page += F("<label>Days: </label>");
 
         for(int j = 0; j < 7; j++) {
-            page += F("<label><input type='checkbox' id='pump_day_") + String(i) + F("_") + String(j) + F("'") + 
-                    (config.pumps[i].days & (1 << j) ? F(" checked") : F("")) + F(">") + 
-                    dayNames[j] + F("</label>");
+            page += F("<label><input type='checkbox' id='pump_day_");
+            page += String(i);
+            page += F("_");
+            page += String(j);
+            page += F("'");
+            page += (config.pumps[i].days & (1 << j) ? F(" checked") : F(""));
+            page += F(">");
+            page += dayNames[j];
+            page += F("</label>");
         }
 
-        page += F("</div>"
-                 "<div class='form-group'>"
-                 "<label>Enabled: </label>"
-                 "<input type='checkbox' id='pump_enabled_") + String(i) + F("'") + 
-                 (config.pumps[i].enabled ? F(" checked") : F("")) + F(">"
-                 "</div>"
-                 "</div>");
+        page += F("</div>");
+        page += F("<div class='form-group'>");
+        page += F("<label>Enabled: </label>");
+        page += F("<input type='checkbox' id='pump_enabled_");
+        page += String(i);
+        page += (config.pumps[i].enabled ? F("' checked>") : F("'>"));
+        page += F("</div></div>");
     }
 
     // Przyciski
-    page += F("<div class='button-group'>"
-             "<button class='button-primary' onclick='saveConfig()'>Save Configuration</button>"
-             "<button class='button-primary button-warning' onclick='resetESP()'>Reset ESP</button>"
-             "</div>");
+    page += F("<div class='button-group'>");
+    page += F("<button class='button-primary' onclick='saveConfig()'>Save Configuration</button>");
+    page += F("<button class='button-primary button-warning' onclick='resetESP()'>Reset ESP</button>");
+    page += F("</div>");
 
     // JavaScript
-    page += F("<script>"
-             "let ws = new WebSocket('ws://' + window.location.hostname + ':81/');"
-             "ws.onmessage = function(event) {"
-             "    let data = JSON.parse(event.data);"
-             "    updateSystemStatus(data);"
-             "};"
-             
-             "function updateSystemStatus(data) {"
-             "    let statusHtml = '';"
-             "    statusHtml += '<div class=\"status-item\">Uptime: ' + data.uptime + '</div>';"
-             "    statusHtml += '<div class=\"status-item\">MQTT: ' + (data.mqtt_connected ? 'Connected' : 'Disconnected') + '</div>';"
-             "    document.getElementById('systemStatus').innerHTML = statusHtml;"
-             "}"
-             
-             "function saveConfig() {"
-             "    let config = {"
-             "        mqtt: {"
-             "            server: document.getElementById('mqtt_server').value,"
-             "            port: parseInt(document.getElementById('mqtt_port').value),"
-             "            username: document.getElementById('mqtt_user').value,"
-             "            password: document.getElementById('mqtt_pass').value"
-             "        },"
-             "        pumps: []"
-             "    };"
-             
-             "    for(let i = 0; i < " + String(NUM_PUMPS) + F("; i++) {"
-             "        let pump = {"
-             "            name: document.getElementById('pump_name_' + i).value,"
-             "            doseAmount: parseFloat(document.getElementById('pump_dose_' + i).value),"
-             "            hour: parseInt(document.getElementById('pump_hour_' + i).value),"
-             "            minute: parseInt(document.getElementById('pump_minute_' + i).value),"
-             "            days: 0,"
-             "            enabled: document.getElementById('pump_enabled_' + i).checked"
-             "        };"
-             "        for(let j = 0; j < 7; j++) {"
-             "            if(document.getElementById('pump_day_' + i + '_' + j).checked) {"
-             "                pump.days |= (1 << j);"
-             "            }"
-             "        }"
-             "        config.pumps.push(pump);"
-             "    }"
-             
-             "    fetch('/save', {"
-             "        method: 'POST',"
-             "        headers: {'Content-Type': 'application/json'},"
-             "        body: JSON.stringify(config)"
-             "    })"
-             "    .then(response => response.text())"
-             "    .then(data => alert(data));"
-             "}"
-             
-             "function resetESP() {"
-             "    if(confirm('Are you sure you want to reset the ESP?')) {"
-             "        fetch('/reset')"
-             "        .then(response => response.text())"
-             "        .then(data => alert(data));"
-             "    }"
-             "}"
-             "</script>");
+    page += F("<script>");
+    page += F("let ws = new WebSocket('ws://' + window.location.hostname + ':81/');");
+    page += F("ws.onmessage = function(event) {");
+    page += F("    let data = JSON.parse(event.data);");
+    page += F("    updateSystemStatus(data);");
+    page += F("};");
+    
+    page += F("function updateSystemStatus(data) {");
+    page += F("    let statusHtml = '';");
+    page += F("    statusHtml += '<div class=\"status-item\">Uptime: ' + data.uptime + '</div>';");
+    page += F("    statusHtml += '<div class=\"status-item\">MQTT: ' + (data.mqtt_connected ? 'Connected' : 'Disconnected') + '</div>';");
+    page += F("    document.getElementById('systemStatus').innerHTML = statusHtml;");
+    page += F("}");
+    
+    page += F("function saveConfig() {");
+    page += F("    let config = {");
+    page += F("        mqtt: {");
+    page += F("            server: document.getElementById('mqtt_server').value,");
+    page += F("            port: parseInt(document.getElementById('mqtt_port').value),");
+    page += F("            username: document.getElementById('mqtt_user').value,");
+    page += F("            password: document.getElementById('mqtt_pass').value");
+    page += F("        },");
+    page += F("        pumps: []");
+    page += F("    };");
+    
+    page += F("    for(let i = 0; i < ");
+    page += String(NUM_PUMPS);
+    page += F("; i++) {");
+    page += F("        let pump = {");
+    page += F("            name: document.getElementById('pump_name_' + i).value,");
+    page += F("            doseAmount: parseFloat(document.getElementById('pump_dose_' + i).value),");
+    page += F("            hour: parseInt(document.getElementById('pump_hour_' + i).value),");
+    page += F("            minute: parseInt(document.getElementById('pump_minute_' + i).value),");
+    page += F("            days: 0,");
+    page += F("            enabled: document.getElementById('pump_enabled_' + i).checked");
+    page += F("        };");
+    page += F("        for(let j = 0; j < 7; j++) {");
+    page += F("            if(document.getElementById('pump_day_' + i + '_' + j).checked) {");
+    page += F("                pump.days |= (1 << j);");
+    page += F("            }");
+    page += F("        }");
+    page += F("        config.pumps.push(pump);");
+    page += F("    }");
+    
+    page += F("    fetch('/save', {");
+    page += F("        method: 'POST',");
+    page += F("        headers: {'Content-Type': 'application/json'},");
+    page += F("        body: JSON.stringify(config)");
+    page += F("    })");
+    page += F("    .then(response => response.text())");
+    page += F("    .then(data => alert(data));");
+    page += F("}");
+    
+    page += F("function resetESP() {");
+    page += F("    if(confirm('Are you sure you want to reset the ESP?')) {");
+    page += F("        fetch('/reset')");
+    page += F("        .then(response => response.text())");
+    page += F("        .then(data => alert(data));");
+    page += F("    }");
+    page += F("}");
+    page += F("</script>");
 
+    // Zakończenie strony
     page += F("</div></body></html>");
+    
     return page;
 }
 
