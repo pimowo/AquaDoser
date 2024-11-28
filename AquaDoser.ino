@@ -1,16 +1,17 @@
 // --- Biblioteki
 
-#include <Arduino.h>
-#include <ESP8266WiFi.h>
-#include <EEPROM.h>
-#include <WiFiManager.h>
-#include <ESP8266WebServer.h>
-#include <WebSocketsServer.h>
+#include <Arduino.h>  // Podstawowa biblioteka Arduino zawierająca funkcje rdzenia
+#include <ArduinoHA.h>  // Biblioteka do integracji z Home Assistant przez protokół MQTT
+#include <ArduinoOTA.h>  // Biblioteka do aktualizacji oprogramowania przez sieć WiFi
+#include <ESP8266WiFi.h>  // Biblioteka WiFi dedykowana dla układu ESP8266
+#include <EEPROM.h>  // Biblioteka do dostępu do pamięci nieulotnej EEPROM
+#include <WiFiManager.h>  // Biblioteka do zarządzania połączeniami WiFi
+#include <ESP8266WebServer.h>  // Biblioteka do obsługi serwera HTTP na ESP8266
+#include <WebSocketsServer.h>  // Biblioteka do obsługi serwera WebSockets na ESP8266
 #include <ESP8266HTTPUpdateServer.h>
 #include <Wire.h>
 #include <RTClib.h>
 #include <PCF8574.h>
-#include <ArduinoHA.h>
 #include <ArduinoJson.h>
 #include <LittleFS.h>
 #include <Adafruit_NeoPixel.h>
@@ -30,6 +31,11 @@ char mqttUser[MQTT_USER_LENGTH] = "";
 char mqttPassword[MQTT_PASSWORD_LENGTH] = "";
 bool shouldRestart = false;
 unsigned long restartTime = 0;
+unsigned long lastStatusPrint = 0;
+const unsigned long STATUS_PRINT_INTERVAL = 60000; // Wyświetlaj status co 1 minutę
+const unsigned long LOG_INTERVAL = 60000; // 60 sekund między wyświetlaniem statusu
+unsigned long lastLogTime = 0;
+bool firstRun = true;
 
 #define TEST_MODE  // Zakomentuj tę linię w wersji produkcyjnej
 
@@ -217,7 +223,7 @@ PumpConfig pumps[NUM_PUMPS];
 NetworkConfig networkConfig;
 bool pumpRunning[NUM_PUMPS] = {false};
 unsigned long doseStartTime[NUM_PUMPS] = {0};
-unsigned long lastRtcSync = 0;
+//unsigned long lastRtcSync = 0;
 
 // Dodaj stałe dla timeoutów i interwałów jak w HydroSense
 const unsigned long MQTT_LOOP_INTERVAL = 100;      // Obsługa MQTT co 100ms
@@ -247,6 +253,98 @@ void updateHomeAssistant();
 bool validateConfigValues();
 
 const int BUZZER_PIN = D2;
+
+bool hasIntervalPassed(unsigned long current, unsigned long previous, unsigned long interval) {
+    return (current - previous >= interval);
+}
+
+// Stałe dla systemu logowania
+//const unsigned long LOG_INTERVAL = 60000; // 60 sekund między wyświetlaniem statusu
+//unsigned long lastLogTime = 0;
+//bool firstRun = true;
+
+// Funkcja formatująca czas
+String formatDateTime(const DateTime& dt) {
+    char buffer[20];
+    snprintf(buffer, sizeof(buffer), "%04d-%02d-%02d %02d:%02d:%02d",
+             dt.year(), dt.month(), dt.day(),
+             dt.hour(), dt.minute(), dt.second());
+    return String(buffer);
+}
+
+// Funkcja wyświetlająca nagłówek logu
+void printLogHeader() {
+    Serial.println(F("\n========================================"));
+    Serial.print(F("Status update at: "));
+    Serial.println(formatDateTime(rtc.now()));
+    Serial.println(F("----------------------------------------"));
+}
+
+// Funkcja wyświetlająca status pojedynczej pompy
+void printPumpStatus(uint8_t pumpIndex) {
+    if (!config.pumps[pumpIndex].enabled) {
+        return; // Nie wyświetlaj statusu wyłączonych pomp
+    }
+
+    Serial.print(F("Pump "));
+    Serial.print(pumpIndex + 1);
+    Serial.print(F(": "));
+
+    if (config.pumps[pumpIndex].isRunning) {
+        Serial.println(F("ACTIVE - Currently dosing"));
+    } else {
+        Serial.print(F("Standby - Next dose: "));
+        DateTime nextDose = calculateNextDosing(pumpIndex);
+        Serial.print(formatDateTime(nextDose));
+        
+        if (config.pumps[pumpIndex].lastDosing > 0) {
+            Serial.print(F(" (Last: "));
+            time_t lastDose = config.pumps[pumpIndex].lastDosing;
+            DateTime lastDoseTime(lastDose);
+            Serial.print(formatDateTime(lastDoseTime));
+            Serial.print(F(")"));
+        }
+        Serial.println();
+    }
+}
+
+void printPumpStatus(int pumpIndex) {
+    if (!config.pumps[pumpIndex].enabled) {
+        Serial.print(F("Pump "));
+        Serial.print(pumpIndex + 1);
+        Serial.println(F(": Disabled"));
+        return;
+    }
+
+    String status = "Pump " + String(pumpIndex + 1) + ": ";
+    
+    if (config.pumps[pumpIndex].isRunning) {
+        status += "Active (Dosing)";
+    } else {
+        if (config.pumps[pumpIndex].lastDosing > 0) {
+            time_t lastDose = config.pumps[pumpIndex].lastDosing;
+            struct tm* timeinfo = localtime(&lastDose);
+            char timeStr[20];
+            strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M", timeinfo);
+            status += "Inactive (Last: " + String(timeStr) + ")";
+        } else {
+            status += "Inactive (No previous runs)";
+        }
+
+        // Dodaj informację o następnym zaplanowanym dozowaniu
+        if (config.pumps[pumpIndex].enabled) {
+            DateTime nextDose = calculateNextDosing(pumpIndex);
+            status += " - Next: ";
+            status += String(nextDose.year()) + "-";
+            status += (nextDose.month() < 10 ? "0" : "") + String(nextDose.month()) + "-";
+            status += (nextDose.day() < 10 ? "0" : "") + String(nextDose.day()) + " ";
+            status += (nextDose.hour() < 10 ? "0" : "") + String(nextDose.hour()) + ":";
+            status += (nextDose.minute() < 10 ? "0" : "") + String(nextDose.minute());
+        }
+    }
+
+    Serial.println(status);
+}
 
 // --- Stałe dla systemu plików
 const char* CONFIG_DIR = "/config";
@@ -1077,17 +1175,38 @@ DateTime calculateNextDosing(uint8_t pumpIndex) {
     DateTime now = rtc.now();
     uint8_t currentHour = now.hour();
     uint8_t currentMinute = now.minute();
+    uint8_t currentDay = now.dayOfTheWeek(); // 0 = Sunday, 6 = Saturday
     
     // Pobierz zaplanowaną godzinę dozowania z konfiguracji
-    uint8_t schedHour = config.pumps[pumpIndex].hour;
+    uint8_t schedHour = config.pumps[pumpIndex].schedule_hour;
     uint8_t schedMinute = config.pumps[pumpIndex].minute;
+    uint8_t scheduleDays = config.pumps[pumpIndex].schedule_days;
     
     DateTime nextRun = now;
+    int daysToAdd = 0;
     
+    // Najpierw sprawdź, czy dzisiaj jest jeszcze możliwe dozowanie
     if (currentHour > schedHour || 
         (currentHour == schedHour && currentMinute >= schedMinute)) {
-        // Jeśli czas dozowania na dziś już minął, zaplanuj na jutro
-        nextRun = now + TimeSpan(1, 0, 0, 0);
+        // Jeśli czas dozowania na dziś już minął, zacznij sprawdzać od jutra
+        daysToAdd = 1;
+        currentDay = (currentDay + 1) % 7;
+    }
+    
+    // Znajdź następny zaplanowany dzień
+    int daysChecked = 0;
+    while (daysChecked < 7) {
+        if (scheduleDays & (1 << currentDay)) {
+            // Znaleziono następny zaplanowany dzień
+            break;
+        }
+        daysToAdd++;
+        currentDay = (currentDay + 1) % 7;
+        daysChecked++;
+    }
+    
+    if (daysToAdd > 0) {
+        nextRun = now + TimeSpan(daysToAdd, 0, 0, 0);
     }
     
     return DateTime(nextRun.year(), nextRun.month(), nextRun.day(), 
@@ -1747,11 +1866,34 @@ void simulateButton(uint8_t buttonPin) {
 // --- Loop
 void loop() {
     server.handleClient();
-    //MDNS.update();
+    unsigned long currentMillis = millis();
+    
+    // Jednolity system wyświetlania statusu
+    if (firstRun || (currentMillis - lastLogTime >= LOG_INTERVAL)) {
+        printLogHeader();
+        
+        bool hasActivePumps = false;
+        for (uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
+            if (config.pumps[i].enabled) {
+                printPumpStatus(i);
+                hasActivePumps = true;
+            }
+        }
+        
+        if (!hasActivePumps) {
+            Serial.println(F("No active pumps configured"));
+        }
+        
+        Serial.println(F("========================================\n"));
+        
+        lastLogTime = currentMillis;
+        firstRun = false;
+    }
 
+    // Sprawdzanie systemu co 5 sekund
     static unsigned long lastCheck = 0;
-    if (millis() - lastCheck > 5000) {  // Co 5 sekund
-        lastCheck = millis();
+    if (currentMillis - lastCheck > 5000) {
+        lastCheck = currentMillis;
         //Serial.printf("Free Heap: %d bytes\n", ESP.getFreeHeap());
         //Serial.printf("WiFi Status: %d\n", WiFi.status());
     }
@@ -1773,14 +1915,14 @@ void loop() {
             DEBUG_SERIAL("Czas: " + String(now.hour()) + ":" + String(now.minute()) + ":" + String(now.second()));
             DEBUG_SERIAL("Dzień: " + String(now.dayOfTheWeek()));
             
-            for (int i = 0; i < NUM_PUMPS; i++) {
+            for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
                 DEBUG_SERIAL("Pompa " + String(i + 1) + ":");
-                DEBUG_SERIAL("  Enabled: " + String(pumps[i].enabled));
-                DEBUG_SERIAL("  Calibration: " + String(pumps[i].calibration));
-                DEBUG_SERIAL("  Dose: " + String(pumps[i].dose));
-                DEBUG_SERIAL("  Schedule Hour: " + String(pumps[i].schedule_hour));
-                DEBUG_SERIAL("  Schedule Days: " + String(pumps[i].schedule_days, BIN));
-                DEBUG_SERIAL("  Is Running: " + String(pumps[i].isRunning));
+                DEBUG_SERIAL("  Enabled: " + String(config.pumps[i].enabled));
+                DEBUG_SERIAL("  Calibration: " + String(config.pumps[i].calibration));
+                DEBUG_SERIAL("  Dose: " + String(config.pumps[i].dose));
+                DEBUG_SERIAL("  Schedule Hour: " + String(config.pumps[i].schedule_hour));
+                DEBUG_SERIAL("  Schedule Days: " + String(config.pumps[i].schedule_days, BIN));
+                DEBUG_SERIAL("  Is Running: " + String(config.pumps[i].isRunning));
             }
         }
         else if (cmd == "help") {
@@ -1800,28 +1942,19 @@ void loop() {
         return;
     }
     
-    // Obsługa MQTT i Home Assistant
+    // Obsługa systemowa
     mqtt.loop();
+    handleButton();
+    handlePumps();
+    updateLEDs();
+    updateHomeAssistant();
     
     // Synchronizacja RTC co 24h
     static unsigned long lastRtcSync = 0;
-    if (millis() - lastRtcSync >= 24*60*60*1000UL) {
+    if (currentMillis - lastRtcSync >= 24*60*60*1000UL) {
         syncRTC();
-        lastRtcSync = millis();
+        lastRtcSync = currentMillis;
     }
     
-    // Obsługa przycisku
-    handleButton();
-    
-    // Obsługa pomp
-    handlePumps();
-    
-    // Aktualizacja LED
-    updateLEDs();
-    
-    // Aktualizacja Home Assistant
-    updateHomeAssistant();
-    
-    // Pozwól ESP8266 obsłużyć inne zadania
     yield();
 }
