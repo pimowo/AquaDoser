@@ -1382,6 +1382,156 @@ void checkMQTTConfig() {
     }
 }
 
+// String getStyles() {
+//     String styles = F(
+//         "body { "
+//         "    font-family: Arial, sans-serif; "
+//         "    margin: 0; "
+//         "    padding: 20px; "
+//         "    background-color: #1a1a1a;"
+//         "    color: #ffffff;"
+//         "}"
+
+//         ".buttons-container {"
+//         "    display: flex;"
+//         "    justify-content: space-between;"
+//         "    margin: -5px;"
+//         "}"
+
+//         ".container { "
+//         "    max-width: 800px; "
+//         "    margin: 0 auto; "
+//         "    padding: 0 15px;"
+//         "}"
+
+//         ".section {"
+//         "    background-color: #2a2a2a;"
+//         "    padding: 20px;"
+//         "    margin-bottom: 20px;"
+//         "    border-radius: 8px;"
+//         "    width: 100%;"
+//         "    box-sizing: border-box;"
+//         "}"
+
+//         "h1 { "
+//         "    color: #ffffff; "
+//         "    text-align: center;"
+//         "    margin-bottom: 30px;"
+//         "    font-size: 2.5em;"
+//         "    background-color: #2d2d2d;"
+//         "    padding: 20px;"
+//         "    border-radius: 8px;"
+//         "    box-shadow: 0 2px 4px rgba(0,0,0,0.2);"
+//         "}"
+
+//         "h2 { "
+//         "    color: #2196F3;"
+//         "    margin-top: 0;"
+//         "    font-size: 1.5em;"
+//         "}"
+
+//         ".config-table {"
+//         "    width: 100%;"
+//         "    border-collapse: collapse;"
+//         "    table-layout: fixed;"
+//         "}"
+
+//         ".config-table td {"
+//         "    padding: 8px;"
+//         "    border-bottom: 1px solid #3d3d3d;"
+//         "}"
+
+//         ".config-table td:first-child {"
+//         "    width: 65%;"
+//         "}"
+
+//         ".config-table td:last-child {"
+//         "    width: 35%;"
+//         "}"
+
+//         "input[type='text'],"
+//         "input[type='password'],"
+//         "input[type='number'] {"
+//         "    width: 100%;"
+//         "    padding: 8px;"
+//         "    border: 1px solid #3d3d3d;"
+//         "    border-radius: 4px;"
+//         "    background-color: #1a1a1a;"
+//         "    color: #ffffff;"
+//         "    box-sizing: border-box;"
+//         "    text-align: left;"
+//         "}"
+
+//         ".btn {"
+//         "    padding: 12px 24px;"
+//         "    border: none;"
+//         "    border-radius: 4px;"
+//         "    cursor: pointer;"
+//         "    font-size: 14px;"
+//         "    width: calc(50% - 10px);"
+//         "    display: inline-block;"
+//         "    margin: 5px;"
+//         "    text-align: center;"
+//         "}"
+
+//         ".btn-blue { "
+//         "    background-color: #2196F3;"
+//         "    color: white; "
+//         "}"
+
+//         ".btn-red { "
+//         "    background-color: #F44336;"
+//         "    color: white; "
+//         "}"
+
+//         ".status {"
+//         "    padding: 4px 8px;"
+//         "    border-radius: 4px;"
+//         "}"
+
+//         ".success { "
+//         "    color: #4CAF50; "
+//         "}"
+
+//         ".error { "
+//         "    color: #F44336;"
+//         "}"
+
+//         ".days-group {"
+//         "    margin: 15px 0;"
+//         "    display: flex;"
+//         "    flex-wrap: wrap;"
+//         "    gap: 10px;"
+//         "    align-items: center;"
+//         "}"
+
+//         ".days-group label {"
+//         "    color: #ffffff;"
+//         "    margin-right: 15px;"
+//         "}"
+
+//         ".message {"
+//         "    position: fixed;"
+//         "    top: 20px;"
+//         "    left: 50%;"
+//         "    transform: translateX(-50%);"
+//         "    padding: 15px 30px;"
+//         "    border-radius: 5px;"
+//         "    color: white;"
+//         "    opacity: 0;"
+//         "    transition: opacity 0.3s ease-in-out;"
+//         "    z-index: 1000;"
+//         "}"
+
+//         "@media (max-width: 600px) {"
+//         "    body { padding: 10px; }"
+//         "    .container { padding: 0; }"
+//         "    .section { padding: 15px; margin-bottom: 15px; }"
+//         "}"
+//     );
+//     return styles;
+// }
+
 String getStyles() {
     String styles = F(
         "body { "
@@ -1462,6 +1612,13 @@ String getStyles() {
         "    text-align: left;"
         "}"
 
+        "input[type='checkbox'] {"
+        "    width: 20px;"
+        "    height: 20px;"
+        "    margin: 0;"
+        "    vertical-align: middle;"
+        "}"
+
         ".btn {"
         "    padding: 12px 24px;"
         "    border: none;"
@@ -1487,6 +1644,7 @@ String getStyles() {
         ".status {"
         "    padding: 4px 8px;"
         "    border-radius: 4px;"
+        "    display: inline-block;"
         "}"
 
         ".success { "
@@ -1495,19 +1653,6 @@ String getStyles() {
 
         ".error { "
         "    color: #F44336;"
-        "}"
-
-        ".days-group {"
-        "    margin: 15px 0;"
-        "    display: flex;"
-        "    flex-wrap: wrap;"
-        "    gap: 10px;"
-        "    align-items: center;"
-        "}"
-
-        ".days-group label {"
-        "    color: #ffffff;"
-        "    margin-right: 15px;"
         "}"
 
         ".message {"
@@ -1527,80 +1672,104 @@ String getStyles() {
         "    body { padding: 10px; }"
         "    .container { padding: 0; }"
         "    .section { padding: 15px; margin-bottom: 15px; }"
+        "    .config-table td:first-child { width: 50%; }"
+        "    .config-table td:last-child { width: 50%; }"
+        "    .btn { width: 100%; margin: 5px 0; }"
+        "    .buttons-container { flex-direction: column; }"
         "}"
     );
     return styles;
 }
 
 // String getConfigPage() {
-//     String page;
-//     page += F("<!DOCTYPE html>");
-//     page += F("<html lang='en'>");
-//     page += F("<head>");
-//     page += F("<meta charset='UTF-8'>");
-//     page += F("<meta name='viewport' content='width=device-width, initial-scale=1'>");
-//     page += F("<title>AquaDoser</title>");
-//     page += F("<style>");
+//     String page = F("<!DOCTYPE html><html lang='en'><head>");
+//     page += F("<meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1'>");
+//     page += F("<title>AquaDoser</title><style>");
 //     page += getStyles();
-//     page += F("</style>");
-//     page += F("</head>");
-//     page += F("<body>");
+//     page += F("</style></head><body>");
     
 //     // Tytuł
+//     page += F("<div class='container'>");
 //     page += F("<h1>AquaDoser</h1>");
 
 //     // Status systemu
 //     page += F("<div class='section'>");
 //     page += F("<h2>Status systemu</h2>");
 //     page += F("<table class='config-table'>");
-// page += F("<tr><td>Status MQTT</td><td><span class='status ");
-// page += (systemStatus.mqtt_connected ? F("success'>Połączony") : F("error'>Rozłączony"));
-// page += F("</span></td></tr>");
-//     // Dodaj więcej statusów według potrzeb
+//     page += F("<tr><td>Status MQTT</td><td><span class='status ");
+//     page += (systemStatus.mqtt_connected ? F("success'>Połączony") : F("error'>Rozłączony"));
+//     page += F("</span></td></tr>");
 //     page += F("</table></div>");
-
-//     // Przyciski akcji
-//     page += F("<div class='section'>");
-//     page += F("<div class='buttons-container'>");
-//     page += F("<button class='btn btn-blue' onclick='rebootDevice()'>Restart urządzenia</button>");
-//     page += F("<button class='btn btn-red' onclick='factoryReset()'>Przywróć ustawienia fabryczne</button>");
-//     page += F("</div></div>");
 
 //     // Formularz konfiguracji
 //     page += F("<form method='POST' action='/save'>");
     
-//     // MQTT
+//     // Konfiguracja MQTT
 //     page += F("<div class='section'>");
 //     page += F("<h2>Konfiguracja MQTT</h2>");
 //     page += F("<table class='config-table'>");
-//     // Dodaj pola MQTT
+//     page += F("<tr><td>Broker MQTT</td><td><input type='text' name='mqtt_server' value='");
+//     page += mqttConfig.server;
+//     page += F("'></td></tr>");
+//     page += F("<tr><td>Port MQTT</td><td><input type='number' name='mqtt_port' value='");
+//     page += String(mqttConfig.port);
+//     page += F("'></td></tr>");
+//     page += F("<tr><td>Użytkownik MQTT</td><td><input type='text' name='mqtt_user' value='");
+//     page += mqttConfig.username;
+//     page += F("'></td></tr>");
+//     page += F("<tr><td>Hasło MQTT</td><td><input type='password' name='mqtt_pass' value='");
+//     page += mqttConfig.password;
+//     page += F("'></td></tr>");
 //     page += F("</table></div>");
 
-//     // Pompy
+//     // Konfiguracja pomp
 //     for(int i = 0; i < NUM_PUMPS; i++) {
 //         page += F("<div class='section'>");
-//         page += F("<h2>Pompa "); page += String(i + 1); page += F("</h2>");
+//         page += F("<h2>Pompa "); 
+//         page += String(i + 1);
+//         page += F("</h2>");
 //         page += F("<table class='config-table'>");
-//         // Dodaj pola konfiguracji pompy
+        
+//         page += F("<tr><td>Nazwa</td><td><input type='text' name='pump_name_");
+//         page += String(i);
+//         page += F("' value='");
+//         page += pumpConfig[i].name;
+//         page += F("'></td></tr>");
+
+//         page += F("<tr><td>Aktywna</td><td><input type='checkbox' name='pump_enabled_");
+//         page += String(i);
+//         page += F("' ");
+//         page += (pumpConfig[i].enabled ? F("checked") : F(""));
+//         page += F("></td></tr>");
+
+//         page += F("<tr><td>Czas dozowania (ms)</td><td><input type='number' name='pump_dose_time_");
+//         page += String(i);
+//         page += F("' value='");
+//         page += String(pumpConfig[i].doseTime);
+//         page += F("'></td></tr>");
+
+//         page += F("<tr><td>Interwał dozowania (min)</td><td><input type='number' name='pump_interval_");
+//         page += String(i);
+//         page += F("' value='");
+//         page += String(pumpConfig[i].interval);
+//         page += F("'></td></tr>");
+        
 //         page += F("</table></div>");
 //     }
 
-//     // Przycisk zapisu
+//     // Przyciski akcji
 //     page += F("<div class='section'>");
+//     page += F("<div class='buttons-container'>");
 //     page += F("<input type='submit' value='Zapisz ustawienia' class='btn btn-blue'>");
-//     page += F("</div></form>");
-
-//     // JavaScript
-//     page += F("<script>");
-//     // Dodaj kod JavaScript dla obsługi WebSocket i przycisków
-//     page += F("</script>");
+//     page += F("<button type='button' onclick='if(confirm(\"Czy na pewno chcesz zresetować urządzenie?\")) { fetch(\"/reset\"); }' class='btn btn-red'>Reset urządzenia</button>");
+//     page += F("</div></div>");
     
-//     page += F("</body></html>");
+//     page += F("</form></div></body></html>");
 //     return page;
 // }
 
 String getConfigPage() {
-    String page = F("<!DOCTYPE html><html lang='en'><head>");
+    String page = F("<!DOCTYPE html><html lang='pl'><head>");
     page += F("<meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1'>");
     page += F("<title>AquaDoser</title><style>");
     page += getStyles();
@@ -1648,29 +1817,33 @@ String getConfigPage() {
         page += F("</h2>");
         page += F("<table class='config-table'>");
         
+        // Nazwa pompy
         page += F("<tr><td>Nazwa</td><td><input type='text' name='pump_name_");
         page += String(i);
         page += F("' value='");
         page += pumpConfig[i].name;
-        page += F("'></td></tr>");
+        page += F("' maxlength='19'></td></tr>");
 
+        // Status aktywności
         page += F("<tr><td>Aktywna</td><td><input type='checkbox' name='pump_enabled_");
         page += String(i);
         page += F("' ");
         page += (pumpConfig[i].enabled ? F("checked") : F(""));
         page += F("></td></tr>");
 
+        // Czas dozowania
         page += F("<tr><td>Czas dozowania (ms)</td><td><input type='number' name='pump_dose_time_");
         page += String(i);
         page += F("' value='");
         page += String(pumpConfig[i].doseTime);
-        page += F("'></td></tr>");
+        page += F("' min='0'></td></tr>");
 
+        // Interwał dozowania
         page += F("<tr><td>Interwał dozowania (min)</td><td><input type='number' name='pump_interval_");
         page += String(i);
         page += F("' value='");
         page += String(pumpConfig[i].interval);
-        page += F("'></td></tr>");
+        page += F("' min='1'></td></tr>");
         
         page += F("</table></div>");
     }
