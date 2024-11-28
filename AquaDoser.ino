@@ -115,20 +115,20 @@ bool firstRun = true;
 struct PumpConfig {
     char name[20];
     float calibration;      // kalibracja pompy (ml/s)
-    float doseAmount;       // dawka w ml (zmienione z 'dose' na 'doseAmount')
-    uint8_t hour;          // godzina dozowania (zmienione z 'schedule_hour')
-    uint8_t minute;        // minuta dozowania (dodane)
-    uint8_t days;          // dni tygodnia (bitmaska) (zmienione z 'schedule_days')
+    float dose;            // dawka w ml
+    uint8_t schedule_hour;  // godzina dozowania
+    uint8_t minute;        // minuta dozowania
+    uint8_t schedule_days;  // dni tygodnia (bitmaska)
     time_t lastDosing;     // timestamp ostatniego dozowania
     bool isRunning;        // czy pompa aktualnie pracuje
     bool enabled;          // czy pompa jest włączona
 
     PumpConfig() : 
         calibration(1.0),
-        doseAmount(0.0),
-        hour(0),
+        dose(0.0),
+        schedule_hour(0),
         minute(0),
-        days(0),
+        schedule_days(0),
         lastDosing(0),
         isRunning(false),
         enabled(false) {
@@ -1364,52 +1364,6 @@ void setupWebServer() {
     webSocket.onEvent(webSocketEvent);
 }
 
-// String getConfigPage() {
-//     String page = F("<!DOCTYPE html><html><head>");
-//     page += F("<meta charset='UTF-8'>");
-//     page += F("<meta name='viewport' content='width=device-width, initial-scale=1'>");
-//     page += F("<title>AquaDoser Configuration</title>");
-//     page += getStyles();
-//     page += F("</head><body>");
-//     page += F("<div class='container'>");
-//     page += F("<h1>MQTT Configuration</h1>");
-//     page += F("<form method='POST' action='/config'>");
-    
-//     // MQTT configuration
-//     page += F("<div class='card'>");
-//     page += F("<h2>MQTT Settings</h2>");
-//     page += F("<div class='form-group'>");
-//     page += F("<label>Broker:</label>");
-//     page += F("<input type='text' name='mqtt_broker' value='");
-//     page += config.mqtt.broker;
-//     page += F("'></div>");
-    
-//     page += F("<div class='form-group'>");
-//     page += F("<label>Port:</label>");
-//     page += F("<input type='number' name='mqtt_port' value='");
-//     page += String(config.mqtt.port);
-//     page += F("'></div>");
-    
-//     page += F("<div class='form-group'>");
-//     page += F("<label>Username:</label>");
-//     page += F("<input type='text' name='mqtt_user' value='");
-//     page += config.mqtt.username;
-//     page += F("'></div>");
-    
-//     page += F("<div class='form-group'>");
-//     page += F("<label>Password:</label>");
-//     page += F("<input type='password' name='mqtt_password' value='");
-//     page += config.mqtt.password;
-//     page += F("'></div>");
-//     page += F("</div>");
-    
-//     page += F("<button type='submit' class='button'>Save Configuration</button>");
-//     page += F("</form>");
-//     page += F("</div></body></html>");
-    
-//     return page;
-// }
-
 void checkMQTTConfig() {
     if (validateMQTTConfig()) {
         Serial.println("Konfiguracja MQTT znaleziona:");
@@ -1508,14 +1462,14 @@ String getConfigPage() {
         page += F("<input type='number' id='pump_dose_");
         page += String(i);
         page += F("' value='");
-        page += String(config.pumps[i].doseAmount);
+        page += String(config.pumps[i].dose);
         page += F("' step='0.1'></div>");
         page += F("<div class='form-group'>");
         page += F("<label>Hour: </label>");
         page += F("<input type='number' id='pump_hour_");
         page += String(i);
         page += F("' value='");
-        page += String(config.pumps[i].hour);
+        page += String(config.pumps[i].schedule_hour);
         page += F("' min='0' max='23'></div>");
         page += F("<div class='form-group'>");
         page += F("<label>Minute: </label>");
@@ -1533,7 +1487,7 @@ String getConfigPage() {
             page += F("_");
             page += String(j);
             page += F("'");
-            page += (config.pumps[i].days & (1 << j) ? F(" checked") : F(""));
+            page += (config.pumps[i].schedule_days & (1 << j) ? F(" checked") : F(""));
             page += F(">");
             page += dayNames[j];
             page += F("</label>");
