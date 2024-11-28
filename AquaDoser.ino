@@ -688,6 +688,11 @@ void handleRoot() {
 }
 
 void handleSave() {
+    if (server.method() != HTTP_POST) {
+        server.send(405, "text/plain", "Method Not Allowed");
+        return;
+    }
+
     if (server.hasArg("plain")) {
         String json = server.arg("plain");
         DynamicJsonDocument doc(2048);
@@ -698,37 +703,76 @@ void handleSave() {
             if (doc.containsKey("pumps")) {
                 JsonArray pumpsArray = doc["pumps"].as<JsonArray>();
                 for (uint8_t i = 0; i < NUM_PUMPS && i < pumpsArray.size(); i++) {
-                    // Poprawione nazwy pól zgodnie ze strukturą PumpConfig
-                    config.pumps[i].enabled = pumpsArray[i]["enabled"] | false;
-                    config.pumps[i].calibration = pumpsArray[i]["calibration"] | 1.0f;
-                    config.pumps[i].dose = pumpsArray[i]["doseAmount"] | 0.0f; // zmienione z dose na doseAmount
-                    config.pumps[i].schedule_hour = pumpsArray[i]["hour"] | 0;
-                    config.pumps[i].minute = pumpsArray[i]["minute"] | 0;
-                    config.pumps[i].schedule_days = pumpsArray[i]["days"] | 0;
+                    // Kopiowanie danych do struktury config
+                    pumps[i].enabled = pumpsArray[i]["enabled"] | false;
+                    pumps[i].calibration = pumpsArray[i]["calibration"] | 1.0f;
+                    pumps[i].dose = pumpsArray[i]["dose"] | 0.0f;
+                    pumps[i].schedule_hour = pumpsArray[i]["schedule_hour"] | 0;
+                    pumps[i].minute = pumpsArray[i]["minute"] | 0;
+                    pumps[i].schedule_days = pumpsArray[i]["schedule_days"] | 0;
+                    
                     if (pumpsArray[i].containsKey("name")) {
-                        strlcpy(config.pumps[i].name, pumpsArray[i]["name"] | "", sizeof(config.pumps[i].name));
+                        strlcpy(pumps[i].name, pumpsArray[i]["name"] | "", sizeof(pumps[i].name));
                     }
                 }
-                savePumpsConfig();
             }
 
             // Obsługa konfiguracji MQTT
             if (doc.containsKey("mqtt")) {
                 JsonObject mqtt = doc["mqtt"];
-                strlcpy(mqttConfig.broker, mqtt["server"] | "", sizeof(mqttConfig.broker));
+                strlcpy(mqttConfig.broker, mqtt["broker"] | "", sizeof(mqttConfig.broker));
                 mqttConfig.port = mqtt["port"] | 1883;
                 strlcpy(mqttConfig.username, mqtt["username"] | "", sizeof(mqttConfig.username));
                 strlcpy(mqttConfig.password, mqtt["password"] | "", sizeof(mqttConfig.password));
-                saveMQTTConfig();
             }
 
-            server.send(200, "text/plain", "Configuration saved");
+            // Zapisz konfigurację do EEPROM
+            saveConfig();
+
+            // Przygotuj odpowiedź JSON
+            DynamicJsonDocument response(256);
+            response["status"] = "success";
+            response["message"] = "Configuration saved";
+            
+            String responseJson;
+            serializeJson(response, responseJson);
+            server.send(200, "application/json", responseJson);
         } else {
-            server.send(400, "text/plain", "Invalid JSON");
+            DynamicJsonDocument response(256);
+            response["status"] = "error";
+            response["message"] = "Invalid JSON format";
+            
+            String responseJson;
+            serializeJson(response, responseJson);
+            server.send(400, "application/json", responseJson);
         }
     } else {
-        server.send(400, "text/plain", "No data");
+        DynamicJsonDocument response(256);
+        response["status"] = "error";
+        response["message"] = "No data received";
+        
+        String responseJson;
+        serializeJson(response, responseJson);
+        server.send(400, "application/json", responseJson);
     }
+}
+
+void saveConfig() {
+    EEPROM.begin(512);
+    
+    // Zapisz konfigurację MQTT
+    int addr = 0;
+    EEPROM.put(addr, mqttConfig);
+    addr += sizeof(mqttConfig);
+
+    // Zapisz konfigurację pomp
+    for (int i = 0; i < NUM_PUMPS; i++) {
+        EEPROM.put(addr, pumps[i]);
+        addr += sizeof(PumpConfig);
+    }
+
+    EEPROM.commit();
+    EEPROM.end();
 }
 
 // --- Ogólna funkcja zapisywania konfiguracji
@@ -1773,9 +1817,67 @@ String getConfigPage() {
     page += F("<meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1'>");
     page += F("<title>AquaDoser</title><style>");
     page += getStyles();
-    page += F("</style></head><body>");
+    page += F("</style>");
     
-    // Tytuł
+    // Dodajemy skrypt JavaScript
+    page += F("<script>");
+    page += F("function saveConfig() {");
+    page += F("    let pumpsData = [];");
+    page += F("    for(let i = 0; i < ");
+    page += String(NUM_PUMPS);
+    page += F("; i++) {");
+    page += F("        let pumpData = {");
+    page += F("            name: document.querySelector(`input[name='pump_name_${i}']`).value,");
+    page += F("            enabled: document.querySelector(`input[name='pump_enabled_${i}']`).checked,");
+    page += F("            calibration: parseFloat(document.querySelector(`input[name='pump_calibration_${i}']`).value),");
+    page += F("            dose: parseFloat(document.querySelector(`input[name='pump_dose_${i}']`).value),");
+    page += F("            schedule_hour: parseInt(document.querySelector(`input[name='pump_schedule_hour_${i}']`).value),");
+    page += F("            minute: parseInt(document.querySelector(`input[name='pump_minute_${i}']`).value),");
+    page += F("            schedule_days: 0");
+    page += F("        };");
+    page += F("        // Oblicz dni tygodnia");
+    page += F("        for(let day = 0; day < 7; day++) {");
+    page += F("            if(document.querySelector(`input[name='pump_day_${i}_${day}']`).checked) {");
+    page += F("                pumpData.schedule_days |= (1 << day);");
+    page += F("            }");
+    page += F("        }");
+    page += F("        pumpsData.push(pumpData);");
+    page += F("    }");
+    page += F("    let mqttData = {");
+    page += F("        broker: document.querySelector('input[name=\"mqtt_broker\"]').value,");
+    page += F("        port: parseInt(document.querySelector('input[name=\"mqtt_port\"]').value),");
+    page += F("        username: document.querySelector('input[name=\"mqtt_user\"]').value,");
+    page += F("        password: document.querySelector('input[name=\"mqtt_pass\"]').value");
+    page += F("    };");
+    page += F("    let configData = {");
+    page += F("        pumps: pumpsData,");
+    page += F("        mqtt: mqttData");
+    page += F("    };");
+    page += F("    fetch('/save', {");
+    page += F("        method: 'POST',");
+    page += F("        headers: {");
+    page += F("            'Content-Type': 'application/json'");
+    page += F("        },");
+    page += F("        body: JSON.stringify(configData)");
+    page += F("    })");
+    page += F("    .then(response => response.json())");
+    page += F("    .then(data => {");
+    page += F("        if(data.status === 'success') {");
+    page += F("            alert('Konfiguracja została zapisana');");
+    page += F("            window.location.reload();");
+    page += F("        } else {");
+    page += F("            alert('Błąd: ' + data.message);");
+    page += F("        }");
+    page += F("    })");
+    page += F("    .catch(error => {");
+    page += F("        alert('Wystąpił błąd podczas zapisywania konfiguracji');");
+    page += F("        console.error('Error:', error);");
+    page += F("    });");
+    page += F("    return false;");
+    page += F("}");
+    page += F("</script></head><body>");
+    
+    // Strona główna
     page += F("<div class='container'>");
     page += F("<h1>AquaDoser</h1>");
 
@@ -1789,7 +1891,7 @@ String getConfigPage() {
     page += F("</table></div>");
 
     // Formularz konfiguracji
-    page += F("<form method='POST' action='/save'>");
+    page += F("<form onsubmit='return saveConfig()'>");
     
     // Konfiguracja MQTT
     page += F("<div class='section'>");
@@ -1831,6 +1933,13 @@ String getConfigPage() {
         page += (pumps[i].enabled ? F("checked") : F(""));
         page += F("></td></tr>");
 
+        // Kalibracja
+        page += F("<tr><td>Kalibracja (ml/s)</td><td><input type='number' step='0.01' name='pump_calibration_");
+        page += String(i);
+        page += F("' value='");
+        page += String(pumps[i].calibration);
+        page += F("' min='0.01'></td></tr>");
+
         // Dawka
         page += F("<tr><td>Dawka (ml)</td><td><input type='number' step='0.1' name='pump_dose_");
         page += String(i);
@@ -1838,24 +1947,24 @@ String getConfigPage() {
         page += String(pumps[i].dose);
         page += F("' min='0'></td></tr>");
 
-        // Godzina
+        // Godzina dozowania
         page += F("<tr><td>Godzina dozowania</td><td><input type='number' name='pump_schedule_hour_");
         page += String(i);
         page += F("' value='");
         page += String(pumps[i].schedule_hour);
         page += F("' min='0' max='23'></td></tr>");
 
-        // Minuta
+        // Minuta dozowania
         page += F("<tr><td>Minuta dozowania</td><td><input type='number' name='pump_minute_");
         page += String(i);
         page += F("' value='");
         page += String(pumps[i].minute);
         page += F("' min='0' max='59'></td></tr>");
-        
+
         // Dni tygodnia
         page += F("<tr><td>Dni dozowania</td><td>");
         for(int day = 0; day < 7; day++) {
-            page += F("<label><input type='checkbox' name='pump_day_");
+            page += F("<label style='margin-right: 5px;'><input type='checkbox' name='pump_day_");
             page += String(i);
             page += F("_");
             page += String(day);
@@ -1964,6 +2073,8 @@ void setup() {
     // Synchronizacja czasu
     syncRTC();
     
+    server.on("/save", HTTP_POST, handleSave);
+
     server.on("/restart", HTTP_POST, []() {
         server.send(200, "text/plain", "Restarting...");
         delay(1000);
