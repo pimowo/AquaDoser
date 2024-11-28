@@ -1532,70 +1532,157 @@ String getStyles() {
     return styles;
 }
 
+// String getConfigPage() {
+//     String page;
+//     page += F("<!DOCTYPE html>");
+//     page += F("<html lang='en'>");
+//     page += F("<head>");
+//     page += F("<meta charset='UTF-8'>");
+//     page += F("<meta name='viewport' content='width=device-width, initial-scale=1'>");
+//     page += F("<title>AquaDoser</title>");
+//     page += F("<style>");
+//     page += getStyles();
+//     page += F("</style>");
+//     page += F("</head>");
+//     page += F("<body>");
+    
+//     // Tytuł
+//     page += F("<h1>AquaDoser</h1>");
+
+//     // Status systemu
+//     page += F("<div class='section'>");
+//     page += F("<h2>Status systemu</h2>");
+//     page += F("<table class='config-table'>");
+// page += F("<tr><td>Status MQTT</td><td><span class='status ");
+// page += (systemStatus.mqtt_connected ? F("success'>Połączony") : F("error'>Rozłączony"));
+// page += F("</span></td></tr>");
+//     // Dodaj więcej statusów według potrzeb
+//     page += F("</table></div>");
+
+//     // Przyciski akcji
+//     page += F("<div class='section'>");
+//     page += F("<div class='buttons-container'>");
+//     page += F("<button class='btn btn-blue' onclick='rebootDevice()'>Restart urządzenia</button>");
+//     page += F("<button class='btn btn-red' onclick='factoryReset()'>Przywróć ustawienia fabryczne</button>");
+//     page += F("</div></div>");
+
+//     // Formularz konfiguracji
+//     page += F("<form method='POST' action='/save'>");
+    
+//     // MQTT
+//     page += F("<div class='section'>");
+//     page += F("<h2>Konfiguracja MQTT</h2>");
+//     page += F("<table class='config-table'>");
+//     // Dodaj pola MQTT
+//     page += F("</table></div>");
+
+//     // Pompy
+//     for(int i = 0; i < NUM_PUMPS; i++) {
+//         page += F("<div class='section'>");
+//         page += F("<h2>Pompa "); page += String(i + 1); page += F("</h2>");
+//         page += F("<table class='config-table'>");
+//         // Dodaj pola konfiguracji pompy
+//         page += F("</table></div>");
+//     }
+
+//     // Przycisk zapisu
+//     page += F("<div class='section'>");
+//     page += F("<input type='submit' value='Zapisz ustawienia' class='btn btn-blue'>");
+//     page += F("</div></form>");
+
+//     // JavaScript
+//     page += F("<script>");
+//     // Dodaj kod JavaScript dla obsługi WebSocket i przycisków
+//     page += F("</script>");
+    
+//     page += F("</body></html>");
+//     return page;
+// }
+
 String getConfigPage() {
-    String page;
-    page += F("<!DOCTYPE html>");
-    page += F("<html lang='en'>");
-    page += F("<head>");
-    page += F("<meta charset='UTF-8'>");
-    page += F("<meta name='viewport' content='width=device-width, initial-scale=1'>");
-    page += F("<title>AquaDoser</title>");
-    page += F("<style>");
+    String page = F("<!DOCTYPE html><html lang='en'><head>");
+    page += F("<meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1'>");
+    page += F("<title>AquaDoser</title><style>");
     page += getStyles();
-    page += F("</style>");
-    page += F("</head>");
-    page += F("<body>");
+    page += F("</style></head><body>");
     
     // Tytuł
+    page += F("<div class='container'>");
     page += F("<h1>AquaDoser</h1>");
 
     // Status systemu
     page += F("<div class='section'>");
     page += F("<h2>Status systemu</h2>");
     page += F("<table class='config-table'>");
-page += F("<tr><td>Status MQTT</td><td><span class='status ");
-page += (systemStatus.mqtt_connected ? F("success'>Połączony") : F("error'>Rozłączony"));
-page += F("</span></td></tr>");
-    // Dodaj więcej statusów według potrzeb
+    page += F("<tr><td>Status MQTT</td><td><span class='status ");
+    page += (systemStatus.mqtt_connected ? F("success'>Połączony") : F("error'>Rozłączony"));
+    page += F("</span></td></tr>");
     page += F("</table></div>");
-
-    // Przyciski akcji
-    page += F("<div class='section'>");
-    page += F("<div class='buttons-container'>");
-    page += F("<button class='btn btn-blue' onclick='rebootDevice()'>Restart urządzenia</button>");
-    page += F("<button class='btn btn-red' onclick='factoryReset()'>Przywróć ustawienia fabryczne</button>");
-    page += F("</div></div>");
 
     // Formularz konfiguracji
     page += F("<form method='POST' action='/save'>");
     
-    // MQTT
+    // Konfiguracja MQTT
     page += F("<div class='section'>");
     page += F("<h2>Konfiguracja MQTT</h2>");
     page += F("<table class='config-table'>");
-    // Dodaj pola MQTT
+    page += F("<tr><td>Broker MQTT</td><td><input type='text' name='mqtt_server' value='");
+    page += mqttConfig.server;
+    page += F("'></td></tr>");
+    page += F("<tr><td>Port MQTT</td><td><input type='number' name='mqtt_port' value='");
+    page += String(mqttConfig.port);
+    page += F("'></td></tr>");
+    page += F("<tr><td>Użytkownik MQTT</td><td><input type='text' name='mqtt_user' value='");
+    page += mqttConfig.username;
+    page += F("'></td></tr>");
+    page += F("<tr><td>Hasło MQTT</td><td><input type='password' name='mqtt_pass' value='");
+    page += mqttConfig.password;
+    page += F("'></td></tr>");
     page += F("</table></div>");
 
-    // Pompy
+    // Konfiguracja pomp
     for(int i = 0; i < NUM_PUMPS; i++) {
         page += F("<div class='section'>");
-        page += F("<h2>Pompa "); page += String(i + 1); page += F("</h2>");
+        page += F("<h2>Pompa "); 
+        page += String(i + 1);
+        page += F("</h2>");
         page += F("<table class='config-table'>");
-        // Dodaj pola konfiguracji pompy
+        
+        page += F("<tr><td>Nazwa</td><td><input type='text' name='pump_name_");
+        page += String(i);
+        page += F("' value='");
+        page += pumpConfig[i].name;
+        page += F("'></td></tr>");
+
+        page += F("<tr><td>Aktywna</td><td><input type='checkbox' name='pump_enabled_");
+        page += String(i);
+        page += F("' ");
+        page += (pumpConfig[i].enabled ? F("checked") : F(""));
+        page += F("></td></tr>");
+
+        page += F("<tr><td>Czas dozowania (ms)</td><td><input type='number' name='pump_dose_time_");
+        page += String(i);
+        page += F("' value='");
+        page += String(pumpConfig[i].doseTime);
+        page += F("'></td></tr>");
+
+        page += F("<tr><td>Interwał dozowania (min)</td><td><input type='number' name='pump_interval_");
+        page += String(i);
+        page += F("' value='");
+        page += String(pumpConfig[i].interval);
+        page += F("'></td></tr>");
+        
         page += F("</table></div>");
     }
 
-    // Przycisk zapisu
+    // Przyciski akcji
     page += F("<div class='section'>");
+    page += F("<div class='buttons-container'>");
     page += F("<input type='submit' value='Zapisz ustawienia' class='btn btn-blue'>");
-    page += F("</div></form>");
-
-    // JavaScript
-    page += F("<script>");
-    // Dodaj kod JavaScript dla obsługi WebSocket i przycisków
-    page += F("</script>");
+    page += F("<button type='button' onclick='if(confirm(\"Czy na pewno chcesz zresetować urządzenie?\")) { fetch(\"/reset\"); }' class='btn btn-red'>Reset urządzenia</button>");
+    page += F("</div></div>");
     
-    page += F("</body></html>");
+    page += F("</form></div></body></html>");
     return page;
 }
 
