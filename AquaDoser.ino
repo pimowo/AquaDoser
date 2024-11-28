@@ -114,24 +114,21 @@ bool firstRun = true;
 // --- Struktura konfiguracji pompy
 // Struktura konfiguracji pompy
 struct PumpConfig {
-    bool enabled;           // Czy pompa jest włączona
-    uint8_t schedule_hour;  // Godzina dozowania
-    uint8_t minute;        // Minuta dozowania
-    uint8_t schedule_days; // Dni tygodnia (bitmapa: 0b0000000 dla każdego dnia)
-    float dose;           // Ilość do dozowania (ml)
-    float calibration;    // Kalibracja pompy (ml/min)
-    unsigned long lastDosing; // Czas ostatniego dozowania (unix timestamp)
-    bool isRunning;       // Czy pompa aktualnie pracuje
-
+    char name[20];
+    float doseAmount;
+    uint8_t hour;
+    uint8_t minute;
+    uint8_t days;
+    bool enabled;
+    
     PumpConfig() : 
-        enabled(false), 
-        schedule_hour(12), 
-        minute(0), 
-        schedule_days(0), 
-        dose(0.0), 
-        calibration(1.0),
-        lastDosing(0),
-        isRunning(false) {}
+        doseAmount(0),
+        hour(0),
+        minute(0),
+        days(0),
+        enabled(false) {
+        name[0] = '\0';
+    }
 };
 
 // --- Struktura konfiguracji sieciowej
@@ -160,13 +157,13 @@ struct SystemStatus {
 };
 
 struct MQTTConfig {
-    char server[40];
+    char broker[40];
     int port;
     char username[20];
     char password[20];
     
     MQTTConfig() : port(1883) {
-        server[0] = '\0';
+        broker[0] = '\0';
         username[0] = '\0';
         password[0] = '\0';
     }
@@ -194,6 +191,7 @@ SystemInfo sysInfo = {0, false};
 
 struct Config {
     PumpConfig pumps[NUM_PUMPS];
+    MQTTConfig mqtt;  // Dodaj to pole
     bool soundEnabled;
     uint32_t checksum;
     
