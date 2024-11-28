@@ -1553,9 +1553,9 @@ String getConfigPage() {
     page += F("<div class='section'>");
     page += F("<h2>Status systemu</h2>");
     page += F("<table class='config-table'>");
-    page += F("<tr><td>Status MQTT</td><td><span class='status ");
-    page += (client.connected() ? F("success'>Połączony") : F("error'>Rozłączony"));
-    page += F("</span></td></tr>");
+page += F("<tr><td>Status MQTT</td><td><span class='status ");
+page += (systemStatus.mqtt_connected ? F("success'>Połączony") : F("error'>Rozłączony"));
+page += F("</span></td></tr>");
     // Dodaj więcej statusów według potrzeb
     page += F("</table></div>");
 
