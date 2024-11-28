@@ -1443,8 +1443,6 @@ String getStyles() {
 
 String getConfigPage() {
     String page;
-    
-    // Początek strony
     page += F("<!DOCTYPE html>");
     page += F("<html lang='en'>");
     page += F("<head>");
@@ -1452,7 +1450,7 @@ String getConfigPage() {
     page += F("<meta name='viewport' content='width=device-width, initial-scale=1'>");
     page += F("<title>AquaDoser Configuration</title>");
     page += F("<style>");
-    page += getStyles();
+    page += getStyles();  // Dodanie stylów CSS
     page += F("</style>");
     page += F("</head>");
     page += F("<body>");
