@@ -690,7 +690,7 @@ void handleRoot() {
 void handleSave() {
     if (server.hasArg("plain")) {
         String json = server.arg("plain");
-        DynamicJsonDocument doc(2048);  // Zwiększony rozmiar dla dodatkowych danych
+        DynamicJsonDocument doc(2048);
         DeserializationError error = deserializeJson(doc, json);
         
         if (!error) {
@@ -698,11 +698,16 @@ void handleSave() {
             if (doc.containsKey("pumps")) {
                 JsonArray pumpsArray = doc["pumps"].as<JsonArray>();
                 for (uint8_t i = 0; i < NUM_PUMPS && i < pumpsArray.size(); i++) {
-                    pumps[i].enabled = pumpsArray[i]["enabled"] | false;
-                    pumps[i].calibration = pumpsArray[i]["calibration"] | 1.0f;
-                    pumps[i].dose = pumpsArray[i]["dose"] | 0.0f;
-                    pumps[i].schedule_hour = pumpsArray[i]["schedule"]["hour"] | 0;
-                    pumps[i].schedule_days = pumpsArray[i]["schedule"]["days"] | 0;
+                    // Poprawione nazwy pól zgodnie ze strukturą PumpConfig
+                    config.pumps[i].enabled = pumpsArray[i]["enabled"] | false;
+                    config.pumps[i].calibration = pumpsArray[i]["calibration"] | 1.0f;
+                    config.pumps[i].dose = pumpsArray[i]["doseAmount"] | 0.0f; // zmienione z dose na doseAmount
+                    config.pumps[i].schedule_hour = pumpsArray[i]["hour"] | 0;
+                    config.pumps[i].minute = pumpsArray[i]["minute"] | 0;
+                    config.pumps[i].schedule_days = pumpsArray[i]["days"] | 0;
+                    if (pumpsArray[i].containsKey("name")) {
+                        strlcpy(config.pumps[i].name, pumpsArray[i]["name"] | "", sizeof(config.pumps[i].name));
+                    }
                 }
                 savePumpsConfig();
             }
@@ -710,11 +715,10 @@ void handleSave() {
             // Obsługa konfiguracji MQTT
             if (doc.containsKey("mqtt")) {
                 JsonObject mqtt = doc["mqtt"];
-                mqttEnabled = mqtt["enabled"] | false;
-                strlcpy(mqttServer, mqtt["server"] | "", sizeof(mqttServer));
-                mqttPort = mqtt["port"] | 1883;
-                strlcpy(mqttUser, mqtt["user"] | "", sizeof(mqttUser));
-                strlcpy(mqttPassword, mqtt["password"] | "", sizeof(mqttPassword));
+                strlcpy(mqttConfig.broker, mqtt["server"] | "", sizeof(mqttConfig.broker));
+                mqttConfig.port = mqtt["port"] | 1883;
+                strlcpy(mqttConfig.username, mqtt["username"] | "", sizeof(mqttConfig.username));
+                strlcpy(mqttConfig.password, mqtt["password"] | "", sizeof(mqttConfig.password));
                 saveMQTTConfig();
             }
 
@@ -1407,7 +1411,7 @@ String getConfigPage() {
     page += F("<meta name='viewport' content='width=device-width, initial-scale=1'>");
     page += F("<title>AquaDoser Configuration</title>");
     page += F("<style>");
-    page += getStyles();  // Dodanie stylów CSS
+    page += getStyles();
     page += F("</style>");
     page += F("</head>");
     page += F("<body>");
@@ -1425,7 +1429,7 @@ String getConfigPage() {
     page += F("<div class='form-group'>");
     page += F("<label>Server </label>");
     page += F("<input type='text' id='mqtt_server' value='");
-    page += String(config.mqtt.broker);
+    page += String(mqttConfig.broker);
     page += F("'></div>");
     page += F("<div class='form-group'>");
     page += F("<label>Port </label>");
@@ -1457,6 +1461,13 @@ String getConfigPage() {
         page += F("' value='");
         page += String(config.pumps[i].name);
         page += F("'></div>");
+        page += F("<div class='form-group'>");
+        page += F("<label>Kalibracja (ml/s) </label>");
+        page += F("<input type='number' id='pump_calibration_");
+        page += String(i);
+        page += F("' value='");
+        page += String(config.pumps[i].calibration);
+        page += F("' step='0.1'></div>");
         page += F("<div class='form-group'>");
         page += F("<label>Dozowanie (ml) </label>");
         page += F("<input type='number' id='pump_dose_");
@@ -1539,6 +1550,7 @@ String getConfigPage() {
     page += F("; i++) {");
     page += F("        let pump = {");
     page += F("            name: document.getElementById('pump_name_' + i).value,");
+    page += F("            calibration: parseFloat(document.getElementById('pump_calibration_' + i).value),");
     page += F("            doseAmount: parseFloat(document.getElementById('pump_dose_' + i).value),");
     page += F("            hour: parseInt(document.getElementById('pump_hour_' + i).value),");
     page += F("            minute: parseInt(document.getElementById('pump_minute_' + i).value),");
@@ -1571,7 +1583,6 @@ String getConfigPage() {
     page += F("}");
     page += F("</script>");
 
-    // Zakończenie strony
     page += F("</div></body></html>");
     
     return page;
