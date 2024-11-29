@@ -33,6 +33,140 @@
 #define MQTT_USER_LENGTH 20
 #define MQTT_PASSWORD_LENGTH 20
 
+// --- Definicje pinów i stałych
+#define NUMBER_OF_PUMPS 8  // Liczba podłączonych pomp
+#define LED_PIN D1         // Pin danych dla WS2812
+#define BUTTON_PIN D2      // Pin przycisku serwisowego
+#define DEBOUNCE_TIME 50   // Czas debounce w ms
+
+// --- Kolory LED
+#define COLOR_OFF 0xFF0000      // Czerwony (pompa wyłączona)
+#define COLOR_ON 0x00FF00       // Zielony (pompa włączona)
+#define COLOR_WORKING 0x0000FF  // Niebieski (pompa pracuje)
+#define COLOR_SERVICE 0xFFFF00  // Żółty (tryb serwisowy)
+
+// --- Struktury danych
+// Struktura konfiguracji MQTT
+struct MQTTConfig {
+    char broker[64];
+    int port;
+    char username[32];
+    char password[32];
+};
+
+// Struktura konfiguracji pompy
+struct PumpConfig {
+    char name[20];
+    bool enabled;
+    float calibration;
+    float dose;
+    uint8_t schedule_hour;
+    uint8_t minute;
+    uint8_t schedule_days;
+    time_t lastDosing;
+    bool isRunning;
+};
+
+// Struktura konfiguracji sieciowej
+struct NetworkConfig {
+    char hostname[32];
+    char ssid[32];
+    char password[64];
+    bool dhcp;
+    IPAddress ip;
+    IPAddress gateway;
+    IPAddress subnet;
+    IPAddress dns1;
+    IPAddress dns2;
+};
+
+// Struktura statusu systemu
+struct SystemStatus {
+    bool mqtt_connected;
+    bool wifi_connected;
+    unsigned long uptime;
+};
+
+// --- Stałe offsety w EEPROM
+const uint32_t EEPROM_VALIDATION_MARK = 0x12345678;
+const int MQTT_CONFIG_ADDR = sizeof(uint32_t);
+const int PUMPS_CONFIG_ADDR = MQTT_CONFIG_ADDR + sizeof(MQTTConfig);
+const int NETWORK_CONFIG_ADDR = PUMPS_CONFIG_ADDR + (sizeof(PumpConfig) * NUMBER_OF_PUMPS);
+const int SYSTEM_STATUS_ADDR = NETWORK_CONFIG_ADDR + sizeof(NetworkConfig);
+
+// --- Zmienne globalne
+MQTTConfig mqttConfig;
+PumpConfig pumps[NUMBER_OF_PUMPS];
+NetworkConfig networkConfig;
+SystemStatus systemStatus;
+
+// --- Interwały czasowe
+const unsigned long MQTT_LOOP_INTERVAL = 100;      // Obsługa MQTT co 100ms
+const unsigned long OTA_CHECK_INTERVAL = 1000;     // Sprawdzanie OTA co 1s
+const unsigned long PUMP_CHECK_INTERVAL = 1000;    // Sprawdzanie pomp co 1s
+const unsigned long BUTTON_DEBOUNCE_TIME = 50;     // Czas debounce przycisku (ms)
+const unsigned long WIFI_RECONNECT_DELAY = 5000;   // Opóźnienie ponownego połączenia WiFi
+const unsigned long MQTT_RECONNECT_DELAY = 5000;   // Opóźnienie ponownego połączenia MQTT
+
+// --- Funkcje obsługi EEPROM
+void initStorage() {
+    EEPROM.begin(2048); // Dostosuj rozmiar według potrzeb
+    
+    // Sprawdź znacznik walidacji
+    uint32_t validationMark;
+    EEPROM.get(0, validationMark);
+    
+    if (validationMark != EEPROM_VALIDATION_MARK) {
+        // Pierwsze uruchomienie - inicjalizuj EEPROM
+        EEPROM.put(0, EEPROM_VALIDATION_MARK);
+        
+        // Ustaw wartości domyślne
+        strlcpy(mqttConfig.broker, "mqtt.example.com", sizeof(mqttConfig.broker));
+        mqttConfig.port = 1883;
+        mqttConfig.username[0] = '\0';
+        mqttConfig.password[0] = '\0';
+        
+        for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+            snprintf(pumps[i].name, sizeof(pumps[i].name), "Pompa %d", i + 1);
+            pumps[i].enabled = false;
+            pumps[i].calibration = 1.0;
+            pumps[i].dose = 0.0;
+            pumps[i].schedule_hour = 12;
+            pumps[i].minute = 0;
+            pumps[i].schedule_days = 0;
+            pumps[i].lastDosing = 0;
+            pumps[i].isRunning = false;
+        }
+        
+        strlcpy(networkConfig.hostname, "AquaDoser", sizeof(networkConfig.hostname));
+        networkConfig.ssid[0] = '\0';
+        networkConfig.password[0] = '\0';
+        networkConfig.dhcp = true;
+        
+        systemStatus.mqtt_connected = false;
+        systemStatus.wifi_connected = false;
+        systemStatus.uptime = 0;
+        
+        // Zapisz wszystkie konfiguracje
+        saveConfig();
+    }
+}
+
+// --- Konfiguracja MQTT dla Home Assistant
+void setupMQTT() {
+    if (strlen(networkConfig.mqtt_server) == 0) {
+        Serial.println("Brak konfiguracji MQTT");
+        return;
+    }
+    
+    mqtt.begin(
+        networkConfig.mqtt_server,
+        networkConfig.mqtt_port,
+        networkConfig.mqtt_user,
+        networkConfig.mqtt_password
+    );
+}
+
 // Zmienne MQTT
 bool mqttEnabled = false;
 char mqttServer[MQTT_SERVER_LENGTH] = "";
@@ -46,11 +180,6 @@ const unsigned long STATUS_PRINT_INTERVAL = 60000; // Wyświetlaj status co 1 mi
 const unsigned long LOG_INTERVAL = 60000; // 60 sekund między wyświetlaniem statusu
 unsigned long lastLogTime = 0;
 bool firstRun = true;
-const int MQTT_CONFIG_ADDR = sizeof(uint32_t);
-const uint32_t EEPROM_VALIDATION_MARK = 0x12345678;
-const int PUMPS_CONFIG_ADDR = MQTT_CONFIG_ADDR + sizeof(MQTTConfig);
-const int NETWORK_CONFIG_ADDR = PUMPS_CONFIG_ADDR + (sizeof(PumpConfig) * NUMBER_OF_PUMPS);
-const int SYSTEM_STATUS_ADDR = NETWORK_CONFIG_ADDR + sizeof(NetworkConfig);
 const char* dayNames[] = {"Pn", "Wt", "Śr", "Cz", "Pt", "Sb", "Nd"};
 
 #define TEST_MODE  // Zakomentuj tę linię w wersji produkcyjnej
@@ -114,65 +243,6 @@ const char* dayNames[] = {"Pn", "Wt", "Śr", "Cz", "Pt", "Sb", "Nd"};
   PCF8574 pcf(PCF8574_ADDRESS);
 #endif
 
-// --- Definicje pinów i stałych
-#define NUMBER_OF_PUMPS 8  // Liczba podłączonych pomp
-#define LED_PIN D1         // Pin danych dla WS2812
-#define BUTTON_PIN D2      // Pin przycisku serwisowego
-#define DEBOUNCE_TIME 50   // Czas debounce w ms
-
-// --- Kolory LED
-#define COLOR_OFF 0xFF0000      // Czerwony (pompa wyłączona)
-#define COLOR_ON 0x00FF00       // Zielony (pompa włączona)
-#define COLOR_WORKING 0x0000FF  // Niebieski (pompa pracuje)
-#define COLOR_SERVICE 0xFFFF00  // Żółty (tryb serwisowy)
-
-// Struktura konfiguracji pompy
-struct PumpConfig {
-    char name[20];
-    bool enabled;
-    float calibration;
-    float dose;
-    uint8_t schedule_hour;
-    uint8_t minute;
-    uint8_t schedule_days;
-    time_t lastDosing;
-    bool isRunning;
-};
-
-// Struktura konfiguracji sieciowej
-struct NetworkConfig {
-    char hostname[32];
-    char ssid[32];
-    char password[64];
-    bool dhcp;
-    IPAddress ip;
-    IPAddress gateway;
-    IPAddress subnet;
-    IPAddress dns1;
-    IPAddress dns2;
-};
-
-// Struktura statusu systemu
-struct SystemStatus {
-    bool mqtt_connected;
-    bool wifi_connected;
-    unsigned long uptime;
-};
-
-// Struktura konfiguracji MQTT
-struct MQTTConfig {
-    char broker[64];
-    int port;
-    char username[32];
-    char password[32];
-};
-
-// Globalne zmienne konfiguracyjne
-MQTTConfig mqttConfig;
-PumpConfig pumps[NUMBER_OF_PUMPS];
-NetworkConfig networkConfig;
-SystemStatus systemStatus;
-
 ESP8266WebServer server(80);
 WebSocketsServer webSocket = WebSocketsServer(81);
 ESP8266HTTPUpdateServer httpUpdateServer;
@@ -189,7 +259,6 @@ struct SystemInfo {
 SystemInfo sysInfo = {0, false};
 
 struct Config {
-    PumpConfig pumps[NUMBER_OF_PUMPS];
     MQTTConfig mqtt;  // Dodaj to pole
     bool soundEnabled;
     uint32_t checksum;
@@ -221,15 +290,11 @@ Adafruit_NeoPixel strip(NUMBER_OF_PUMPS, LED_PIN, NEO_GRB + NEO_KHZ800);
 
 // --- Globalne zmienne stanu
 bool serviceMode = false;
-PumpConfig pumps[NUMBER_OF_PUMPS];
-NetworkConfig networkConfig;
 bool pumpRunning[NUMBER_OF_PUMPS] = {false};
 unsigned long doseStartTime[NUMBER_OF_PUMPS] = {0};
 //unsigned long lastRtcSync = 0;
 
 // Dodaj stałe dla timeoutów i interwałów jak w HydroSense
-const unsigned long MQTT_LOOP_INTERVAL = 100;      // Obsługa MQTT co 100ms
-const unsigned long OTA_CHECK_INTERVAL = 1000;     // Sprawdzanie OTA co 1s
 const unsigned long MQTT_RETRY_INTERVAL = 10000;   // Próba połączenia MQTT co 10s
 const unsigned long MILLIS_OVERFLOW_THRESHOLD = 4294967295U - 60000; // ~49.7 dni
 
@@ -257,50 +322,6 @@ const int BUZZER_PIN = D2;
 
 bool hasIntervalPassed(unsigned long current, unsigned long previous, unsigned long interval) {
     return (current - previous >= interval);
-}
-
-// Funkcje obsługi EEPROM
-void initStorage() {
-    EEPROM.begin(2048); // Dostosuj rozmiar według potrzeb
-    
-    // Sprawdź znacznik walidacji
-    uint32_t validationMark;
-    EEPROM.get(0, validationMark);
-    
-    if (validationMark != EEPROM_VALIDATION_MARK) {
-        // Pierwsze uruchomienie - inicjalizuj EEPROM
-        EEPROM.put(0, EEPROM_VALIDATION_MARK);
-        
-        // Ustaw wartości domyślne
-        strlcpy(mqttConfig.broker, "mqtt.example.com", sizeof(mqttConfig.broker));
-        mqttConfig.port = 1883;
-        mqttConfig.username[0] = '\0';
-        mqttConfig.password[0] = '\0';
-        
-        for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-            snprintf(pumps[i].name, sizeof(pumps[i].name), "Pompa %d", i + 1);
-            pumps[i].enabled = false;
-            pumps[i].calibration = 1.0;
-            pumps[i].dose = 0.0;
-            pumps[i].schedule_hour = 12;
-            pumps[i].minute = 0;
-            pumps[i].schedule_days = 0;
-            pumps[i].lastDosing = 0;
-            pumps[i].isRunning = false;
-        }
-        
-        strlcpy(networkConfig.hostname, "AquaDoser", sizeof(networkConfig.hostname));
-        networkConfig.ssid[0] = '\0';
-        networkConfig.password[0] = '\0';
-        networkConfig.dhcp = true;
-        
-        systemStatus.mqtt_connected = false;
-        systemStatus.wifi_connected = false;
-        systemStatus.uptime = 0;
-        
-        // Zapisz wszystkie konfiguracje
-        saveConfig();
-    }
 }
 
 // Funkcja formatująca czas
@@ -1247,21 +1268,6 @@ bool validateMQTTConfig() {
     }
     
     return true;
-}
-
-// --- Konfiguracja MQTT dla Home Assistant
-void setupMQTT() {
-    if (strlen(networkConfig.mqtt_server) == 0) {
-        Serial.println("Brak konfiguracji MQTT");
-        return;
-    }
-    
-    mqtt.begin(
-        networkConfig.mqtt_server,
-        networkConfig.mqtt_port,
-        networkConfig.mqtt_user,
-        networkConfig.mqtt_password
-    );
 }
 
 // --- Zmienne dla obsługi przycisku
