@@ -14,7 +14,6 @@
 
 // Biblioteki do obsługi pamięci i plików
 #include <EEPROM.h>    // Dostęp do pamięci EEPROM - przechowywanie konfiguracji
-//#include <LittleFS.h>  // System plików dla ESP8266 - przechowywanie plików konfiguracyjnych i stron WWW
 
 // Biblioteki do komunikacji z urządzeniami I2C
 #include <Wire.h>     // Obsługa magistrali I2C
@@ -124,26 +123,12 @@ bool firstRun = true;
 // --- Struktura konfiguracji pompy
 struct PumpConfig {
     char name[20];
-    float calibration;      // kalibracja pompy (ml/s)
-    float dose;            // dawka w ml
-    uint8_t schedule_hour;  // godzina dozowania
-    uint8_t minute;        // minuta dozowania
-    uint8_t schedule_days;  // dni tygodnia (bitmaska)
-    time_t lastDosing;     // timestamp ostatniego dozowania
-    bool isRunning;        // czy pompa aktualnie pracuje
-    bool enabled;          // czy pompa jest włączona
-
-    PumpConfig() : 
-        calibration(1.0),
-        dose(0.0),
-        schedule_hour(0),
-        minute(0),
-        schedule_days(0),
-        lastDosing(0),
-        isRunning(false),
-        enabled(false) {
-        name[0] = '\0';
-    }
+    bool enabled;
+    float calibration;
+    float dose;
+    uint8_t schedule_hour;
+    uint8_t minute;
+    uint8_t schedule_days;
 };
 
 // --- Struktura konfiguracji sieciowej
@@ -156,35 +141,22 @@ struct NetworkConfig {
     uint16_t mqtt_port;
 };
 
+// Struktura statusu systemu
 struct SystemStatus {
-    unsigned long uptime;
     bool mqtt_connected;
-    bool wifi_connected;
-    bool rtc_synced;
-    String lastError;
-    
-    SystemStatus() : 
-        uptime(0), 
-        mqtt_connected(false),
-        wifi_connected(false),
-        rtc_synced(false),
-        lastError("") {}
 };
 
 struct MQTTConfig {
-    char broker[40];
+    char broker[64];
     int port;
-    char username[20];
-    char password[20];
-    
-    MQTTConfig() : port(1883) {
-        broker[0] = '\0';
-        username[0] = '\0';
-        password[0] = '\0';
-    }
+    char username[32];
+    char password[32];
 };
 
 MQTTConfig mqttConfig;
+
+// Znacznik walidacji EEPROM
+const uint32_t EEPROM_VALIDATION_MARK = 0x12345678;
 
 ESP8266WebServer server(80);
 WebSocketsServer webSocket = WebSocketsServer(81);
@@ -524,22 +496,6 @@ void loadMQTTConfig() {
     strlcpy(mqttPassword, doc["password"] | "", sizeof(mqttPassword));
 }
 
-
-
-// --- Inicjalizacja systemu plików
-bool initFileSystem() {
-    if (!LittleFS.begin()) {
-        Serial.println("Błąd inicjalizacji LittleFS!");
-        return false;
-    }
-
-    // Sprawdź czy istnieje katalog konfiguracji
-    if (!LittleFS.exists(CONFIG_DIR)) {
-        LittleFS.mkdir(CONFIG_DIR);
-    }
-    return true;
-}
-
 // --- Ładowanie konfiguracji pomp
 bool loadPumpsConfig() {
     File file = LittleFS.open("/pumps.json", "r");
@@ -658,11 +614,6 @@ bool saveNetworkConfig() {
 
 // --- Ogólna funkcja ładowania konfiguracji
 void loadConfiguration() {
-    if (!initFileSystem()) {
-        Serial.println("Używam domyślnych ustawień");
-        return;
-    }
-
     if (!loadPumpsConfig()) {
         Serial.println("Używam domyślnych ustawień pomp");
         // Tutaj możemy zainicjować domyślne wartości dla pomp
@@ -713,11 +664,11 @@ void handleSave() {
             // Obsługa konfiguracji MQTT
             if (doc.containsKey("mqtt")) {
                 JsonObject mqtt = doc["mqtt"];
-                if (mqtt.containsKey("broker") && mqtt["broker"].as<String>() != mqttConfig.broker) {
+                if (mqtt.containsKey("broker")) {
                     strlcpy(mqttConfig.broker, mqtt["broker"] | "", sizeof(mqttConfig.broker));
                     configChanged = true;
                 }
-                if (mqtt.containsKey("port") && mqtt["port"].as<int>() != mqttConfig.port) {
+                if (mqtt.containsKey("port")) {
                     mqttConfig.port = mqtt["port"] | 1883;
                     configChanged = true;
                 }
@@ -733,45 +684,36 @@ void handleSave() {
 
             // Obsługa konfiguracji pomp
             if (doc.containsKey("pumps")) {
-                JsonArray pumpsArray = doc["pumps"].as<JsonArray>();
+                JsonArray pumpsArray = doc["pumps"];
                 for (uint8_t i = 0; i < NUMBER_OF_PUMPS && i < pumpsArray.size(); i++) {
                     JsonObject pump = pumpsArray[i];
                     
                     if (pump.containsKey("name")) {
-                        String newName = pump["name"].as<String>();
-                        if (strcmp(pumps[i].name, newName.c_str()) != 0) {
-                            strlcpy(pumps[i].name, newName.c_str(), sizeof(pumps[i].name));
-                            configChanged = true;
-                        }
-                    }
-                    
-                    if (pump.containsKey("enabled") && pump["enabled"].as<bool>() != pumps[i].enabled) {
-                        pumps[i].enabled = pump["enabled"].as<bool>();
+                        strlcpy(pumps[i].name, pump["name"] | "", sizeof(pumps[i].name));
                         configChanged = true;
                     }
-                    
-                    if (pump.containsKey("calibration") && pump["calibration"].as<float>() != pumps[i].calibration) {
-                        pumps[i].calibration = pump["calibration"].as<float>();
+                    if (pump.containsKey("enabled")) {
+                        pumps[i].enabled = pump["enabled"] | false;
                         configChanged = true;
                     }
-                    
-                    if (pump.containsKey("dose") && pump["dose"].as<float>() != pumps[i].dose) {
-                        pumps[i].dose = pump["dose"].as<float>();
+                    if (pump.containsKey("calibration")) {
+                        pumps[i].calibration = pump["calibration"] | 1.0f;
                         configChanged = true;
                     }
-                    
-                    if (pump.containsKey("schedule_hour") && pump["schedule_hour"].as<int>() != pumps[i].schedule_hour) {
-                        pumps[i].schedule_hour = pump["schedule_hour"].as<int>();
+                    if (pump.containsKey("dose")) {
+                        pumps[i].dose = pump["dose"] | 0.0f;
                         configChanged = true;
                     }
-                    
-                    if (pump.containsKey("minute") && pump["minute"].as<int>() != pumps[i].minute) {
-                        pumps[i].minute = pump["minute"].as<int>();
+                    if (pump.containsKey("schedule_hour")) {
+                        pumps[i].schedule_hour = pump["schedule_hour"] | 0;
                         configChanged = true;
                     }
-                    
-                    if (pump.containsKey("schedule_days") && pump["schedule_days"].as<uint8_t>() != pumps[i].schedule_days) {
-                        pumps[i].schedule_days = pump["schedule_days"].as<uint8_t>();
+                    if (pump.containsKey("minute")) {
+                        pumps[i].minute = pump["minute"] | 0;
+                        configChanged = true;
+                    }
+                    if (pump.containsKey("schedule_days")) {
+                        pumps[i].schedule_days = pump["schedule_days"] | 0;
                         configChanged = true;
                     }
                 }
@@ -779,18 +721,14 @@ void handleSave() {
 
             if (configChanged) {
                 saveConfig();
-                // Jeśli zmieniła się konfiguracja MQTT, zainicjuj ponownie połączenie
-                if (doc.containsKey("mqtt")) {
-                    setupMQTT();
-                }
+                
+                DynamicJsonDocument response(256);
+                response["status"] = "success";
+                response["message"] = "Configuration saved";
+                String responseJson;
+                serializeJson(response, responseJson);
+                server.send(200, "application/json", responseJson);
             }
-
-            DynamicJsonDocument response(256);
-            response["status"] = "success";
-            response["message"] = "Configuration saved";
-            String responseJson;
-            serializeJson(response, responseJson);
-            server.send(200, "application/json", responseJson);
         } else {
             server.send(400, "text/plain", "Invalid JSON");
         }
@@ -861,32 +799,75 @@ void loadConfig() {
     }
 }
 
+// Funkcja inicjalizująca EEPROM
+void initializeStorage() {
+    EEPROM.begin(1024); // Inicjalizacja z odpowiednim rozmiarem
+}
+
+// Funkcja zapisująca konfigurację
 void saveConfig() {
-    EEPROM.begin(1024); // Zwiększamy rozmiar do 1024 bajtów
+    int addr = 0;
     
     // Zapisz znacznik walidacji
-    int addr = 0;
-    uint32_t validationMark = 0x12345678;
-    EEPROM.put(addr, validationMark);
-    addr += sizeof(validationMark);
+    EEPROM.put(addr, EEPROM_VALIDATION_MARK);
+    addr += sizeof(EEPROM_VALIDATION_MARK);
     
     // Zapisz konfigurację MQTT
     EEPROM.put(addr, mqttConfig);
-    addr += sizeof(mqttConfig);
-
+    addr += sizeof(MQTTConfig);
+    
     // Zapisz konfigurację pomp
     for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
         EEPROM.put(addr, pumps[i]);
         addr += sizeof(PumpConfig);
     }
-
-    bool success = EEPROM.commit();
-    EEPROM.end();
     
+    // Zapisz zmiany
+    bool success = EEPROM.commit();
     if (!success) {
         Serial.println(F("Błąd zapisu do EEPROM"));
-    } else {
-        Serial.println(F("Konfiguracja zapisana"));
+    }
+}
+
+// Funkcja wczytująca konfigurację
+void loadConfig() {
+    int addr = 0;
+    uint32_t validationMark;
+    
+    // Sprawdź znacznik walidacji
+    EEPROM.get(addr, validationMark);
+    addr += sizeof(validationMark);
+    
+    if (validationMark != EEPROM_VALIDATION_MARK) {
+        // Brak zapisanej konfiguracji - ustaw wartości domyślne
+        strlcpy(mqttConfig.broker, "mqtt.example.com", sizeof(mqttConfig.broker));
+        mqttConfig.port = 1883;
+        mqttConfig.username[0] = '\0';
+        mqttConfig.password[0] = '\0';
+        
+        for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+            snprintf(pumps[i].name, sizeof(pumps[i].name), "Pompa %d", i + 1);
+            pumps[i].enabled = false;
+            pumps[i].calibration = 1.0;
+            pumps[i].dose = 0.0;
+            pumps[i].schedule_hour = 12;
+            pumps[i].minute = 0;
+            pumps[i].schedule_days = 0;
+        }
+        
+        // Zapisz domyślną konfigurację
+        saveConfig();
+        return;
+    }
+    
+    // Wczytaj konfigurację MQTT
+    EEPROM.get(addr, mqttConfig);
+    addr += sizeof(MQTTConfig);
+    
+    // Wczytaj konfigurację pomp
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        EEPROM.get(addr, pumps[i]);
+        addr += sizeof(PumpConfig);
     }
 }
 
@@ -1911,25 +1892,15 @@ void setup() {
     pinMode(BUZZER_PIN, OUTPUT);  // Wyjście - buzzer
     digitalWrite(BUZZER_PIN, LOW);  // Wyłączenie buzzera
     
-    // Inicjalizacja systemu plików i wczytanie konfiguracji
-    if (!initFileSystem()) {
-        Serial.println("Błąd inicjalizacji systemu plików!");
-    }
-
     loadConfiguration();  // Wczytaj konfigurację z EEPROM
     checkMQTTConfig();   // Sprawdź i wyświetl status konfiguracji MQTT
 
-    // Inicjalizacja systemu plików
-    if (!LittleFS.begin()) {
-        Serial.println("Błąd inicjalizacji LittleFS!");
-        return;
-    }
-
-        if (LittleFS.begin()) {
-        loadConfiguration();
-        loadMQTTConfig();  // Dodaj to
-    }
+    // Inicjalizacja EEPROM zamiast LittleFS
+    initializeStorage();
     
+    // Wczytaj konfigurację
+    loadConfig();
+
     // Inicjalizacja RTC
     if (!rtc.begin()) {
         Serial.println("Nie znaleziono RTC!");
