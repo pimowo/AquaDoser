@@ -1,22 +1,33 @@
 // --- Biblioteki
 
-#include <Arduino.h>  // Podstawowa biblioteka Arduino zawierająca funkcje rdzenia
-#include <ArduinoHA.h>  // Biblioteka do integracji z Home Assistant przez protokół MQTT
-#include <ArduinoOTA.h>  // Biblioteka do aktualizacji oprogramowania przez sieć WiFi
-#include <ESP8266WiFi.h>  // Biblioteka WiFi dedykowana dla układu ESP8266
-#include <EEPROM.h>  // Biblioteka do dostępu do pamięci nieulotnej EEPROM
-#include <WiFiManager.h>  // Biblioteka do zarządzania połączeniami WiFi
-#include <ESP8266WebServer.h>  // Biblioteka do obsługi serwera HTTP na ESP8266
-#include <WebSocketsServer.h>  // Biblioteka do obsługi serwera WebSockets na ESP8266
-#include <ESP8266HTTPUpdateServer.h>
-#include <Wire.h>
-#include <RTClib.h>
-#include <PCF8574.h>
-#include <ArduinoJson.h>
-#include <LittleFS.h>
-#include <Adafruit_NeoPixel.h>
-#include <NTPClient.h>
-#include <WiFiUDP.h>
+// Podstawowe biblioteki systemowe
+#include <Arduino.h>     // Podstawowa biblioteka Arduino - zawiera główne funkcje i definicje dla platformy Arduino
+#include <ArduinoHA.h>   // Integracja z Home Assistant poprzez MQTT - umożliwia komunikację z systemem automatyki domowej
+#include <ArduinoOTA.h>  // Over The Air - umożliwia bezprzewodową aktualizację oprogramowania przez WiFi
+
+// Biblioteki do obsługi WiFi i komunikacji sieciowej
+#include <ESP8266WiFi.h>              // Obsługa WiFi dla układu ESP8266
+#include <WiFiManager.h>              // Zarządzanie konfiguracją WiFi - portal konfiguracyjny do łatwego podłączenia do sieci
+#include <ESP8266WebServer.h>         // Serwer HTTP dla ESP8266 - umożliwia hostowanie strony konfiguracyjnej
+#include <WebSocketsServer.h>         // Obsługa WebSocket - do komunikacji w czasie rzeczywistym
+#include <ESP8266HTTPUpdateServer.h>  // Serwer aktualizacji HTTP - umożliwia aktualizację firmware przez przeglądarkę
+
+// Biblioteki do obsługi pamięci i plików
+#include <EEPROM.h>    // Dostęp do pamięci EEPROM - przechowywanie konfiguracji
+//#include <LittleFS.h>  // System plików dla ESP8266 - przechowywanie plików konfiguracyjnych i stron WWW
+
+// Biblioteki do komunikacji z urządzeniami I2C
+#include <Wire.h>     // Obsługa magistrali I2C
+#include <RTClib.h>   // Obsługa zegara czasu rzeczywistego (RTC)
+#include <PCF8574.h>  // Sterownik ekspandera I/O I2C PCF8574
+
+// Biblioteki do obsługi JSON i LED
+#include <ArduinoJson.h>        // Parsowanie i generowanie danych w formacie JSON
+#include <Adafruit_NeoPixel.h>  // Sterowanie diodami LED WS2812B (NeoPixel)
+
+// Biblioteki do synchronizacji czasu
+#include <NTPClient.h>  // Klient NTP - synchronizacja czasu z serwerami czasu
+#include <WiFiUDP.h>    // Obsługa protokołu UDP - wymagana dla NTP
 
 // Definicje MQTT
 #define MQTT_SERVER_LENGTH 40
@@ -99,11 +110,10 @@ bool firstRun = true;
 #endif
 
 // --- Definicje pinów i stałych
-#define NUMBER_OF_PUMPS 8  // lub inna odpowiednia liczba
-#define NUM_PUMPS 8              // Liczba pomp
-#define LED_PIN D1               // Pin danych dla WS2812
-#define BUTTON_PIN D2            // Pin przycisku serwisowego
-#define DEBOUNCE_TIME 50         // Czas debounce w ms
+#define NUMBER_OF_PUMPS 8  // Liczba podłączonych pomp
+#define LED_PIN D1         // Pin danych dla WS2812
+#define BUTTON_PIN D2      // Pin przycisku serwisowego
+#define DEBOUNCE_TIME 50   // Czas debounce w ms
 
 // --- Kolory LED
 #define COLOR_OFF 0xFF0000      // Czerwony (pompa wyłączona)
@@ -112,26 +122,28 @@ bool firstRun = true;
 #define COLOR_SERVICE 0xFFFF00  // Żółty (tryb serwisowy)
 
 // --- Struktura konfiguracji pompy
-// Struktura konfiguracji pompy
 struct PumpConfig {
-    bool enabled;           // Czy pompa jest włączona
-    uint8_t schedule_hour;  // Godzina dozowania
-    uint8_t minute;        // Minuta dozowania
-    uint8_t schedule_days; // Dni tygodnia (bitmapa: 0b0000000 dla każdego dnia)
-    float dose;           // Ilość do dozowania (ml)
-    float calibration;    // Kalibracja pompy (ml/min)
-    unsigned long lastDosing; // Czas ostatniego dozowania (unix timestamp)
-    bool isRunning;       // Czy pompa aktualnie pracuje
+    char name[20];
+    float calibration;      // kalibracja pompy (ml/s)
+    float dose;            // dawka w ml
+    uint8_t schedule_hour;  // godzina dozowania
+    uint8_t minute;        // minuta dozowania
+    uint8_t schedule_days;  // dni tygodnia (bitmaska)
+    time_t lastDosing;     // timestamp ostatniego dozowania
+    bool isRunning;        // czy pompa aktualnie pracuje
+    bool enabled;          // czy pompa jest włączona
 
     PumpConfig() : 
-        enabled(false), 
-        schedule_hour(12), 
-        minute(0), 
-        schedule_days(0), 
-        dose(0.0), 
         calibration(1.0),
+        dose(0.0),
+        schedule_hour(0),
+        minute(0),
+        schedule_days(0),
         lastDosing(0),
-        isRunning(false) {}
+        isRunning(false),
+        enabled(false) {
+        name[0] = '\0';
+    }
 };
 
 // --- Struktura konfiguracji sieciowej
@@ -160,10 +172,10 @@ struct SystemStatus {
 };
 
 struct MQTTConfig {
-    char broker[64];
-    uint16_t port;
-    char username[32];
-    char password[32];
+    char broker[40];
+    int port;
+    char username[20];
+    char password[20];
     
     MQTTConfig() : port(1883) {
         broker[0] = '\0';
@@ -172,12 +184,18 @@ struct MQTTConfig {
     }
 };
 
+MQTTConfig mqttConfig;
+
 ESP8266WebServer server(80);
 WebSocketsServer webSocket = WebSocketsServer(81);
 ESP8266HTTPUpdateServer httpUpdateServer;
 
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "pool.ntp.org");
+
+const char* dayNames[] = {"Pn", "Wt", "Śr", "Cz", "Pt", "Sb", "Nd"};
+
+
 // Struktura dla informacji systemowych
 struct SystemInfo {
     unsigned long uptime;
@@ -187,10 +205,10 @@ struct SystemInfo {
 SystemInfo sysInfo = {0, false};
 
 struct Config {
-    MQTTConfig mqtt;
     PumpConfig pumps[NUMBER_OF_PUMPS];
+    MQTTConfig mqtt;  // Dodaj to pole
     bool soundEnabled;
-    uint8_t checksum;
+    uint32_t checksum;
     
     Config() : soundEnabled(true), checksum(0) {}
 };
@@ -215,14 +233,14 @@ HADevice haDevice("AquaDoser");
 HAMqtt mqtt(wifiClient, haDevice);
 //RTC_DS3231 rtc;
 PCF8574 pcf8574(0x20);
-Adafruit_NeoPixel strip(NUM_PUMPS, LED_PIN, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel strip(NUMBER_OF_PUMPS, LED_PIN, NEO_GRB + NEO_KHZ800);
 
 // --- Globalne zmienne stanu
 bool serviceMode = false;
-PumpConfig pumps[NUM_PUMPS];
+PumpConfig pumps[NUMBER_OF_PUMPS];
 NetworkConfig networkConfig;
-bool pumpRunning[NUM_PUMPS] = {false};
-unsigned long doseStartTime[NUM_PUMPS] = {0};
+bool pumpRunning[NUMBER_OF_PUMPS] = {false};
+unsigned long doseStartTime[NUMBER_OF_PUMPS] = {0};
 //unsigned long lastRtcSync = 0;
 
 // Dodaj stałe dla timeoutów i interwałów jak w HydroSense
@@ -236,9 +254,8 @@ unsigned long lastMeasurement = 0;
 unsigned long lastOTACheck = 0;
 
 // --- Deklaracje encji Home Assistant
-HASwitch* pumpSwitches[NUM_PUMPS];
-//HASensor* pumpStates[NUM_PUMPS];
-HANumber* pumpCalibrations[NUM_PUMPS];
+HASwitch* pumpSwitches[NUMBER_OF_PUMPS];
+HANumber* pumpCalibrations[NUMBER_OF_PUMPS];
 HASwitch* serviceModeSwitch;
 
 // Deklaracje funkcji - będą zaimplementowane w kolejnych częściach
@@ -258,96 +275,10 @@ bool hasIntervalPassed(unsigned long current, unsigned long previous, unsigned l
     return (current - previous >= interval);
 }
 
-void saveConfig() {
-    EEPROM.begin(1024); // Zwiększamy rozmiar do 1024 bajtów
-    
-    // Zapisz znacznik walidacji
-    int addr = 0;
-    uint32_t validationMark = 0x12345678;
-    EEPROM.put(addr, validationMark);
-    addr += sizeof(validationMark);
-    
-    // Zapisz konfigurację MQTT
-    EEPROM.put(addr, mqttConfig);
-    addr += sizeof(mqttConfig);
-
-    // Zapisz konfigurację pomp
-    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-        EEPROM.put(addr, pumps[i]);
-        addr += sizeof(PumpConfig);
-    }
-
-    bool success = EEPROM.commit();
-    EEPROM.end();
-    
-    if (!success) {
-        Serial.println(F("Błąd zapisu do EEPROM"));
-    } else {
-        Serial.println(F("Konfiguracja zapisana"));
-    }
-}
-
-void loadConfig() {
-    EEPROM.begin(1024);
-    
-    // Sprawdź znacznik walidacji
-    int addr = 0;
-    uint32_t validationMark;
-    EEPROM.get(addr, validationMark);
-    addr += sizeof(validationMark);
-    
-    if (validationMark != 0x12345678) {
-        Serial.println(F("Brak zapisanej konfiguracji - używam domyślnych wartości"));
-        // Ustaw domyślne wartości
-        strlcpy(mqttConfig.broker, "mqtt.example.com", sizeof(mqttConfig.broker));
-        mqttConfig.port = 1883;
-        strlcpy(mqttConfig.username, "", sizeof(mqttConfig.username));
-        strlcpy(mqttConfig.password, "", sizeof(mqttConfig.password));
-        
-        for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-            snprintf(pumps[i].name, sizeof(pumps[i].name), "Pompa %d", i + 1);
-            pumps[i].enabled = false;
-            pumps[i].calibration = 1.0;
-            pumps[i].dose = 0.0;
-            pumps[i].schedule_hour = 12;
-            pumps[i].minute = 0;
-            pumps[i].schedule_days = 0;
-        }
-        
-        // Zapisz domyślną konfigurację
-        saveConfig();
-        return;
-    }
-
-    // Wczytaj konfigurację MQTT
-    EEPROM.get(addr, mqttConfig);
-    addr += sizeof(mqttConfig);
-
-    // Wczytaj konfigurację pomp
-    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-        EEPROM.get(addr, pumps[i]);
-        addr += sizeof(PumpConfig);
-    }
-
-    EEPROM.end();
-    
-    // Debug - wyświetl wczytane wartości
-    Serial.println(F("Wczytana konfiguracja:"));
-    Serial.print(F("MQTT Broker: "));
-    Serial.println(mqttConfig.broker);
-    Serial.print(F("MQTT Port: "));
-    Serial.println(mqttConfig.port);
-    
-    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-        Serial.print(F("Pompa "));
-        Serial.print(i + 1);
-        Serial.print(F(": "));
-        Serial.print(pumps[i].name);
-        Serial.print(F(" (enabled: "));
-        Serial.print(pumps[i].enabled ? "tak" : "nie");
-        Serial.println(F(")"));
-    }
-}
+// Stałe dla systemu logowania
+//const unsigned long LOG_INTERVAL = 60000; // 60 sekund między wyświetlaniem statusu
+//unsigned long lastLogTime = 0;
+//bool firstRun = true;
 
 // Funkcja formatująca czas
 String formatDateTime(const DateTime& dt) {
@@ -627,7 +558,7 @@ bool loadPumpsConfig() {
     }
 
     JsonArray pumpsArray = doc["pumps"].as<JsonArray>();
-    for (uint8_t i = 0; i < NUM_PUMPS && i < pumpsArray.size(); i++) {
+    for (uint8_t i = 0; i < NUMBER_OF_PUMPS && i < pumpsArray.size(); i++) {
         pumps[i].enabled = pumpsArray[i]["enabled"] | false;
         pumps[i].calibration = pumpsArray[i]["calibration"] | 1.0f;
         pumps[i].dose = pumpsArray[i]["dose"] | 0.0f;
@@ -645,7 +576,7 @@ bool savePumpsConfig() {
     DynamicJsonDocument doc(1024);
     JsonArray pumpsArray = doc.createNestedArray("pumps");
 
-    for (uint8_t i = 0; i < NUM_PUMPS; i++) {
+    for (uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
         JsonObject pumpObj = pumpsArray.createNestedObject();
         pumpObj["enabled"] = pumps[i].enabled;
         pumpObj["calibration"] = pumps[i].calibration;
@@ -735,7 +666,7 @@ void loadConfiguration() {
     if (!loadPumpsConfig()) {
         Serial.println("Używam domyślnych ustawień pomp");
         // Tutaj możemy zainicjować domyślne wartości dla pomp
-        for (int i = 0; i < NUM_PUMPS; i++) {
+        for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
             pumps[i].enabled = false;
             pumps[i].calibration = 1.0;
             pumps[i].dose = 0.0;
@@ -868,6 +799,97 @@ void handleSave() {
     }
 }
 
+void loadConfig() {
+    EEPROM.begin(1024);
+    
+    // Sprawdź znacznik walidacji
+    int addr = 0;
+    uint32_t validationMark;
+    EEPROM.get(addr, validationMark);
+    addr += sizeof(validationMark);
+    
+    if (validationMark != 0x12345678) {
+        Serial.println(F("Brak zapisanej konfiguracji - używam domyślnych wartości"));
+        // Ustaw domyślne wartości
+        strlcpy(mqttConfig.broker, "mqtt.example.com", sizeof(mqttConfig.broker));
+        mqttConfig.port = 1883;
+        strlcpy(mqttConfig.username, "", sizeof(mqttConfig.username));
+        strlcpy(mqttConfig.password, "", sizeof(mqttConfig.password));
+        
+        for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+            snprintf(pumps[i].name, sizeof(pumps[i].name), "Pompa %d", i + 1);
+            pumps[i].enabled = false;
+            pumps[i].calibration = 1.0;
+            pumps[i].dose = 0.0;
+            pumps[i].schedule_hour = 12;
+            pumps[i].minute = 0;
+            pumps[i].schedule_days = 0;
+        }
+        
+        // Zapisz domyślną konfigurację
+        saveConfig();
+        return;
+    }
+
+    // Wczytaj konfigurację MQTT
+    EEPROM.get(addr, mqttConfig);
+    addr += sizeof(mqttConfig);
+
+    // Wczytaj konfigurację pomp
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        EEPROM.get(addr, pumps[i]);
+        addr += sizeof(PumpConfig);
+    }
+
+    EEPROM.end();
+    
+    // Debug - wyświetl wczytane wartości
+    Serial.println(F("Wczytana konfiguracja:"));
+    Serial.print(F("MQTT Broker: "));
+    Serial.println(mqttConfig.broker);
+    Serial.print(F("MQTT Port: "));
+    Serial.println(mqttConfig.port);
+    
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        Serial.print(F("Pompa "));
+        Serial.print(i + 1);
+        Serial.print(F(": "));
+        Serial.print(pumps[i].name);
+        Serial.print(F(" (enabled: "));
+        Serial.print(pumps[i].enabled ? "tak" : "nie");
+        Serial.println(F(")"));
+    }
+}
+
+void saveConfig() {
+    EEPROM.begin(1024); // Zwiększamy rozmiar do 1024 bajtów
+    
+    // Zapisz znacznik walidacji
+    int addr = 0;
+    uint32_t validationMark = 0x12345678;
+    EEPROM.put(addr, validationMark);
+    addr += sizeof(validationMark);
+    
+    // Zapisz konfigurację MQTT
+    EEPROM.put(addr, mqttConfig);
+    addr += sizeof(mqttConfig);
+
+    // Zapisz konfigurację pomp
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        EEPROM.put(addr, pumps[i]);
+        addr += sizeof(PumpConfig);
+    }
+
+    bool success = EEPROM.commit();
+    EEPROM.end();
+    
+    if (!success) {
+        Serial.println(F("Błąd zapisu do EEPROM"));
+    } else {
+        Serial.println(F("Konfiguracja zapisana"));
+    }
+}
+
 // --- Ogólna funkcja zapisywania konfiguracji
 void saveConfiguration() {
     if (!savePumpsConfig()) {
@@ -895,7 +917,7 @@ bool initializePumps() {
     }
 
     // Ustaw wszystkie piny jako wyjścia i wyłącz pompy
-    for (int i = 0; i < NUM_PUMPS; i++) {
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
         pcf8574.digitalWrite(i, LOW);  // Nie potrzeba pinMode
     }
 
@@ -905,7 +927,7 @@ bool initializePumps() {
 
 // --- Rozpoczęcie dozowania dla pompy
 void startPump(uint8_t pumpIndex) {
-    if (!pumpInitialized || pumpIndex >= NUM_PUMPS || pumpRunning[pumpIndex]) {
+    if (!pumpInitialized || pumpIndex >= NUMBER_OF_PUMPS || pumpRunning[pumpIndex]) {
         return;
     }
 
@@ -933,7 +955,7 @@ void startPump(uint8_t pumpIndex) {
 
 // --- Zatrzymanie dozowania dla pompy
 void stopPump(uint8_t pumpIndex) {
-    if (!pumpInitialized || pumpIndex >= NUM_PUMPS || !pumpRunning[pumpIndex]) {
+    if (!pumpInitialized || pumpIndex >= NUMBER_OF_PUMPS || !pumpRunning[pumpIndex]) {
         return;
     }
 
@@ -993,7 +1015,7 @@ void handlePumps() {
     if (currentMillis - lastDoseCheck >= DOSE_CHECK_INTERVAL) {
         lastDoseCheck = currentMillis;
         
-        for (uint8_t i = 0; i < NUM_PUMPS; i++) {
+        for (uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
             if (pumpRunning[i]) {
                 // Sprawdź czy czas dozowania minął
                 float dosingTime = (pumps[i].dose / pumps[i].calibration) * 1000;
@@ -1009,7 +1031,7 @@ void handlePumps() {
 
 // --- Obsługa trybu serwisowego dla pomp
 void servicePump(uint8_t pumpIndex, bool state) {
-    if (!pumpInitialized || pumpIndex >= NUM_PUMPS || !serviceMode) {
+    if (!pumpInitialized || pumpIndex >= NUMBER_OF_PUMPS || !serviceMode) {
         return;
     }
 
@@ -1032,7 +1054,7 @@ void toggleServiceMode() {
 
 // --- Zatrzymanie wszystkich pomp
 void stopAllPumps() {
-    for (uint8_t i = 0; i < NUM_PUMPS; i++) {
+    for (uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
         if (pumpRunning[i]) {
             stopPump(i);
         }
@@ -1054,7 +1076,7 @@ struct LEDState {
     int pulseDirection;      // Kierunek pulsowania (1 lub -1)
 };
 
-LEDState ledStates[NUM_PUMPS];
+LEDState ledStates[NUMBER_OF_PUMPS];
 unsigned long lastLedUpdate = 0;
 
 // --- Inicjalizacja LED
@@ -1062,7 +1084,7 @@ void initializeLEDs() {
     strip.begin();
     
     // Inicjalizacja stanów LED
-    for (int i = 0; i < NUM_PUMPS; i++) {
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
         ledStates[i] = {
             COLOR_OFF,    // targetColor
             COLOR_OFF,    // currentColor
@@ -1102,7 +1124,7 @@ uint32_t interpolateColor(uint32_t color1, uint32_t color2, float ratio) {
 
 // --- Ustawienie koloru LED z animacją
 void setLEDColor(uint8_t index, uint32_t color, bool withPulsing = false) {
-    if (index >= NUM_PUMPS) return;
+    if (index >= NUMBER_OF_PUMPS) return;
     
     ledStates[index].targetColor = color;
     ledStates[index].pulsing = withPulsing;
@@ -1119,7 +1141,7 @@ void updateLEDs() {
     lastLedUpdate = currentMillis;
     
     // Aktualizacja każdego LED
-    for (int i = 0; i < NUM_PUMPS; i++) {
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
         LEDState &state = ledStates[i];
         
         // Obsługa pulsowania
@@ -1165,7 +1187,7 @@ void updateLEDs() {
 void updateServiceModeLEDs() {
     uint32_t color = serviceMode ? COLOR_SERVICE : COLOR_OFF;
     
-    for (int i = 0; i < NUM_PUMPS; i++) {
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
         if (!pumpRunning[i]) {
             setLEDColor(i, color, serviceMode);
         }
@@ -1174,7 +1196,7 @@ void updateServiceModeLEDs() {
 
 // --- Aktualizacja LED dla pompy
 void updatePumpLED(uint8_t pumpIndex) {
-    if (pumpIndex >= NUM_PUMPS) return;
+    if (pumpIndex >= NUMBER_OF_PUMPS) return;
     
     if (serviceMode) {
         setLEDColor(pumpIndex, COLOR_SERVICE, true);
@@ -1187,7 +1209,7 @@ void updatePumpLED(uint8_t pumpIndex) {
 
 // --- Aktualizacja wszystkich LED dla pomp
 void updateAllPumpLEDs() {
-    for (uint8_t i = 0; i < NUM_PUMPS; i++) {
+    for (uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
         updatePumpLED(i);
     }
 }
@@ -1200,7 +1222,7 @@ unsigned long lastHaUpdate = 0;
 void onPumpSwitch(bool state, HASwitch* sender) {
     // Znajdź indeks pompy na podstawie wskaźnika do przełącznika
     int pumpIndex = -1;
-    for (int i = 0; i < NUM_PUMPS; i++) {
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
         if (sender == pumpSwitches[i]) {
             pumpIndex = i;
             break;
@@ -1217,7 +1239,7 @@ void onPumpSwitch(bool state, HASwitch* sender) {
 void onPumpCalibration(HANumeric value, HANumber* sender) {
     // Znajdź indeks pompy na podstawie wskaźnika do kalibracji
     int pumpIndex = -1;
-    for (int i = 0; i < NUM_PUMPS; i++) {
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
         if (sender == pumpCalibrations[i]) {
             pumpIndex = i;
             break;
@@ -1505,52 +1527,6 @@ void setupWebServer() {
     webSocket.onEvent(webSocketEvent);
 }
 
-// String getConfigPage() {
-//     String page = F("<!DOCTYPE html><html><head>");
-//     page += F("<meta charset='UTF-8'>");
-//     page += F("<meta name='viewport' content='width=device-width, initial-scale=1'>");
-//     page += F("<title>AquaDoser Configuration</title>");
-//     page += getStyles();
-//     page += F("</head><body>");
-//     page += F("<div class='container'>");
-//     page += F("<h1>MQTT Configuration</h1>");
-//     page += F("<form method='POST' action='/config'>");
-    
-//     // MQTT configuration
-//     page += F("<div class='card'>");
-//     page += F("<h2>MQTT Settings</h2>");
-//     page += F("<div class='form-group'>");
-//     page += F("<label>Broker:</label>");
-//     page += F("<input type='text' name='mqtt_broker' value='");
-//     page += config.mqtt.broker;
-//     page += F("'></div>");
-    
-//     page += F("<div class='form-group'>");
-//     page += F("<label>Port:</label>");
-//     page += F("<input type='number' name='mqtt_port' value='");
-//     page += String(config.mqtt.port);
-//     page += F("'></div>");
-    
-//     page += F("<div class='form-group'>");
-//     page += F("<label>Username:</label>");
-//     page += F("<input type='text' name='mqtt_user' value='");
-//     page += config.mqtt.username;
-//     page += F("'></div>");
-    
-//     page += F("<div class='form-group'>");
-//     page += F("<label>Password:</label>");
-//     page += F("<input type='password' name='mqtt_password' value='");
-//     page += config.mqtt.password;
-//     page += F("'></div>");
-//     page += F("</div>");
-    
-//     page += F("<button type='submit' class='button'>Save Configuration</button>");
-//     page += F("</form>");
-//     page += F("</div></body></html>");
-    
-//     return page;
-// }
-
 void checkMQTTConfig() {
     if (validateMQTTConfig()) {
         Serial.println("Konfiguracja MQTT znaleziona:");
@@ -1566,191 +1542,329 @@ void checkMQTTConfig() {
 }
 
 String getStyles() {
-    return F(
-        "<style>"
-        "body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f0f2f5; }"
-        ".container { max-width: 800px; margin: 0 auto; }"
-        ".card { background: white; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }"
-        "h1 { color: #1a73e8; }"
-        "h2 { color: #5f6368; margin-top: 0; }"
-        ".form-group { margin-bottom: 15px; }"
-        "label { display: block; margin-bottom: 5px; color: #5f6368; }"
-        "input { width: 100%; padding: 8px; border: 1px solid #dadce0; border-radius: 4px; box-sizing: border-box; }"
-        ".button { background: #1a73e8; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; }"
-        ".button:hover { background: #1557b0; }"
-        "</style>"
-    );
-}
+    String styles = F(
+        "body { "
+        "    font-family: Arial, sans-serif; "
+        "    margin: 0; "
+        "    padding: 20px; "
+        "    background-color: #1a1a1a;"
+        "    color: #ffffff;"
+        "}"
 
-String getStyles() {
-    return F("body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; }"
-            ".container { max-width: 960px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }"
-            "h1, h2 { color: #2196F3; }"
-            "h1 { text-align: center; margin-bottom: 30px; }"
-            ".section { background: #fff; border: 1px solid #ddd; padding: 20px; margin-bottom: 20px; border-radius: 4px; }"
-            ".form-group { margin-bottom: 15px; }"
-            "label { display: inline-block; margin-bottom: 5px; color: #666; }"
-            "input[type='text'], input[type='number'], input[type='password'] { width: 200px; padding: 8px; border: 1px solid #ddd; border-radius: 4px; }"
-            "input[type='checkbox'] { margin-right: 5px; }"
-            ".days-group { margin: 10px 0; }"
-            ".days-group label { margin-right: 10px; }"
-            ".button-group { text-align: center; margin: 20px 0; }"
-            ".button-primary { background: #2196F3; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; margin: 5px; }"
-            ".button-warning { background: #f44336; color: white; }"
-            ".button-primary:hover { background: #1976D2; }"
-            ".button-warning:hover { background: #d32f2f; }"
-            ".status-item { display: inline-block; margin-right: 20px; }");
+        ".buttons-container {"
+        "    display: flex;"
+        "    justify-content: space-between;"
+        "    margin: -5px;"
+        "}"
+
+        ".container { "
+        "    max-width: 800px; "
+        "    margin: 0 auto; "
+        "    padding: 0 15px;"
+        "}"
+
+        ".section {"
+        "    background-color: #2a2a2a;"
+        "    padding: 20px;"
+        "    margin-bottom: 20px;"
+        "    border-radius: 8px;"
+        "    width: 100%;"
+        "    box-sizing: border-box;"
+        "}"
+
+        "h1 { "
+        "    color: #ffffff; "
+        "    text-align: center;"
+        "    margin-bottom: 30px;"
+        "    font-size: 2.5em;"
+        "    background-color: #2d2d2d;"
+        "    padding: 20px;"
+        "    border-radius: 8px;"
+        "    box-shadow: 0 2px 4px rgba(0,0,0,0.2);"
+        "}"
+
+        "h2 { "
+        "    color: #2196F3;"
+        "    margin-top: 0;"
+        "    font-size: 1.5em;"
+        "}"
+
+        ".config-table {"
+        "    width: 100%;"
+        "    border-collapse: collapse;"
+        "    table-layout: fixed;"
+        "}"
+
+        ".config-table td {"
+        "    padding: 8px;"
+        "    border-bottom: 1px solid #3d3d3d;"
+        "}"
+
+        ".config-table td:first-child {"
+        "    width: 65%;"
+        "}"
+
+        ".config-table td:last-child {"
+        "    width: 35%;"
+        "}"
+
+        "input[type='text'],"
+        "input[type='password'],"
+        "input[type='number'] {"
+        "    width: 100%;"
+        "    padding: 8px;"
+        "    border: 1px solid #3d3d3d;"
+        "    border-radius: 4px;"
+        "    background-color: #1a1a1a;"
+        "    color: #ffffff;"
+        "    box-sizing: border-box;"
+        "    text-align: left;"
+        "}"
+
+        "input[type='checkbox'] {"
+        "    width: 20px;"
+        "    height: 20px;"
+        "    margin: 0;"
+        "    vertical-align: middle;"
+        "}"
+
+        ".btn {"
+        "    padding: 12px 24px;"
+        "    border: none;"
+        "    border-radius: 4px;"
+        "    cursor: pointer;"
+        "    font-size: 14px;"
+        "    width: calc(50% - 10px);"
+        "    display: inline-block;"
+        "    margin: 5px;"
+        "    text-align: center;"
+        "}"
+
+        ".btn-blue { "
+        "    background-color: #2196F3;"
+        "    color: white; "
+        "}"
+
+        ".btn-red { "
+        "    background-color: #F44336;"
+        "    color: white; "
+        "}"
+
+        ".status {"
+        "    padding: 4px 8px;"
+        "    border-radius: 4px;"
+        "    display: inline-block;"
+        "}"
+
+        ".success { "
+        "    color: #4CAF50; "
+        "}"
+
+        ".error { "
+        "    color: #F44336;"
+        "}"
+
+        ".message {"
+        "    position: fixed;"
+        "    top: 20px;"
+        "    left: 50%;"
+        "    transform: translateX(-50%);"
+        "    padding: 15px 30px;"
+        "    border-radius: 5px;"
+        "    color: white;"
+        "    opacity: 0;"
+        "    transition: opacity 0.3s ease-in-out;"
+        "    z-index: 1000;"
+        "}"
+
+        "@media (max-width: 600px) {"
+        "    body { padding: 10px; }"
+        "    .container { padding: 0; }"
+        "    .section { padding: 15px; margin-bottom: 15px; }"
+        "    .config-table td:first-child { width: 50%; }"
+        "    .config-table td:last-child { width: 50%; }"
+        "    .btn { width: 100%; margin: 5px 0; }"
+        "    .buttons-container { flex-direction: column; }"
+        "}"
+    );
+    return styles;
 }
 
 String getConfigPage() {
-    String page = F("<!DOCTYPE html>"
-                   "<html lang='en'>"
-                   "<head>"
-                   "<meta charset='UTF-8'>"
-                   "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-                   "<title>AquaDoser Configuration</title>"
-                   "<style>");
+    String page = F("<!DOCTYPE html><html lang='pl'><head>");
+    page += F("<meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1'>");
+    page += F("<title>AquaDoser</title><style>");
+    page += getStyles();
+    page += F("</style>");
     
-    page += getStyles();  // Dodanie stylów CSS
+    // Dodajemy skrypt JavaScript
+    page += F("<script>");
+    page += F("function saveConfig() {");
+    page += F("    let pumpsData = [];");
+    page += F("    for(let i = 0; i < ");
+    page += String(NUMBER_OF_PUMPS);
+    page += F("; i++) {");
+    page += F("        let pumpData = {");
+    page += F("            name: document.querySelector(`input[name='pump_name_${i}']`).value,");
+    page += F("            enabled: document.querySelector(`input[name='pump_enabled_${i}']`).checked,");
+    page += F("            calibration: parseFloat(document.querySelector(`input[name='pump_calibration_${i}']`).value),");
+    page += F("            dose: parseFloat(document.querySelector(`input[name='pump_dose_${i}']`).value),");
+    page += F("            schedule_hour: parseInt(document.querySelector(`input[name='pump_schedule_hour_${i}']`).value),");
+    page += F("            minute: parseInt(document.querySelector(`input[name='pump_minute_${i}']`).value),");
+    page += F("            schedule_days: 0");
+    page += F("        };");
+    page += F("        // Oblicz dni tygodnia");
+    page += F("        for(let day = 0; day < 7; day++) {");
+    page += F("            if(document.querySelector(`input[name='pump_day_${i}_${day}']`).checked) {");
+    page += F("                pumpData.schedule_days |= (1 << day);");
+    page += F("            }");
+    page += F("        }");
+    page += F("        pumpsData.push(pumpData);");
+    page += F("    }");
+    page += F("    let mqttData = {");
+    page += F("        broker: document.querySelector('input[name=\"mqtt_broker\"]').value,");
+    page += F("        port: parseInt(document.querySelector('input[name=\"mqtt_port\"]').value),");
+    page += F("        username: document.querySelector('input[name=\"mqtt_user\"]').value,");
+    page += F("        password: document.querySelector('input[name=\"mqtt_pass\"]').value");
+    page += F("    };");
+    page += F("    let configData = {");
+    page += F("        pumps: pumpsData,");
+    page += F("        mqtt: mqttData");
+    page += F("    };");
+    page += F("    fetch('/save', {");
+    page += F("        method: 'POST',");
+    page += F("        headers: {");
+    page += F("            'Content-Type': 'application/json'");
+    page += F("        },");
+    page += F("        body: JSON.stringify(configData)");
+    page += F("    })");
+    page += F("    .then(response => response.json())");
+    page += F("    .then(data => {");
+    page += F("        if(data.status === 'success') {");
+    page += F("            alert('Konfiguracja została zapisana');");
+    page += F("            window.location.reload();");
+    page += F("        } else {");
+    page += F("            alert('Błąd: ' + data.message);");
+    page += F("        }");
+    page += F("    })");
+    page += F("    .catch(error => {");
+    page += F("        alert('Wystąpił błąd podczas zapisywania konfiguracji');");
+    page += F("        console.error('Error:', error);");
+    page += F("    });");
+    page += F("    return false;");
+    page += F("}");
+    page += F("</script></head><body>");
+    
+    // Strona główna
+    page += F("<div class='container'>");
+    page += F("<h1>AquaDoser</h1>");
 
-    page += F("</style>"
-              "</head>"
-              "<body>"
-              "<div class='container'>");
+    // Status systemu
+    page += F("<div class='section'>");
+    page += F("<h2>Status systemu</h2>");
+    page += F("<table class='config-table'>");
+    page += F("<tr><td>Status MQTT</td><td><span class='status ");
+    page += (systemStatus.mqtt_connected ? F("success'>Połączony") : F("error'>Rozłączony"));
+    page += F("</span></td></tr>");
+    page += F("</table></div>");
 
-    // Sekcja statusu systemu
-    page += F("<div class='section'>"
-             "<h2>System Status</h2>"
-             "<div id='systemStatus'></div>"
-             "</div>");
+    // Formularz konfiguracji
+    page += F("<form onsubmit='return saveConfig()'>");
+    
+    // Konfiguracja MQTT
+    page += F("<div class='section'>");
+    page += F("<h2>Konfiguracja MQTT</h2>");
+    page += F("<table class='config-table'>");
+    page += F("<tr><td>Broker MQTT</td><td><input type='text' name='mqtt_broker' value='");
+    page += mqttConfig.broker;
+    page += F("'></td></tr>");
+    page += F("<tr><td>Port MQTT</td><td><input type='number' name='mqtt_port' value='");
+    page += String(mqttConfig.port);
+    page += F("'></td></tr>");
+    page += F("<tr><td>Użytkownik MQTT</td><td><input type='text' name='mqtt_user' value='");
+    page += mqttConfig.username;
+    page += F("'></td></tr>");
+    page += F("<tr><td>Hasło MQTT</td><td><input type='password' name='mqtt_pass' value='");
+    page += mqttConfig.password;
+    page += F("'></td></tr>");
+    page += F("</table></div>");
 
-    // Sekcja konfiguracji MQTT
-    page += F("<div class='section'>"
-             "<h2>MQTT Configuration</h2>"
-             "<div class='form-group'>"
-             "<label>Server: </label>"
-             "<input type='text' id='mqtt_server' value='") + String(mqttConfig.server) + F("'>"
-             "</div>"
-             "<div class='form-group'>"
-             "<label>Port: </label>"
-             "<input type='number' id='mqtt_port' value='") + String(mqttConfig.port) + F("'>"
-             "</div>"
-             "<div class='form-group'>"
-             "<label>Username: </label>"
-             "<input type='text' id='mqtt_user' value='") + String(mqttConfig.username) + F("'>"
-             "</div>"
-             "<div class='form-group'>"
-             "<label>Password: </label>"
-             "<input type='password' id='mqtt_pass' value='") + String(mqttConfig.password) + F("'>"
-             "</div>"
-             "</div>");
+    // Konfiguracja pomp
+    for(int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        page += F("<div class='section'>");
+        page += F("<h2>Pompa "); 
+        page += String(i + 1);
+        page += F("</h2>");
+        page += F("<table class='config-table'>");
+        
+        // Nazwa pompy
+        page += F("<tr><td>Nazwa</td><td><input type='text' name='pump_name_");
+        page += String(i);
+        page += F("' value='");
+        page += pumps[i].name;
+        page += F("' maxlength='19'></td></tr>");
 
-    // Sekcje konfiguracji pomp
-    for(int i = 0; i < NUM_PUMPS; i++) {
-        page += F("<div class='section'>"
-                 "<h2>Pump ") + String(i + 1) + F(" Configuration</h2>"
-                 "<div class='form-group'>"
-                 "<label>Name: </label>"
-                 "<input type='text' id='pump_name_") + String(i) + F("' value='") + String(config.pumps[i].name) + F("'>"
-                 "</div>"
-                 "<div class='form-group'>"
-                 "<label>Dose (ml): </label>"
-                 "<input type='number' id='pump_dose_") + String(i) + F("' value='") + String(config.pumps[i].doseAmount) + F("' step='0.1'>"
-                 "</div>"
-                 "<div class='form-group'>"
-                 "<label>Hour: </label>"
-                 "<input type='number' id='pump_hour_") + String(i) + F("' value='") + String(config.pumps[i].hour) + F("' min='0' max='23'>"
-                 "</div>"
-                 "<div class='form-group'>"
-                 "<label>Minute: </label>"
-                 "<input type='number' id='pump_minute_") + String(i) + F("' value='") + String(config.pumps[i].minute) + F("' min='0' max='59'>"
-                 "</div>"
-                 "<div class='days-group'>"
-                 "<label>Days: </label>");
+        // Status aktywności
+        page += F("<tr><td>Aktywna</td><td><input type='checkbox' name='pump_enabled_");
+        page += String(i);
+        page += F("' ");
+        page += (pumps[i].enabled ? F("checked") : F(""));
+        page += F("></td></tr>");
 
-        for(int j = 0; j < 7; j++) {
-            page += F("<label><input type='checkbox' id='pump_day_") + String(i) + F("_") + String(j) + F("'") + 
-                    (config.pumps[i].days & (1 << j) ? F(" checked") : F("")) + F(">") + 
-                    dayNames[j] + F("</label>");
+        // Kalibracja
+        page += F("<tr><td>Kalibracja (ml/s)</td><td><input type='number' step='0.01' name='pump_calibration_");
+        page += String(i);
+        page += F("' value='");
+        page += String(pumps[i].calibration);
+        page += F("' min='0.01'></td></tr>");
+
+        // Dawka
+        page += F("<tr><td>Dawka (ml)</td><td><input type='number' step='0.1' name='pump_dose_");
+        page += String(i);
+        page += F("' value='");
+        page += String(pumps[i].dose);
+        page += F("' min='0'></td></tr>");
+
+        // Godzina dozowania
+        page += F("<tr><td>Godzina dozowania</td><td><input type='number' name='pump_schedule_hour_");
+        page += String(i);
+        page += F("' value='");
+        page += String(pumps[i].schedule_hour);
+        page += F("' min='0' max='23'></td></tr>");
+
+        // Minuta dozowania
+        page += F("<tr><td>Minuta dozowania</td><td><input type='number' name='pump_minute_");
+        page += String(i);
+        page += F("' value='");
+        page += String(pumps[i].minute);
+        page += F("' min='0' max='59'></td></tr>");
+
+        // Dni tygodnia
+        page += F("<tr><td>Dni dozowania</td><td>");
+        for(int day = 0; day < 7; day++) {
+            page += F("<label style='margin-right: 5px;'><input type='checkbox' name='pump_day_");
+            page += String(i);
+            page += F("_");
+            page += String(day);
+            page += F("' ");
+            page += ((pumps[i].schedule_days & (1 << day)) ? F("checked") : F(""));
+            page += F("> ");
+            page += dayNames[day];
+            page += F("</label> ");
         }
-
-        page += F("</div>"
-                 "<div class='form-group'>"
-                 "<label>Enabled: </label>"
-                 "<input type='checkbox' id='pump_enabled_") + String(i) + F("'") + 
-                 (config.pumps[i].enabled ? F(" checked") : F("")) + F(">"
-                 "</div>"
-                 "</div>");
+        page += F("</td></tr>");
+        
+        page += F("</table></div>");
     }
 
-    // Przyciski
-    page += F("<div class='button-group'>"
-             "<button class='button-primary' onclick='saveConfig()'>Save Configuration</button>"
-             "<button class='button-primary button-warning' onclick='resetESP()'>Reset ESP</button>"
-             "</div>");
-
-    // JavaScript
-    page += F("<script>"
-             "let ws = new WebSocket('ws://' + window.location.hostname + ':81/');"
-             "ws.onmessage = function(event) {"
-             "    let data = JSON.parse(event.data);"
-             "    updateSystemStatus(data);"
-             "};"
-             
-             "function updateSystemStatus(data) {"
-             "    let statusHtml = '';"
-             "    statusHtml += '<div class=\"status-item\">Uptime: ' + data.uptime + '</div>';"
-             "    statusHtml += '<div class=\"status-item\">MQTT: ' + (data.mqtt_connected ? 'Connected' : 'Disconnected') + '</div>';"
-             "    document.getElementById('systemStatus').innerHTML = statusHtml;"
-             "}"
-             
-             "function saveConfig() {"
-             "    let config = {"
-             "        mqtt: {"
-             "            server: document.getElementById('mqtt_server').value,"
-             "            port: parseInt(document.getElementById('mqtt_port').value),"
-             "            username: document.getElementById('mqtt_user').value,"
-             "            password: document.getElementById('mqtt_pass').value"
-             "        },"
-             "        pumps: []"
-             "    };"
-             
-             "    for(let i = 0; i < " + String(NUM_PUMPS) + F("; i++) {"
-             "        let pump = {"
-             "            name: document.getElementById('pump_name_' + i).value,"
-             "            doseAmount: parseFloat(document.getElementById('pump_dose_' + i).value),"
-             "            hour: parseInt(document.getElementById('pump_hour_' + i).value),"
-             "            minute: parseInt(document.getElementById('pump_minute_' + i).value),"
-             "            days: 0,"
-             "            enabled: document.getElementById('pump_enabled_' + i).checked"
-             "        };"
-             "        for(let j = 0; j < 7; j++) {"
-             "            if(document.getElementById('pump_day_' + i + '_' + j).checked) {"
-             "                pump.days |= (1 << j);"
-             "            }"
-             "        }"
-             "        config.pumps.push(pump);"
-             "    }"
-             
-             "    fetch('/save', {"
-             "        method: 'POST',"
-             "        headers: {'Content-Type': 'application/json'},"
-             "        body: JSON.stringify(config)"
-             "    })"
-             "    .then(response => response.text())"
-             "    .then(data => alert(data));"
-             "}"
-             
-             "function resetESP() {"
-             "    if(confirm('Are you sure you want to reset the ESP?')) {"
-             "        fetch('/reset')"
-             "        .then(response => response.text())"
-             "        .then(data => alert(data));"
-             "    }"
-             "}"
-             "</script>");
-
-    page += F("</div></body></html>");
+    // Przyciski akcji
+    page += F("<div class='section'>");
+    page += F("<div class='buttons-container'>");
+    page += F("<input type='submit' value='Zapisz ustawienia' class='btn btn-blue'>");
+    page += F("<button type='button' onclick='if(confirm(\"Czy na pewno chcesz zresetować urządzenie?\")) { fetch(\"/reset\"); }' class='btn btn-red'>Reset urządzenia</button>");
+    page += F("</div></div>");
+    
+    page += F("</form></div></body></html>");
     return page;
 }
 
@@ -1760,7 +1874,7 @@ void resetFactorySettings() {
     LittleFS.remove("/mqtt.json");
     
     // Resetuj struktury danych do wartości domyślnych
-    for (uint8_t i = 0; i < NUM_PUMPS; i++) {
+    for (uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
         pumps[i].enabled = false;
         pumps[i].calibration = 1.0;
         pumps[i].dose = 0.0;
@@ -1788,10 +1902,13 @@ void setup() {
     Serial.println("\nAquaDoser Start");
     Wire.begin();
     
+    // Wczytaj konfigurację przed inicjalizacją innych komponentów
+    loadConfig();
+
     // Inicjalizacja pinów
     pinMode(BUTTON_PIN, INPUT_PULLUP);
 
-        pinMode(BUZZER_PIN, OUTPUT);  // Wyjście - buzzer
+    pinMode(BUZZER_PIN, OUTPUT);  // Wyjście - buzzer
     digitalWrite(BUZZER_PIN, LOW);  // Wyłączenie buzzera
     
     // Inicjalizacja systemu plików i wczytanie konfiguracji
@@ -1837,6 +1954,8 @@ void setup() {
     // Synchronizacja czasu
     syncRTC();
     
+    server.on("/save", HTTP_POST, handleSave);
+
     server.on("/restart", HTTP_POST, []() {
         server.send(200, "text/plain", "Restarting...");
         delay(1000);
@@ -1900,41 +2019,41 @@ void loop() {
         //Serial.printf("WiFi Status: %d\n", WiFi.status());
     }
 
-#ifdef TEST_MODE
-    if (Serial.available()) {
-        String cmd = Serial.readStringUntil('\n');
-        cmd.trim();
-        
-        if (cmd.startsWith("button")) {
-            int buttonNum = cmd.substring(6).toInt();
-            if (buttonNum >= 1 && buttonNum <= 4) {
-                DEBUG_SERIAL("Symulacja przycisku " + String(buttonNum));
-                simulateButton(buttonNum - 1);
-            }
-        }
-        else if (cmd == "status") {
-            DateTime now = rtc.now();
-            DEBUG_SERIAL("Czas: " + String(now.hour()) + ":" + String(now.minute()) + ":" + String(now.second()));
-            DEBUG_SERIAL("Dzień: " + String(now.dayOfTheWeek()));
+    #ifdef TEST_MODE
+        if (Serial.available()) {
+            String cmd = Serial.readStringUntil('\n');
+            cmd.trim();
             
-            for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-                DEBUG_SERIAL("Pompa " + String(i + 1) + ":");
-                DEBUG_SERIAL("  Enabled: " + String(config.pumps[i].enabled));
-                DEBUG_SERIAL("  Calibration: " + String(config.pumps[i].calibration));
-                DEBUG_SERIAL("  Dose: " + String(config.pumps[i].dose));
-                DEBUG_SERIAL("  Schedule Hour: " + String(config.pumps[i].schedule_hour));
-                DEBUG_SERIAL("  Schedule Days: " + String(config.pumps[i].schedule_days, BIN));
-                DEBUG_SERIAL("  Is Running: " + String(config.pumps[i].isRunning));
+            if (cmd.startsWith("button")) {
+                int buttonNum = cmd.substring(6).toInt();
+                if (buttonNum >= 1 && buttonNum <= 4) {
+                    DEBUG_SERIAL("Symulacja przycisku " + String(buttonNum));
+                    simulateButton(buttonNum - 1);
+                }
+            }
+            else if (cmd == "status") {
+                DateTime now = rtc.now();
+                DEBUG_SERIAL("Czas: " + String(now.hour()) + ":" + String(now.minute()) + ":" + String(now.second()));
+                DEBUG_SERIAL("Dzień: " + String(now.dayOfTheWeek()));
+                
+                for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+                    DEBUG_SERIAL("Pompa " + String(i + 1) + ":");
+                    DEBUG_SERIAL("  Enabled: " + String(config.pumps[i].enabled));
+                    DEBUG_SERIAL("  Calibration: " + String(config.pumps[i].calibration));
+                    DEBUG_SERIAL("  Dose: " + String(config.pumps[i].dose));
+                    DEBUG_SERIAL("  Schedule Hour: " + String(config.pumps[i].schedule_hour));
+                    DEBUG_SERIAL("  Schedule Days: " + String(config.pumps[i].schedule_days, BIN));
+                    DEBUG_SERIAL("  Is Running: " + String(config.pumps[i].isRunning));
+                }
+            }
+            else if (cmd == "help") {
+                DEBUG_SERIAL("Dostępne komendy:");
+                DEBUG_SERIAL("button X - symuluj naciśnięcie przycisku X (1-4)");
+                DEBUG_SERIAL("status - pokaż aktualny stan urządzenia");
+                DEBUG_SERIAL("help - pokaż tę pomoc");
             }
         }
-        else if (cmd == "help") {
-            DEBUG_SERIAL("Dostępne komendy:");
-            DEBUG_SERIAL("button X - symuluj naciśnięcie przycisku X (1-4)");
-            DEBUG_SERIAL("status - pokaż aktualny stan urządzenia");
-            DEBUG_SERIAL("help - pokaż tę pomoc");
-        }
-    }
-#endif
+    #endif
 
     // Obsługa połączenia WiFi
     if (WiFi.status() != WL_CONNECTED) {
