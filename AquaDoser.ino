@@ -48,8 +48,12 @@ unsigned long lastLogTime = 0;
 bool firstRun = true;
 // Stałe offsety w EEPROM dla różnych konfiguracji
 const int MQTT_CONFIG_ADDR = sizeof(uint32_t); // Po znaczniku walidacji
+// Stałe offsety w EEPROM dla różnych konfiguracji
+const uint32_t EEPROM_VALIDATION_MARK = 0x12345678;
+const int MQTT_CONFIG_ADDR = sizeof(uint32_t); // Po znaczniku walidacji
 const int PUMPS_CONFIG_ADDR = MQTT_CONFIG_ADDR + sizeof(MQTTConfig);
 const int NETWORK_CONFIG_ADDR = PUMPS_CONFIG_ADDR + (sizeof(PumpConfig) * NUMBER_OF_PUMPS);
+const int SYSTEM_STATUS_ADDR = NETWORK_CONFIG_ADDR + sizeof(NetworkConfig);
 
 
 #define TEST_MODE  // Zakomentuj tę linię w wersji produkcyjnej
@@ -125,7 +129,7 @@ const int NETWORK_CONFIG_ADDR = PUMPS_CONFIG_ADDR + (sizeof(PumpConfig) * NUMBER
 #define COLOR_WORKING 0x0000FF  // Niebieski (pompa pracuje)
 #define COLOR_SERVICE 0xFFFF00  // Żółty (tryb serwisowy)
 
-// --- Struktura konfiguracji pompy
+// Struktura konfiguracji pompy
 struct PumpConfig {
     char name[20];
     bool enabled;
@@ -134,29 +138,33 @@ struct PumpConfig {
     uint8_t schedule_hour;
     uint8_t minute;
     uint8_t schedule_days;
-    time_t lastDosing;    // Dodane pole
-    bool isRunning;       // Dodane pole
+    time_t lastDosing;
+    bool isRunning;
 };
 
-// --- Struktura konfiguracji sieciowej
+// Struktura konfiguracji sieciowej
 struct NetworkConfig {
-    char wifi_ssid[32];
-    char wifi_password[64];
-    char mqtt_server[40];
-    char mqtt_user[32];
-    char mqtt_password[64];
-    uint16_t mqtt_port;
+    char hostname[32];
+    char ssid[32];
+    char password[64];
+    bool dhcp;
+    IPAddress ip;
+    IPAddress gateway;
+    IPAddress subnet;
+    IPAddress dns1;
+    IPAddress dns2;
 };
 
-NetworkConfig networkConfig;
+//NetworkConfig networkConfig;
 
 // Struktura statusu systemu
 struct SystemStatus {
     bool mqtt_connected;
-    bool wifi_connected;  // Dodane pole
-    unsigned long uptime; // Dodane pole
+    bool wifi_connected;
+    unsigned long uptime;
 };
 
+// Struktura konfiguracji MQTT
 struct MQTTConfig {
     char broker[64];
     int port;
@@ -164,7 +172,11 @@ struct MQTTConfig {
     char password[32];
 };
 
+// Globalne zmienne konfiguracyjne
 MQTTConfig mqttConfig;
+PumpConfig pumps[NUMBER_OF_PUMPS];
+NetworkConfig networkConfig;
+SystemStatus systemStatus;
 
 // Znacznik walidacji EEPROM
 const uint32_t EEPROM_VALIDATION_MARK = 0x12345678;
@@ -258,7 +270,7 @@ bool hasIntervalPassed(unsigned long current, unsigned long previous, unsigned l
     return (current - previous >= interval);
 }
 
-// Inicjalizacja EEPROM w setup()
+// Funkcje obsługi EEPROM
 void initStorage() {
     EEPROM.begin(2048); // Dostosuj rozmiar według potrzeb
     
@@ -270,12 +282,35 @@ void initStorage() {
         // Pierwsze uruchomienie - inicjalizuj EEPROM
         EEPROM.put(0, EEPROM_VALIDATION_MARK);
         
-        // Załaduj domyślne wartości
-        loadMQTTConfig();
-        loadPumpsConfig();
-        loadNetworkConfig();
+        // Ustaw wartości domyślne
+        strlcpy(mqttConfig.broker, "mqtt.example.com", sizeof(mqttConfig.broker));
+        mqttConfig.port = 1883;
+        mqttConfig.username[0] = '\0';
+        mqttConfig.password[0] = '\0';
         
-        EEPROM.commit();
+        for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+            snprintf(pumps[i].name, sizeof(pumps[i].name), "Pompa %d", i + 1);
+            pumps[i].enabled = false;
+            pumps[i].calibration = 1.0;
+            pumps[i].dose = 0.0;
+            pumps[i].schedule_hour = 12;
+            pumps[i].minute = 0;
+            pumps[i].schedule_days = 0;
+            pumps[i].lastDosing = 0;
+            pumps[i].isRunning = false;
+        }
+        
+        strlcpy(networkConfig.hostname, "AquaDoser", sizeof(networkConfig.hostname));
+        networkConfig.ssid[0] = '\0';
+        networkConfig.password[0] = '\0';
+        networkConfig.dhcp = true;
+        
+        systemStatus.mqtt_connected = false;
+        systemStatus.wifi_connected = false;
+        systemStatus.uptime = 0;
+        
+        // Zapisz wszystkie konfiguracje
+        saveConfig();
     }
 }
 
@@ -479,56 +514,27 @@ void handleMillisOverflow() {
     lastMillis = currentMillis;
 }
 
-// Zapisywanie konfiguracji MQTT
+// Funkcje specyficzne dla różnych typów konfiguracji
 void saveMQTTConfig() {
-    // Zapisz konfigurację MQTT do EEPROM
     EEPROM.put(MQTT_CONFIG_ADDR, mqttConfig);
     EEPROM.commit();
-    Serial.println(F("Zapisano konfigurację MQTT"));
 }
 
 // Wczytywanie konfiguracji MQTT
 void loadMQTTConfig() {
-    // Wczytaj konfigurację MQTT z EEPROM
     EEPROM.get(MQTT_CONFIG_ADDR, mqttConfig);
-    
-    // Sprawdź, czy konfiguracja jest prawidłowa
-    if (strlen(mqttConfig.broker) == 0) {
-        // Ustaw wartości domyślne
-        strlcpy(mqttConfig.broker, "mqtt.example.com", sizeof(mqttConfig.broker));
-        mqttConfig.port = 1883;
-        mqttConfig.username[0] = '\0';
-        mqttConfig.password[0] = '\0';
-        saveMQTTConfig();
-    }
 }
 
 // --- Ładowanie konfiguracji pomp
 bool loadPumpsConfig() {
-    // Wczytaj konfigurację pomp z EEPROM
     for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
         EEPROM.get(PUMPS_CONFIG_ADDR + (i * sizeof(PumpConfig)), pumps[i]);
-        
-        // Sprawdź, czy konfiguracja jest prawidłowa
-        if (strlen(pumps[i].name) == 0) {
-            // Ustaw wartości domyślne dla pompy
-            snprintf(pumps[i].name, sizeof(pumps[i].name), "Pompa %d", i + 1);
-            pumps[i].enabled = false;
-            pumps[i].calibration = 1.0;
-            pumps[i].dose = 0.0;
-            pumps[i].schedule_hour = 12;
-            pumps[i].minute = 0;
-            pumps[i].schedule_days = 0;
-            pumps[i].lastDosing = 0;
-            pumps[i].isRunning = false;
-        }
     }
     return true;
 }
 
 // --- Zapisywanie konfiguracji pomp
 bool savePumpsConfig() {
-    // Zapisz konfigurację pomp do EEPROM
     for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
         EEPROM.put(PUMPS_CONFIG_ADDR + (i * sizeof(PumpConfig)), pumps[i]);
     }
@@ -537,21 +543,12 @@ bool savePumpsConfig() {
 
 // --- Ładowanie konfiguracji sieciowej
 bool loadNetworkConfig() {
-    // Wczytaj konfigurację sieci z EEPROM
     EEPROM.get(NETWORK_CONFIG_ADDR, networkConfig);
-    
-    // Sprawdź, czy konfiguracja jest prawidłowa
-    if (strlen(networkConfig.hostname) == 0) {
-        // Ustaw wartości domyślne
-        strlcpy(networkConfig.hostname, "AquaDoser", sizeof(networkConfig.hostname));
-        return saveNetworkConfig();
-    }
     return true;
 }
 
 // --- Zapisywanie konfiguracji sieciowej
 bool saveNetworkConfig() {
-    // Zapisz konfigurację sieci do EEPROM
     EEPROM.put(NETWORK_CONFIG_ADDR, networkConfig);
     return EEPROM.commit();
 }
@@ -682,65 +679,15 @@ void handleSave() {
 }
 
 void loadConfig() {
-    EEPROM.begin(1024);
-    
-    // Sprawdź znacznik walidacji
-    int addr = 0;
-    uint32_t validationMark;
-    EEPROM.get(addr, validationMark);
-    addr += sizeof(validationMark);
-    
-    if (validationMark != 0x12345678) {
-        Serial.println(F("Brak zapisanej konfiguracji - używam domyślnych wartości"));
-        // Ustaw domyślne wartości
-        strlcpy(mqttConfig.broker, "mqtt.example.com", sizeof(mqttConfig.broker));
-        mqttConfig.port = 1883;
-        strlcpy(mqttConfig.username, "", sizeof(mqttConfig.username));
-        strlcpy(mqttConfig.password, "", sizeof(mqttConfig.password));
-        
-        for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-            snprintf(pumps[i].name, sizeof(pumps[i].name), "Pompa %d", i + 1);
-            pumps[i].enabled = false;
-            pumps[i].calibration = 1.0;
-            pumps[i].dose = 0.0;
-            pumps[i].schedule_hour = 12;
-            pumps[i].minute = 0;
-            pumps[i].schedule_days = 0;
-        }
-        
-        // Zapisz domyślną konfigurację
-        saveConfig();
-        return;
-    }
-
-    // Wczytaj konfigurację MQTT
-    EEPROM.get(addr, mqttConfig);
-    addr += sizeof(mqttConfig);
-
-    // Wczytaj konfigurację pomp
-    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-        EEPROM.get(addr, pumps[i]);
-        addr += sizeof(PumpConfig);
-    }
-
-    EEPROM.end();
-    
-    // Debug - wyświetl wczytane wartości
-    Serial.println(F("Wczytana konfiguracja:"));
-    Serial.print(F("MQTT Broker: "));
-    Serial.println(mqttConfig.broker);
-    Serial.print(F("MQTT Port: "));
-    Serial.println(mqttConfig.port);
+    // Wczytaj wszystkie konfiguracje z EEPROM
+    EEPROM.get(MQTT_CONFIG_ADDR, mqttConfig);
     
     for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-        Serial.print(F("Pompa "));
-        Serial.print(i + 1);
-        Serial.print(F(": "));
-        Serial.print(pumps[i].name);
-        Serial.print(F(" (enabled: "));
-        Serial.print(pumps[i].enabled ? "tak" : "nie");
-        Serial.println(F(")"));
+        EEPROM.get(PUMPS_CONFIG_ADDR + (i * sizeof(PumpConfig)), pumps[i]);
     }
+    
+    EEPROM.get(NETWORK_CONFIG_ADDR, networkConfig);
+    EEPROM.get(SYSTEM_STATUS_ADDR, systemStatus);
 }
 
 // Funkcja inicjalizująca EEPROM
@@ -750,31 +697,17 @@ void initializeStorage() {
 
 // Funkcja zapisująca konfigurację
 void saveConfig() {
-    int addr = 0;
+    // Zapisz wszystkie konfiguracje do EEPROM
+    EEPROM.put(MQTT_CONFIG_ADDR, mqttConfig);
     
-    // Zapisz znacznik walidacji
-    EEPROM.put(addr, EEPROM_VALIDATION_MARK);
-    addr += sizeof(EEPROM_VALIDATION_MARK);
-    
-    // Zapisz konfigurację MQTT
-    EEPROM.put(addr, mqttConfig);
-    addr += sizeof(MQTTConfig);
-    
-    // Zapisz konfigurację pomp
     for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-        EEPROM.put(addr, pumps[i]);
-        addr += sizeof(PumpConfig);
+        EEPROM.put(PUMPS_CONFIG_ADDR + (i * sizeof(PumpConfig)), pumps[i]);
     }
     
-    // Zapisz status systemu
-    EEPROM.put(addr, systemStatus);
-    addr += sizeof(SystemStatus);
+    EEPROM.put(NETWORK_CONFIG_ADDR, networkConfig);
+    EEPROM.put(SYSTEM_STATUS_ADDR, systemStatus);
     
-    // Zapisz zmiany
-    bool success = EEPROM.commit();
-    if (!success) {
-        Serial.println(F("Błąd zapisu do EEPROM"));
-    }
+    EEPROM.commit();
 }
 
 // --- Ogólna funkcja zapisywania konfiguracji
