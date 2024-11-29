@@ -46,15 +46,12 @@ const unsigned long STATUS_PRINT_INTERVAL = 60000; // Wyświetlaj status co 1 mi
 const unsigned long LOG_INTERVAL = 60000; // 60 sekund między wyświetlaniem statusu
 unsigned long lastLogTime = 0;
 bool firstRun = true;
-// Stałe offsety w EEPROM dla różnych konfiguracji
-const int MQTT_CONFIG_ADDR = sizeof(uint32_t); // Po znaczniku walidacji
-// Stałe offsety w EEPROM dla różnych konfiguracji
+const int MQTT_CONFIG_ADDR = sizeof(uint32_t);
 const uint32_t EEPROM_VALIDATION_MARK = 0x12345678;
-const int MQTT_CONFIG_ADDR = sizeof(uint32_t); // Po znaczniku walidacji
 const int PUMPS_CONFIG_ADDR = MQTT_CONFIG_ADDR + sizeof(MQTTConfig);
 const int NETWORK_CONFIG_ADDR = PUMPS_CONFIG_ADDR + (sizeof(PumpConfig) * NUMBER_OF_PUMPS);
 const int SYSTEM_STATUS_ADDR = NETWORK_CONFIG_ADDR + sizeof(NetworkConfig);
-
+const char* dayNames[] = {"Pn", "Wt", "Śr", "Cz", "Pt", "Sb", "Nd"};
 
 #define TEST_MODE  // Zakomentuj tę linię w wersji produkcyjnej
 
@@ -155,8 +152,6 @@ struct NetworkConfig {
     IPAddress dns2;
 };
 
-//NetworkConfig networkConfig;
-
 // Struktura statusu systemu
 struct SystemStatus {
     bool mqtt_connected;
@@ -178,18 +173,12 @@ PumpConfig pumps[NUMBER_OF_PUMPS];
 NetworkConfig networkConfig;
 SystemStatus systemStatus;
 
-// Znacznik walidacji EEPROM
-const uint32_t EEPROM_VALIDATION_MARK = 0x12345678;
-
 ESP8266WebServer server(80);
 WebSocketsServer webSocket = WebSocketsServer(81);
 ESP8266HTTPUpdateServer httpUpdateServer;
 
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "pool.ntp.org");
-
-const char* dayNames[] = {"Pn", "Wt", "Śr", "Cz", "Pt", "Sb", "Nd"};
-
 
 // Struktura dla informacji systemowych
 struct SystemInfo {
