@@ -99,6 +99,13 @@ const int PUMPS_CONFIG_ADDR = MQTT_CONFIG_ADDR + sizeof(MQTTConfig);
 const int NETWORK_CONFIG_ADDR = PUMPS_CONFIG_ADDR + (sizeof(PumpConfig) * NUMBER_OF_PUMPS);
 const int SYSTEM_STATUS_ADDR = NETWORK_CONFIG_ADDR + sizeof(NetworkConfig);
 
+// Zmienne globalne do obsługi czasu
+DateTime now;
+uint8_t currentDay;
+uint8_t currentHour;
+uint8_t currentMinute;
+bool hasActivePumps = false;
+
 // --- Zmienne globalne
 MQTTConfig mqttConfig;
 PumpConfig pumps[NUMBER_OF_PUMPS];
@@ -164,6 +171,14 @@ void setupMQTT() {
         return;
     }
 
+    // Konfiguracja urządzenia HA
+    byte mac[6];
+    WiFi.macAddress(mac);
+    device.setUniqueId(mac, sizeof(mac));
+    device.setName("AquaDoser");
+    device.setSoftwareVersion("1.0.0");
+    
+    // Konfiguracja MQTT
     mqtt.begin(
         networkConfig.mqtt_server,
         networkConfig.mqtt_port,
@@ -1801,7 +1816,7 @@ void loop() {
         
         bool hasActivePumps = false;
         for (uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
-            if (pumps[i].enabled));
+            if (pumps[i].enabled) {  // Usunięto dodatkowy nawias
                 printPumpStatus(i);
                 hasActivePumps = true;
             }
@@ -1844,12 +1859,12 @@ void loop() {
                 
                 for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
                     DEBUG_SERIAL("Pompa " + String(i + 1) + ":");
-                    DEBUG_SERIAL("  Enabled: " + String(config.pumps[i].enabled));
-                    DEBUG_SERIAL("  Calibration: " + String(config.pumps[i].calibration));
-                    DEBUG_SERIAL("  Dose: " + String(config.pumps[i].dose));
-                    DEBUG_SERIAL("  Schedule Hour: " + String(config.pumps[i].schedule_hour));
-                    DEBUG_SERIAL("  Schedule Days: " + String(config.pumps[i].schedule_days, BIN));
-                    DEBUG_SERIAL("  Is Running: " + String(config.pumps[i].isRunning));
+                    DEBUG_SERIAL("  Enabled: " + String(pumps[i].enabled));          // Zmieniono z config.pumps na pumps
+                    DEBUG_SERIAL("  Calibration: " + String(pumps[i].calibration));  // Zmieniono z config.pumps na pumps
+                    DEBUG_SERIAL("  Dose: " + String(pumps[i].dose));               // Zmieniono z config.pumps na pumps
+                    DEBUG_SERIAL("  Schedule Hour: " + String(pumps[i].schedule_hour)); // Zmieniono z config.pumps na pumps
+                    DEBUG_SERIAL("  Schedule Days: " + String(pumps[i].schedule_days, BIN)); // Zmieniono z config.pumps na pumps
+                    DEBUG_SERIAL("  Is Running: " + String(pumps[i].isRunning));     // Zmieniono z config.pumps na pumps
                 }
             }
             else if (cmd == "help") {
