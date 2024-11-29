@@ -129,6 +129,8 @@ struct PumpConfig {
     uint8_t schedule_hour;
     uint8_t minute;
     uint8_t schedule_days;
+    time_t lastDosing;    // Dodane pole
+    bool isRunning;       // Dodane pole
 };
 
 // --- Struktura konfiguracji sieciowej
@@ -144,6 +146,8 @@ struct NetworkConfig {
 // Struktura statusu systemu
 struct SystemStatus {
     bool mqtt_connected;
+    bool wifi_connected;  // Dodane pole
+    unsigned long uptime; // Dodane pole
 };
 
 struct MQTTConfig {
@@ -462,7 +466,7 @@ void saveMQTTConfig() {
     doc["user"] = mqttUser;
     doc["password"] = mqttPassword;
 
-    File configFile = LittleFS.open("/mqtt.json", "w");
+    //File configFile = LittleFS.open("/mqtt.json", "w");
     if (!configFile) {
         Serial.println("Failed to open mqtt config file for writing");
         return;
@@ -474,7 +478,7 @@ void saveMQTTConfig() {
 
 // Wczytywanie konfiguracji MQTT
 void loadMQTTConfig() {
-    File configFile = LittleFS.open("/mqtt.json", "r");
+    //File configFile = LittleFS.open("/mqtt.json", "r");
     if (!configFile) {
         Serial.println("No mqtt config file, using defaults");
         return;
@@ -498,7 +502,7 @@ void loadMQTTConfig() {
 
 // --- Ładowanie konfiguracji pomp
 bool loadPumpsConfig() {
-    File file = LittleFS.open("/pumps.json", "r");
+    //File file = LittleFS.open("/pumps.json", "r");
     if (!file) {
         Serial.println(F("Failed to open pumps config file"));
         return false;
@@ -542,7 +546,7 @@ bool savePumpsConfig() {
         schedule["hour"] = pumps[i].schedule_hour;
     }
 
-    File file = LittleFS.open("/pumps.json", "w");
+    //File file = LittleFS.open("/pumps.json", "w");
     if (!file) {
         Serial.println(F("Failed to open pumps config file for writing"));
         return false;
@@ -560,7 +564,7 @@ bool savePumpsConfig() {
 
 // --- Ładowanie konfiguracji sieciowej
 bool loadNetworkConfig() {
-    File file = LittleFS.open(NETWORK_FILE, "r");
+    //File file = LittleFS.open(NETWORK_FILE, "r");
     if (!file) {
         Serial.println("Nie znaleziono pliku konfiguracji sieciowej");
         return false;
@@ -596,7 +600,7 @@ bool saveNetworkConfig() {
     doc["mqtt_password"] = networkConfig.mqtt_password;
     doc["mqtt_port"] = networkConfig.mqtt_port;
 
-    File file = LittleFS.open(NETWORK_FILE, "w");
+    //File file = LittleFS.open(NETWORK_FILE, "w");
     if (!file) {
         Serial.println("Błąd otwarcia pliku konfiguracji sieciowej do zapisu");
         return false;
@@ -822,52 +826,14 @@ void saveConfig() {
         addr += sizeof(PumpConfig);
     }
     
+    // Zapisz status systemu
+    EEPROM.put(addr, systemStatus);
+    addr += sizeof(SystemStatus);
+    
     // Zapisz zmiany
     bool success = EEPROM.commit();
     if (!success) {
         Serial.println(F("Błąd zapisu do EEPROM"));
-    }
-}
-
-// Funkcja wczytująca konfigurację
-void loadConfig() {
-    int addr = 0;
-    uint32_t validationMark;
-    
-    // Sprawdź znacznik walidacji
-    EEPROM.get(addr, validationMark);
-    addr += sizeof(validationMark);
-    
-    if (validationMark != EEPROM_VALIDATION_MARK) {
-        // Brak zapisanej konfiguracji - ustaw wartości domyślne
-        strlcpy(mqttConfig.broker, "mqtt.example.com", sizeof(mqttConfig.broker));
-        mqttConfig.port = 1883;
-        mqttConfig.username[0] = '\0';
-        mqttConfig.password[0] = '\0';
-        
-        for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-            snprintf(pumps[i].name, sizeof(pumps[i].name), "Pompa %d", i + 1);
-            pumps[i].enabled = false;
-            pumps[i].calibration = 1.0;
-            pumps[i].dose = 0.0;
-            pumps[i].schedule_hour = 12;
-            pumps[i].minute = 0;
-            pumps[i].schedule_days = 0;
-        }
-        
-        // Zapisz domyślną konfigurację
-        saveConfig();
-        return;
-    }
-    
-    // Wczytaj konfigurację MQTT
-    EEPROM.get(addr, mqttConfig);
-    addr += sizeof(MQTTConfig);
-    
-    // Wczytaj konfigurację pomp
-    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-        EEPROM.get(addr, pumps[i]);
-        addr += sizeof(PumpConfig);
     }
 }
 
@@ -1850,31 +1816,21 @@ String getConfigPage() {
 }
 
 void resetFactorySettings() {
-    // Usuń wszystkie pliki konfiguracyjne
-    LittleFS.remove("/config.json");
-    LittleFS.remove("/mqtt.json");
+    // Wyczyść EEPROM zapisując wartość inną niż znacznik walidacji
+    uint32_t invalidMark = 0;
+    EEPROM.put(0, invalidMark);
+    EEPROM.commit();
     
-    // Resetuj struktury danych do wartości domyślnych
-    for (uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
-        pumps[i].enabled = false;
-        pumps[i].calibration = 1.0;
-        pumps[i].dose = 0.0;
-        pumps[i].schedule_hour = 0;
-        pumps[i].schedule_days = 0;
+    // Załaduj domyślne wartości
+    loadConfig();
+    
+    // Zresetuj pozostałe ustawienia
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
         pumps[i].lastDosing = 0;
         pumps[i].isRunning = false;
     }
     
-    // Resetuj ustawienia MQTT
-    mqttEnabled = false;
-    mqttServer[0] = '\0';
-    mqttPort = 1883;
-    mqttUser[0] = '\0';
-    mqttPassword[0] = '\0';
-    
-    // Zapisz domyślne ustawienia
-    saveConfiguration();
-    saveMQTTConfig();
+    saveConfig();
 }
 
 // --- Setup
