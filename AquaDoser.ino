@@ -78,6 +78,11 @@ struct NetworkConfig {
     IPAddress subnet;
     IPAddress dns1;
     IPAddress dns2;
+    // Konfiguracja MQTT
+    char mqtt_server[64];
+    int mqtt_port;
+    char mqtt_user[32];
+    char mqtt_password[32];
 };
 
 // Struktura statusu systemu
@@ -155,10 +160,10 @@ void initStorage() {
 // --- Konfiguracja MQTT dla Home Assistant
 void setupMQTT() {
     if (strlen(networkConfig.mqtt_server) == 0) {
-        Serial.println("Brak konfiguracji MQTT");
+        Serial.println(F("Brak konfiguracji MQTT"));
         return;
     }
-    
+
     mqtt.begin(
         networkConfig.mqtt_server,
         networkConfig.mqtt_port,
@@ -258,13 +263,13 @@ struct SystemInfo {
 
 SystemInfo sysInfo = {0, false};
 
-struct Config {
-    MQTTConfig mqtt;  // Dodaj to pole
-    bool soundEnabled;
-    uint32_t checksum;
+// struct Config {
+//     MQTTConfig mqtt;  // Dodaj to pole
+//     bool soundEnabled;
+//     uint32_t checksum;
     
-    Config() : soundEnabled(true), checksum(0) {}
-};
+//     Config() : soundEnabled(true), checksum(0) {}
+// };
 
 // Globalna instancja konfiguracji
 Config config;
@@ -292,10 +297,9 @@ Adafruit_NeoPixel strip(NUMBER_OF_PUMPS, LED_PIN, NEO_GRB + NEO_KHZ800);
 bool serviceMode = false;
 bool pumpRunning[NUMBER_OF_PUMPS] = {false};
 unsigned long doseStartTime[NUMBER_OF_PUMPS] = {0};
-//unsigned long lastRtcSync = 0;
 
 // Dodaj stałe dla timeoutów i interwałów jak w HydroSense
-const unsigned long MQTT_RETRY_INTERVAL = 10000;   // Próba połączenia MQTT co 10s
+const unsigned long MQTT_RETRY_INTERVAL = 10000;   
 const unsigned long MILLIS_OVERFLOW_THRESHOLD = 4294967295U - 60000; // ~49.7 dni
 
 unsigned long lastMQTTLoop = 0;
@@ -343,7 +347,7 @@ void printLogHeader() {
 
 // Funkcja wyświetlająca status pojedynczej pompy
 void printPumpStatus(uint8_t pumpIndex) {
-    if (!config.pumps[pumpIndex].enabled) {
+    if (!pumps[pumpIndex].enabled) {
         return; // Nie wyświetlaj statusu wyłączonych pomp
     }
 
@@ -351,8 +355,8 @@ void printPumpStatus(uint8_t pumpIndex) {
     Serial.print(pumpIndex + 1);
     Serial.print(F(": "));
 
-    if (config.pumps[pumpIndex].isRunning) {
-        Serial.println(F("ACTIVE - Currently dosing"));
+    if (pumps[pumpIndex].isRunning) {
+        Serial.println(F("Pompa pracuje"));
     } else {
         Serial.print(F("Standby - Next dose: "));
         DateTime nextDose = calculateNextDosing(pumpIndex);
@@ -440,11 +444,10 @@ void welcomeMelody() {
 
 // Dodaj walidację konfiguracji
 bool validateConfigValues() {
-    // Sprawdź poprawność wartości dla każdej pompy
     for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-        if (config.pumps[i].calibration <= 0 || config.pumps[i].calibration > 10) 
+        if (pumps[i].calibration <= 0 || pumps[i].calibration > 10)
             return false;
-        if (config.pumps[i].dose < 0 || config.pumps[i].dose > 1000) 
+        if (pumps[i].dose < 0 || pumps[i].dose > 1000)
             return false;
     }
     return true;
@@ -1125,7 +1128,7 @@ void updateHomeAssistant() {
     char currentTimeStr[32];
     
     for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-        if (pumpStates[i].sensor != nullptr) {
+        if (!pumpStates[i].isActive && pumps[i].enabled) {
             char statusBuffer[128];
             
             if (pumpStates[i].isActive) {
@@ -1174,9 +1177,9 @@ void updateHomeAssistant() {
 // Pomocnicza funkcja do obliczania następnego dozowania
 DateTime calculateNextDosing(uint8_t pumpIndex) {
     DateTime now = rtc.now();
-    uint8_t currentHour = now.hour();
-    uint8_t currentMinute = now.minute();
-    uint8_t currentDay = now.dayOfTheWeek(); // 0 = Sunday, 6 = Saturday
+    uint8_t schedHour = pumps[pumpIndex].schedule_hour;
+    uint8_t schedMinute = pumps[pumpIndex].minute;
+    uint8_t scheduleDays = pumps[pumpIndex].schedule_days;
     
     // Pobierz zaplanowaną godzinę dozowania z konfiguracji
     uint8_t schedHour = config.pumps[pumpIndex].schedule_hour;
@@ -1798,7 +1801,7 @@ void loop() {
         
         bool hasActivePumps = false;
         for (uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
-            if (config.pumps[i].enabled) {
+            if (pumps[i].enabled));
                 printPumpStatus(i);
                 hasActivePumps = true;
             }
