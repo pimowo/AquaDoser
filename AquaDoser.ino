@@ -46,6 +46,11 @@ const unsigned long STATUS_PRINT_INTERVAL = 60000; // Wyświetlaj status co 1 mi
 const unsigned long LOG_INTERVAL = 60000; // 60 sekund między wyświetlaniem statusu
 unsigned long lastLogTime = 0;
 bool firstRun = true;
+// Stałe offsety w EEPROM dla różnych konfiguracji
+const int MQTT_CONFIG_ADDR = sizeof(uint32_t); // Po znaczniku walidacji
+const int PUMPS_CONFIG_ADDR = MQTT_CONFIG_ADDR + sizeof(MQTTConfig);
+const int NETWORK_CONFIG_ADDR = PUMPS_CONFIG_ADDR + (sizeof(PumpConfig) * NUMBER_OF_PUMPS);
+
 
 #define TEST_MODE  // Zakomentuj tę linię w wersji produkcyjnej
 
@@ -142,6 +147,8 @@ struct NetworkConfig {
     char mqtt_password[64];
     uint16_t mqtt_port;
 };
+
+NetworkConfig networkConfig;
 
 // Struktura statusu systemu
 struct SystemStatus {
@@ -251,10 +258,26 @@ bool hasIntervalPassed(unsigned long current, unsigned long previous, unsigned l
     return (current - previous >= interval);
 }
 
-// Stałe dla systemu logowania
-//const unsigned long LOG_INTERVAL = 60000; // 60 sekund między wyświetlaniem statusu
-//unsigned long lastLogTime = 0;
-//bool firstRun = true;
+// Inicjalizacja EEPROM w setup()
+void initStorage() {
+    EEPROM.begin(2048); // Dostosuj rozmiar według potrzeb
+    
+    // Sprawdź znacznik walidacji
+    uint32_t validationMark;
+    EEPROM.get(0, validationMark);
+    
+    if (validationMark != EEPROM_VALIDATION_MARK) {
+        // Pierwsze uruchomienie - inicjalizuj EEPROM
+        EEPROM.put(0, EEPROM_VALIDATION_MARK);
+        
+        // Załaduj domyślne wartości
+        loadMQTTConfig();
+        loadPumpsConfig();
+        loadNetworkConfig();
+        
+        EEPROM.commit();
+    }
+}
 
 // Funkcja formatująca czas
 String formatDateTime(const DateTime& dt) {
@@ -458,162 +481,79 @@ void handleMillisOverflow() {
 
 // Zapisywanie konfiguracji MQTT
 void saveMQTTConfig() {
-    StaticJsonDocument<512> doc;
-    
-    doc["enabled"] = mqttEnabled;
-    doc["server"] = mqttServer;
-    doc["port"] = mqttPort;
-    doc["user"] = mqttUser;
-    doc["password"] = mqttPassword;
-
-    //File configFile = LittleFS.open("/mqtt.json", "w");
-    if (!configFile) {
-        Serial.println("Failed to open mqtt config file for writing");
-        return;
-    }
-
-    serializeJson(doc, configFile);
-    configFile.close();
+    // Zapisz konfigurację MQTT do EEPROM
+    EEPROM.put(MQTT_CONFIG_ADDR, mqttConfig);
+    EEPROM.commit();
+    Serial.println(F("Zapisano konfigurację MQTT"));
 }
 
 // Wczytywanie konfiguracji MQTT
 void loadMQTTConfig() {
-    //File configFile = LittleFS.open("/mqtt.json", "r");
-    if (!configFile) {
-        Serial.println("No mqtt config file, using defaults");
-        return;
+    // Wczytaj konfigurację MQTT z EEPROM
+    EEPROM.get(MQTT_CONFIG_ADDR, mqttConfig);
+    
+    // Sprawdź, czy konfiguracja jest prawidłowa
+    if (strlen(mqttConfig.broker) == 0) {
+        // Ustaw wartości domyślne
+        strlcpy(mqttConfig.broker, "mqtt.example.com", sizeof(mqttConfig.broker));
+        mqttConfig.port = 1883;
+        mqttConfig.username[0] = '\0';
+        mqttConfig.password[0] = '\0';
+        saveMQTTConfig();
     }
-
-    StaticJsonDocument<512> doc;
-    DeserializationError error = deserializeJson(doc, configFile);
-    configFile.close();
-
-    if (error) {
-        Serial.println("Failed to parse mqtt config file");
-        return;
-    }
-
-    mqttEnabled = doc["enabled"] | false;
-    strlcpy(mqttServer, doc["server"] | "", sizeof(mqttServer));
-    mqttPort = doc["port"] | 1883;
-    strlcpy(mqttUser, doc["user"] | "", sizeof(mqttUser));
-    strlcpy(mqttPassword, doc["password"] | "", sizeof(mqttPassword));
 }
 
 // --- Ładowanie konfiguracji pomp
 bool loadPumpsConfig() {
-    //File file = LittleFS.open("/pumps.json", "r");
-    if (!file) {
-        Serial.println(F("Failed to open pumps config file"));
-        return false;
+    // Wczytaj konfigurację pomp z EEPROM
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        EEPROM.get(PUMPS_CONFIG_ADDR + (i * sizeof(PumpConfig)), pumps[i]);
+        
+        // Sprawdź, czy konfiguracja jest prawidłowa
+        if (strlen(pumps[i].name) == 0) {
+            // Ustaw wartości domyślne dla pompy
+            snprintf(pumps[i].name, sizeof(pumps[i].name), "Pompa %d", i + 1);
+            pumps[i].enabled = false;
+            pumps[i].calibration = 1.0;
+            pumps[i].dose = 0.0;
+            pumps[i].schedule_hour = 12;
+            pumps[i].minute = 0;
+            pumps[i].schedule_days = 0;
+            pumps[i].lastDosing = 0;
+            pumps[i].isRunning = false;
+        }
     }
-
-    DynamicJsonDocument doc(1024);
-    DeserializationError error = deserializeJson(doc, file);
-    file.close();
-
-    if (error) {
-        Serial.println(F("Failed to parse pumps config file"));
-        return false;
-    }
-
-    JsonArray pumpsArray = doc["pumps"].as<JsonArray>();
-    for (uint8_t i = 0; i < NUMBER_OF_PUMPS && i < pumpsArray.size(); i++) {
-        pumps[i].enabled = pumpsArray[i]["enabled"] | false;
-        pumps[i].calibration = pumpsArray[i]["calibration"] | 1.0f;
-        pumps[i].dose = pumpsArray[i]["dose"] | 0.0f;
-        pumps[i].schedule_days = pumpsArray[i]["schedule"]["days"] | 0;
-        pumps[i].schedule_hour = pumpsArray[i]["schedule"]["hour"] | 0;
-        pumps[i].lastDosing = 0;
-        pumps[i].isRunning = false;
-    }
-
     return true;
 }
 
 // --- Zapisywanie konfiguracji pomp
 bool savePumpsConfig() {
-    DynamicJsonDocument doc(1024);
-    JsonArray pumpsArray = doc.createNestedArray("pumps");
-
-    for (uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
-        JsonObject pumpObj = pumpsArray.createNestedObject();
-        pumpObj["enabled"] = pumps[i].enabled;
-        pumpObj["calibration"] = pumps[i].calibration;
-        pumpObj["dose"] = pumps[i].dose;
-        JsonObject schedule = pumpObj.createNestedObject("schedule");
-        schedule["days"] = pumps[i].schedule_days;
-        schedule["hour"] = pumps[i].schedule_hour;
+    // Zapisz konfigurację pomp do EEPROM
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        EEPROM.put(PUMPS_CONFIG_ADDR + (i * sizeof(PumpConfig)), pumps[i]);
     }
-
-    //File file = LittleFS.open("/pumps.json", "w");
-    if (!file) {
-        Serial.println(F("Failed to open pumps config file for writing"));
-        return false;
-    }
-
-    if (serializeJson(doc, file) == 0) {
-        Serial.println(F("Failed to write pumps config"));
-        file.close();
-        return false;
-    }
-
-    file.close();
-    return true;
+    return EEPROM.commit();
 }
 
 // --- Ładowanie konfiguracji sieciowej
 bool loadNetworkConfig() {
-    //File file = LittleFS.open(NETWORK_FILE, "r");
-    if (!file) {
-        Serial.println("Nie znaleziono pliku konfiguracji sieciowej");
-        return false;
+    // Wczytaj konfigurację sieci z EEPROM
+    EEPROM.get(NETWORK_CONFIG_ADDR, networkConfig);
+    
+    // Sprawdź, czy konfiguracja jest prawidłowa
+    if (strlen(networkConfig.hostname) == 0) {
+        // Ustaw wartości domyślne
+        strlcpy(networkConfig.hostname, "AquaDoser", sizeof(networkConfig.hostname));
+        return saveNetworkConfig();
     }
-
-    StaticJsonDocument<512> doc;
-    DeserializationError error = deserializeJson(doc, file);
-    file.close();
-
-    if (error) {
-        Serial.println("Błąd parsowania JSON konfiguracji sieciowej");
-        return false;
-    }
-
-    strlcpy(networkConfig.wifi_ssid, doc["wifi_ssid"] | "", sizeof(networkConfig.wifi_ssid));
-    strlcpy(networkConfig.wifi_password, doc["wifi_password"] | "", sizeof(networkConfig.wifi_password));
-    strlcpy(networkConfig.mqtt_server, doc["mqtt_server"] | "", sizeof(networkConfig.mqtt_server));
-    strlcpy(networkConfig.mqtt_user, doc["mqtt_user"] | "", sizeof(networkConfig.mqtt_user));
-    strlcpy(networkConfig.mqtt_password, doc["mqtt_password"] | "", sizeof(networkConfig.mqtt_password));
-    networkConfig.mqtt_port = doc["mqtt_port"] | 1883;
-
     return true;
 }
 
 // --- Zapisywanie konfiguracji sieciowej
 bool saveNetworkConfig() {
-    StaticJsonDocument<512> doc;
-    
-    doc["wifi_ssid"] = networkConfig.wifi_ssid;
-    doc["wifi_password"] = networkConfig.wifi_password;
-    doc["mqtt_server"] = networkConfig.mqtt_server;
-    doc["mqtt_user"] = networkConfig.mqtt_user;
-    doc["mqtt_password"] = networkConfig.mqtt_password;
-    doc["mqtt_port"] = networkConfig.mqtt_port;
-
-    //File file = LittleFS.open(NETWORK_FILE, "w");
-    if (!file) {
-        Serial.println("Błąd otwarcia pliku konfiguracji sieciowej do zapisu");
-        return false;
-    }
-
-    if (serializeJson(doc, file) == 0) {
-        Serial.println("Błąd zapisu konfiguracji sieciowej");
-        file.close();
-        return false;
-    }
-
-    file.close();
-    return true;
+    // Zapisz konfigurację sieci do EEPROM
+    EEPROM.put(NETWORK_CONFIG_ADDR, networkConfig);
+    return EEPROM.commit();
 }
 
 // --- Ogólna funkcja ładowania konfiguracji
@@ -1839,6 +1779,14 @@ void setup() {
     Serial.println("\nAquaDoser Start");
     Wire.begin();
     
+    // Inicjalizacja EEPROM
+    initStorage();
+    
+    // Wczytaj konfiguracje
+    loadMQTTConfig();
+    loadPumpsConfig();
+    loadNetworkConfig();
+
     // Wczytaj konfigurację przed inicjalizacją innych komponentów
     loadConfig();
 
