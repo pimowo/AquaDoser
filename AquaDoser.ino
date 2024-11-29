@@ -109,6 +109,7 @@ bool hasActivePumps = false;
 // --- Zmienne globalne
 MQTTConfig mqttConfig;
 PumpConfig pumps[NUMBER_OF_PUMPS];
+PumpState pumpStates[NUMBER_OF_PUMPS];
 NetworkConfig networkConfig;
 SystemStatus systemStatus;
 WiFiClient client;
@@ -281,14 +282,6 @@ struct SystemInfo {
 
 SystemInfo sysInfo = {0, false};
 
-// struct Config {
-//     MQTTConfig mqtt;  // Dodaj to pole
-//     bool soundEnabled;
-//     uint32_t checksum;
-    
-//     Config() : soundEnabled(true), checksum(0) {}
-// };
-
 // Globalna instancja konfiguracji
 Config config;
 
@@ -306,7 +299,7 @@ PumpState pumpStates[NUMBER_OF_PUMPS];
 // --- Globalne obiekty
 WiFiClient wifiClient;
 HADevice haDevice("AquaDoser");
-HAMqtt mqtt(wifiClient, haDevice);
+//HAMqtt mqtt(wifiClient, haDevice);
 //RTC_DS3231 rtc;
 PCF8574 pcf8574(0x20);
 Adafruit_NeoPixel strip(NUMBER_OF_PUMPS, LED_PIN, NEO_GRB + NEO_KHZ800);
@@ -1192,14 +1185,13 @@ void updateHomeAssistant() {
 // Pomocnicza funkcja do obliczania następnego dozowania
 DateTime calculateNextDosing(uint8_t pumpIndex) {
     DateTime now = rtc.now();
+    currentDay = now.dayOfTheWeek();
+    currentHour = now.hour();
+    currentMinute = now.minute();
+    
     uint8_t schedHour = pumps[pumpIndex].schedule_hour;
     uint8_t schedMinute = pumps[pumpIndex].minute;
     uint8_t scheduleDays = pumps[pumpIndex].schedule_days;
-    
-    // Pobierz zaplanowaną godzinę dozowania z konfiguracji
-    uint8_t schedHour = config.pumps[pumpIndex].schedule_hour;
-    uint8_t schedMinute = config.pumps[pumpIndex].minute;
-    uint8_t scheduleDays = config.pumps[pumpIndex].schedule_days;
     
     DateTime nextRun = now;
     int daysToAdd = 0;
@@ -1244,7 +1236,7 @@ void handleConfigSave() {
         String mqtt_password = server.arg("mqtt_password");
         
         // Sprawdź, czy dane się zmieniły
-        if (mqtt_broker != config.mqtt.broker || 
+        if (mqtt_broker != networkConfig.mqtt_server || 
             mqtt_port.toInt() != config.mqtt.port ||
             mqtt_user != config.mqtt.username ||
             mqtt_password != config.mqtt.password) {
@@ -1359,7 +1351,7 @@ void checkMQTTConfig() {
     if (validateMQTTConfig()) {
         Serial.println("Konfiguracja MQTT znaleziona:");
         Serial.print("Broker: ");
-        Serial.println(config.mqtt.broker);
+        Serial.println(networkConfig.mqtt_server);
         Serial.print("Port: ");
         Serial.println(config.mqtt.port);
         Serial.print("Username: ");
