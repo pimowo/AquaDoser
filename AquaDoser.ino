@@ -111,6 +111,9 @@ MQTTConfig mqttConfig;
 PumpConfig pumps[NUMBER_OF_PUMPS];
 NetworkConfig networkConfig;
 SystemStatus systemStatus;
+WiFiClient client;
+HADevice device("aquadoser"); // Dodaj unikalny identyfikator
+HAMqtt mqtt(client, device);
 
 // --- Interwały czasowe
 const unsigned long MQTT_LOOP_INTERVAL = 100;      // Obsługa MQTT co 100ms
@@ -432,24 +435,21 @@ const char* PUMPS_FILE = "/config/pumps.json";
 const char* NETWORK_FILE = "/config/network.json";
 const char* SYSTEM_FILE = "/config/system.json";
 
-//Config config;                   // Główna konfiguracja
-SystemStatus systemStatus;       // Status systemu
-
 // Dodaj obsługę dźwięku jak w HydroSense
 void playShortWarningSound() {
-    if (!config.soundEnabled) return;
+    if (!systemConfig.soundEnabled) return;
     tone(BUZZER_PIN, 2000, 100);
 }
 
 void playConfirmationSound() {
-    if (!config.soundEnabled) return;
+    if (!systemConfig.soundEnabled) return;
     tone(BUZZER_PIN, 1000, 50);
     delay(100);
     tone(BUZZER_PIN, 2000, 50);
 }
 
 void welcomeMelody() {
-    if (!config.soundEnabled) return;
+    if (!systemConfig.soundEnabled) return;
     tone(BUZZER_PIN, 1000, 100);
     delay(150);
     tone(BUZZER_PIN, 1500, 100);
@@ -1273,18 +1273,12 @@ void handleConfigSave() {
 }
 
 bool validateMQTTConfig() {
-    // Sprawdź czy broker nie jest pusty
-    if (strlen(config.mqtt.broker) == 0) {
-        Serial.println("Brak konfiguracji MQTT - broker jest pusty");
+    if (strlen(networkConfig.mqtt_server) == 0) {
         return false;
     }
-    
-    // Sprawdź czy port jest poprawny
-    if (config.mqtt.port <= 0 || config.mqtt.port > 65535) {
-        Serial.println("Brak konfiguracji MQTT - niepoprawny port");
+    if (networkConfig.mqtt_port <= 0 || networkConfig.mqtt_port > 65535) {
         return false;
     }
-    
     return true;
 }
 
@@ -1361,6 +1355,7 @@ void setupWebServer() {
 }
 
 void checkMQTTConfig() {
+    Serial.println(networkConfig.mqtt_server);
     if (validateMQTTConfig()) {
         Serial.println("Konfiguracja MQTT znaleziona:");
         Serial.print("Broker: ");
