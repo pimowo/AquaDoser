@@ -34,7 +34,7 @@ class HASensor;
 // Stałe
 const int NUMBER_OF_PUMPS = 8;
 const int BUZZER_PIN = 13;    // GPIO 13
-const int WS2812_PIN = 12;    // GPIO 12
+const int LED_PIN = 12;    // GPIO 12
 const int BUTTON_PIN = 14;    // GPIO 14
 const int SDA_PIN = 4;        // GPIO 4
 const int SCL_PIN = 5;        // GPIO 5
@@ -130,7 +130,7 @@ HAMqtt mqtt(client, device);
 PCF8574 pcf(PCF8574_ADDRESS);
 ESP8266WebServer server(80);
 WebSocketsServer webSocket(81);
-Adafruit_NeoPixel strip(NUMBER_OF_PUMPS, WS2812_PIN, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel strip(NUMBER_OF_PUMPS, LED_PIN, NEO_GRB + NEO_KHZ800);
 
 // Globalne zmienne stanu
 PumpConfig pumps[NUMBER_OF_PUMPS];
@@ -203,7 +203,6 @@ HADevice haDevice("AquaDoser");
 //HAMqtt mqtt(wifiClient, haDevice);
 //RTC_DS3231 rtc;
 PCF8574 pcf8574(0x20);
-Adafruit_NeoPixel strip(NUMBER_OF_PUMPS, LED_PIN, NEO_GRB + NEO_KHZ800);
 
 // --- Globalne zmienne stanu
 bool serviceMode = false;
@@ -229,8 +228,6 @@ bool pumpInitialized = false;
 // --- Stałe dla animacji LED
 #define LED_UPDATE_INTERVAL 50    // Aktualizacja LED co 50ms
 #define FADE_STEPS 20            // Liczba kroków w animacji fade
-#define PULSE_MIN_BRIGHTNESS 20  // Minimalna jasność podczas pulsowania (0-255)
-#define PULSE_MAX_BRIGHTNESS 255 // Maksymalna jasność podczas pulsowania
 
 unsigned long lastLedUpdate = 0;
 // --- Stałe dla Home Assistant
