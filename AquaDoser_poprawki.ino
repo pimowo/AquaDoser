@@ -2,6 +2,8 @@
  * BIBLIOTEKI
  ***************************************/
 
+class HASensor;
+
 // --- System i komunikacja
 #include <Arduino.h>     // Główna biblioteka Arduino
 #include <ArduinoHA.h>   // Integracja z Home Assistant
@@ -53,14 +55,27 @@ const int PCF8574_ADDRESS = 0x20; // Adres ekspandera I2C
 #define COLOR_WORKING 0x0000FF    // Niebieski - pompa pracuje
 #define COLOR_SERVICE 0xFFFF00    // Żółty - tryb serwisowy
 
+#define COLOR_RAINBOW_1 strip.Color(255, 0, 0)      // Czerwony
+#define COLOR_RAINBOW_2 strip.Color(255, 127, 0)    // Pomarańczowy
+#define COLOR_RAINBOW_3 strip.Color(255, 255, 0)    // Żółty
+#define COLOR_RAINBOW_4 strip.Color(0, 255, 0)      // Zielony
+#define COLOR_RAINBOW_5 strip.Color(0, 0, 255)      // Niebieski
+#define COLOR_RAINBOW_6 strip.Color(139, 0, 255)    // Fioletowy
+
 // --- Parametry MQTT
 #define MQTT_SERVER_LENGTH 40     // Długość adresu serwera
 #define MQTT_USER_LENGTH 20       // Długość nazwy użytkownika
 #define MQTT_PASSWORD_LENGTH 20   // Długość hasła
 
+const unsigned long STATUS_PRINT_INTERVAL = 60000; // Wyświetlaj status co 1 minutę
+const unsigned long MILLIS_OVERFLOW_THRESHOLD = 4294967295U - 60000; // ~49.7 dni
+
 // --- Interwały czasowe (ms)
 #define LOG_INTERVAL 60000            // Logowanie
 #define SYSTEM_CHECK_INTERVAL 5000    // Sprawdzanie systemu
+#define DOSE_CHECK_INTERVAL 1000      // Sprawdzanie dozowania co 1 sekundę
+#define MIN_DOSE_TIME 100            // Minimalny czas dozowania (ms)
+#define MAX_DOSE_TIME 60000          // Maksymalny czas dozowania (60 sekund)
 #define WEBSOCKET_UPDATE_INTERVAL 1000 // Aktualizacja WebSocket
 #define RTC_SYNC_INTERVAL 86400000UL  // Synchronizacja RTC (24h)
 #define MQTT_LOOP_INTERVAL 100        // Pętla MQTT
@@ -130,6 +145,9 @@ ESP8266WebServer server(80);
 WebSocketsServer webSocket(81);
 HADevice device("aquadoser");
 HAMqtt mqtt(client, device);
+HASwitch* pumpSwitches[NUMBER_OF_PUMPS];
+HANumber* pumpCalibrations[NUMBER_OF_PUMPS];
+HASwitch* serviceModeSwitch;
 
 /***************************************
  * ZMIENNE GLOBALNE - STAN SYSTEMU
