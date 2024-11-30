@@ -40,6 +40,9 @@ const int SDA_PIN = 4;        // GPIO 4
 const int SCL_PIN = 5;        // GPIO 5
 const int PCF8574_ADDRESS = 0x20;
 
+#define PULSE_MAX_BRIGHTNESS 255
+#define PULSE_MIN_BRIGHTNESS 50
+
 #define MQTT_SERVER_LENGTH 40
 #define MQTT_USER_LENGTH 20
 #define MQTT_PASSWORD_LENGTH 20
@@ -81,6 +84,7 @@ struct NetworkConfig {
     int mqtt_port;
     char mqtt_user[32];
     char mqtt_password[32];
+    bool dhcp;    // Dodane pole dhcp
 };
 
 struct SystemConfig {
@@ -103,6 +107,13 @@ struct LEDState {
     uint32_t targetColor;
     unsigned long lastUpdateTime;
     bool immediate;
+    uint8_t brightness;
+    bool pulsing;
+    int8_t pulseDirection;
+    
+    LEDState() : currentColor(0), targetColor(0), lastUpdateTime(0), 
+                 immediate(false), brightness(255), pulsing(false), 
+                 pulseDirection(1) {}
 };
 
 // Adresy EEPROM
@@ -112,7 +123,16 @@ const int NETWORK_CONFIG_ADDR = MQTT_CONFIG_ADDR + sizeof(MQTTConfig);
 const int SYSTEM_CONFIG_ADDR = NETWORK_CONFIG_ADDR + sizeof(NetworkConfig);
 const int SYSTEM_STATUS_ADDR = SYSTEM_CONFIG_ADDR + sizeof(SystemConfig);
 
-// Zmienne globalne
+// Globalne obiekty - umieść je tylko raz na początku pliku
+WiFiClient client;
+HADevice device("aquadoser");  // Dodany parametr identyfikatora
+HAMqtt mqtt(client, device);
+PCF8574 pcf(PCF8574_ADDRESS);
+ESP8266WebServer server(80);
+WebSocketsServer webSocket(81);
+Adafruit_NeoPixel strip(NUMBER_OF_PUMPS, WS2812_PIN, NEO_GRB + NEO_KHZ800);
+
+// Globalne zmienne stanu
 PumpConfig pumps[NUMBER_OF_PUMPS];
 PumpState pumpStates[NUMBER_OF_PUMPS];
 NetworkConfig networkConfig;
@@ -120,14 +140,6 @@ SystemConfig systemConfig;
 SystemStatus systemStatus;
 MQTTConfig mqttConfig;
 LEDState ledStates[NUMBER_OF_PUMPS];
-
-// Deklaracje obiektów
-ESP8266WebServer server(80);
-WebSocketsServer webSocket(81);
-WiFiClient client;
-HADevice device;
-HAMqtt mqtt(client, device);
-PCF8574 pcf(PCF8574_ADDRESS);
 
 // --- Stałe dla systemu plików
 const char* CONFIG_DIR = "/config";
@@ -145,11 +157,6 @@ bool hasActivePumps = false;
 // --- Zmienne dla obsługi przycisku
 unsigned long lastButtonPress = 0;
 bool lastButtonState = HIGH;
-
-// Home Assistant
-WiFiClient client;
-HADevice device("aquadoser");
-HAMqtt mqtt(client, device);
 
 // --- Interwały czasowe
 const unsigned long MQTT_LOOP_INTERVAL = 100;      // Obsługa MQTT co 100ms
@@ -184,15 +191,11 @@ const char* dayNames[] = {"Pn", "Wt", "Śr", "Cz", "Pt", "Sb", "Nd"};
 
 #define DEBUG_SERIAL(x)
 RTC_DS3231 rtc;
-PCF8574 pcf(PCF8574_ADDRESS);
 
 ESP8266HTTPUpdateServer httpUpdateServer;
 
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "pool.ntp.org");
-
-// Tablica stanów pomp - tylko jedna deklaracja!
-PumpState pumpStates[NUMBER_OF_PUMPS];
 
 // --- Globalne obiekty
 WiFiClient wifiClient;
@@ -228,7 +231,7 @@ bool pumpInitialized = false;
 #define FADE_STEPS 20            // Liczba kroków w animacji fade
 #define PULSE_MIN_BRIGHTNESS 20  // Minimalna jasność podczas pulsowania (0-255)
 #define PULSE_MAX_BRIGHTNESS 255 // Maksymalna jasność podczas pulsowania
-LEDState ledStates[NUMBER_OF_PUMPS];
+
 unsigned long lastLedUpdate = 0;
 // --- Stałe dla Home Assistant
 #define HA_UPDATE_INTERVAL 30000  // Aktualizacja HA co 30 sekund
@@ -839,19 +842,11 @@ void stopAllPumps() {
 // --- Inicjalizacja LED
 void initializeLEDs() {
     strip.begin();
+    strip.show();
     
-    // Inicjalizacja stanów LED
-    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-        ledStates[i] = {
-            COLOR_OFF,    // targetColor
-            COLOR_OFF,    // currentColor
-            255,         // brightness
-            false,       // pulsing
-            1           // pulseDirection
-        };
+    for(int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        ledStates[i] = LEDState();  // Używamy konstruktora domyślnego
     }
-    
-    updateLEDs();
 }
 
 // --- Konwersja koloru na komponenty RGB
