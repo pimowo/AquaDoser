@@ -92,42 +92,78 @@ const unsigned long MILLIS_OVERFLOW_THRESHOLD = 4294967295U - 60000; // ~49.7 dn
 
 // --- Konfiguracja pompy
 struct PumpConfig {
-    // Dane konfiguracyjne pompy
+    char name[20];
+    bool enabled;
+    float calibration;
+    float dose;
+    uint8_t schedule_hour;
+    uint8_t minute;
+    uint8_t schedule_days;
+    time_t lastDosing;
+    bool isRunning;
 };
 
 // --- Stan pompy
 struct PumpState {
-    // Aktualny stan pompy
+    bool isActive;
+    unsigned long lastDoseTime;
+    HASensor* sensor;
+    
+    PumpState() : isActive(false), lastDoseTime(0), sensor(nullptr) {}
 };
 
 // --- Konfiguracja MQTT
 struct MQTTConfig {
-    // Ustawienia MQTT
+    char broker[64];
+    int port;
+    char username[32];
+    char password[32];
+    bool enabled;
 };
 
 // --- Konfiguracja sieci
 struct NetworkConfig {
-    // Ustawienia sieciowe
+    char hostname[32];
+    char ssid[32];
+    char password[32];
+    char mqtt_server[64];
+    int mqtt_port;
+    char mqtt_user[32];
+    char mqtt_password[32];
+    bool dhcp;    // Dodane pole dhcp
 };
 
 // --- Konfiguracja systemu
 struct SystemConfig {
-    // Ustawienia systemowe
+    bool soundEnabled;
 };
 
 // --- Stan systemu
 struct SystemStatus {
-    // Status systemu
+    bool mqtt_connected;
+    bool wifi_connected;
+    unsigned long uptime;
 };
 
 // --- Informacje systemowe
 struct SystemInfo {
-    // Informacje o systemie
+    unsigned long uptime;
+    bool mqtt_connected;
 };
 
 // --- Stan LED
 struct LEDState {
-    // Stan diod LED
+    uint32_t currentColor;
+    uint32_t targetColor;
+    unsigned long lastUpdateTime;
+    bool immediate;
+    uint8_t brightness;
+    bool pulsing;
+    int8_t pulseDirection;
+    
+    LEDState() : currentColor(0), targetColor(0), lastUpdateTime(0), 
+                 immediate(false), brightness(255), pulsing(false), 
+                 pulseDirection(1) {}
 };
 
 /***************************************
@@ -208,10 +244,47 @@ unsigned long lastStatusPrint = 0;    // Ostatni wydruk statusu
  ***************************************/
 
 // --- Funkcje inicjalizacyjne
-void initStorage();              // Inicjalizacja pamięci
-void initializeLEDs();          // Inicjalizacja LED
-bool initializePumps();         // Inicjalizacja pomp
-void initHomeAssistant();       // Inicjalizacja Home Assistant
+// Inicjalizacja pamięci
+void initStorage() {
+    systemConfig.soundEnabled = true;  // wartość domyślna
+}
+
+// Inicjalizacja LED
+void initializeLEDs() {
+    strip.begin();
+    strip.show();
+    
+    for(int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        ledStates[i] = LEDState();  // Używamy konstruktora domyślnego
+    }
+}
+
+// Inicjalizacja pomp
+bool initializePumps() {
+    if (!pcf8574.begin()) {
+        Serial.println("Błąd inicjalizacji PCF8574!");
+        return false;
+    }
+
+    // Ustaw wszystkie piny jako wyjścia i wyłącz pompy
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        pcf8574.digitalWrite(i, LOW);  // Nie potrzeba pinMode
+    }
+
+    pumpInitialized = true;
+    return true;
+}
+
+// Inicjalizacja Home Assistant
+void initHomeAssistant() {
+    char entityId[32];
+    for (uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
+        snprintf(entityId, sizeof(entityId), "pump_%d", i);
+        pumpStates[i].sensor = new HASensor(entityId); // Teraz używamy HASensor
+        pumpStates[i].sensor->setName(pumps[i].name);
+        pumpStates[i].sensor->setIcon("mdi:water-pump");
+    }
+}
 
 // --- Funkcje konfiguracyjne
 void loadConfiguration();        // Wczytanie konfiguracji
@@ -272,16 +345,191 @@ String getConfigPage();       // Pobranie strony konfiguracji
 String getStyles();           // Pobranie stylów CSS
 
 // --- Funkcje callback Home Assistant
-void onPumpSwitch(bool state, HASwitch* sender);
-void onPumpCalibration(HANumeric value, HANumber* sender);
-void onServiceModeSwitch(bool state, HASwitch* sender);
+void onPumpSwitch(bool state, HASwitch* sender) {
+    // Znajdź indeks pompy na podstawie wskaźnika do przełącznika
+    int pumpIndex = -1;
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        if (sender == pumpSwitches[i]) {
+            pumpIndex = i;
+            break;
+        }
+    }
+    
+    if (pumpIndex >= 0) {
+        pumps[pumpIndex].enabled = state;
+        updatePumpLED(pumpIndex);
+        saveConfiguration();
+    }
+}
+
+void onPumpCalibration(HANumeric value, HANumber* sender) {
+    // Znajdź indeks pompy na podstawie wskaźnika do kalibracji
+    int pumpIndex = -1;
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        if (sender == pumpCalibrations[i]) {
+            pumpIndex = i;
+            break;
+        }
+    }
+    
+    if (pumpIndex >= 0) {
+        pumps[pumpIndex].calibration = value.toFloat();
+        saveConfiguration();
+    }
+}
+
+void onServiceModeSwitch(bool state, HASwitch* sender) {
+    serviceMode = state;
+    if (serviceMode) {
+        stopAllPumps();
+    }
+    updateServiceModeLEDs();
+}
 
 /***************************************
  * IMPLEMENTACJE FUNKCJI - INICJALIZACJA
  ***************************************/
 
 void setup() {
+    // 1. Inicjalizacja komunikacji
+    Serial.begin(115200);
+    Serial.println("\nAquaDoser Start");
+    Wire.begin();
+    
+    // 2. Inicjalizacja pamięci i konfiguracji
+    EEPROM.begin(1024);
+    initStorage();
+    loadConfiguration();
+    
+    // 3. Inicjalizacja sprzętu
+    // Piny
+    pinMode(BUTTON_PIN, INPUT_PULLUP);
+    pinMode(BUZZER_PIN, OUTPUT);
+    digitalWrite(BUZZER_PIN, LOW);
+    
+    // RTC
+    if (!rtc.begin()) {
+        Serial.println("Nie znaleziono RTC!");
+    }
+    
+    // PCF8574
+    if (!pcf8574.begin()) {
+        Serial.println("Nie znaleziono PCF8574!");
+    }
+    
+    // LED
+    strip.begin();
+    strip.show();
+    initializeLEDs();
+    
+    // 4. Inicjalizacja sieci i komunikacji
+    setupWiFi();
+    checkMQTTConfig();
+    initHomeAssistant();
+    setupMQTT();
+    
+    // 5. Konfiguracja serwera Web
+    setupWebServer();
+    server.on("/save", HTTP_POST, handleSave);
+    server.on("/restart", HTTP_POST, []() {
+        server.send(200, "text/plain", "Restarting...");
+        delay(1000);
+        ESP.restart();
+    });
+    server.on("/factory-reset", HTTP_POST, []() {
+        server.send(200, "text/plain", "Resetting to factory defaults...");
+        resetFactorySettings();
+        delay(1000);
+        ESP.restart();
+    });
+    
+    // 6. Synchronizacja czasu
+    syncRTC();
+    
+    // 7. Efekty startowe
+    playWelcomeEffect();
+    welcomeMelody();
+    
+    Serial.println("Inicjalizacja zakończona");
 }
 
 void loop() {
+    unsigned long currentMillis = millis();
+    
+    // Obsługa podstawowych usług systemowych
+    server.handleClient();          // Obsługa żądań HTTP
+    webSocket.loop();              // Obsługa WebSocket
+    mqtt.loop();                   // Obsługa MQTT
+    
+    // Obsługa interfejsu użytkownika
+    handleButton();                // Obsługa przycisku
+    updateLEDs();                  // Aktualizacja diod LED
+    
+    // Aktualizacja statusu przez WebSocket (co 1 sekundę)
+    static unsigned long lastWebSocketUpdate = 0;
+    if (currentMillis - lastWebSocketUpdate >= WEBSOCKET_UPDATE_INTERVAL) {
+        String status = getSystemStatusJSON();
+        webSocket.broadcastTXT(status);
+        lastWebSocketUpdate = currentMillis;
+    }
+    
+    // Logowanie stanu systemu (co LOG_INTERVAL lub przy pierwszym uruchomieniu)
+    if (firstRun || (currentMillis - lastLogTime >= LOG_INTERVAL)) {
+        printLogHeader();
+        
+        bool hasActivePumps = false;
+        for (uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
+            if (pumps[i].enabled) {
+                printPumpStatus(i);
+                hasActivePumps = true;
+            }
+        }
+        
+        if (!hasActivePumps) {
+            Serial.println(F("Brak skonfigurowanych pomp"));
+        }
+        
+        Serial.println(F("========================================\n"));
+        lastLogTime = currentMillis;
+        firstRun = false;
+    }
+
+    // Sprawdzanie stanu systemu (co SYSTEM_CHECK_INTERVAL)
+    static unsigned long lastSystemCheck = 0;
+    if (currentMillis - lastSystemCheck >= SYSTEM_CHECK_INTERVAL) {
+        // Sprawdzanie połączenia WiFi
+        if (WiFi.status() != WL_CONNECTED) {
+            Serial.println(F("Utracono połączenie WiFi - próba ponownego połączenia..."));
+            WiFi.reconnect();
+        }
+        
+        // Aktualizacja integracji z Home Assistant
+        updateHomeAssistant();
+        
+        // Kontrola pracy pomp
+        handlePumps();
+        
+        lastSystemCheck = currentMillis;
+    }
+    
+    // Synchronizacja zegara RTC (co RTC_SYNC_INTERVAL lub przy starcie)
+    static unsigned long lastRtcSync = 0;
+    if (currentMillis - lastRtcSync >= RTC_SYNC_INTERVAL || lastRtcSync == 0) {
+        syncRTC();
+        lastRtcSync = currentMillis;
+    }
+    
+    // Obsługa przepełnienia licznika millis()
+    if (currentMillis < lastLogTime || 
+        currentMillis < lastSystemCheck || 
+        currentMillis < lastRtcSync || 
+        currentMillis < lastWebSocketUpdate) {
+        // Reset wszystkich liczników czasowych
+        lastLogTime = currentMillis;
+        lastSystemCheck = currentMillis;
+        lastRtcSync = currentMillis;
+        lastWebSocketUpdate = currentMillis;
+    }
+    
+    yield();    // Obsługa zadań systemowych ESP8266
 }
