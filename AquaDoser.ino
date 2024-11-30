@@ -39,8 +39,9 @@
 #define NETWORK_CONFIG_ADDR 100
 #define PUMP_CONFIG_ADDR 200
 
-#define LED_PIN D1         // Pin danych dla WS2812
-#define BUTTON_PIN D2      // Pin przycisku serwisowego
+#define LED_PIN 12         // Pin danych dla WS2812
+#define BUTTON_PIN 14      // Pin przycisku serwisowego
+#define BUZZER 13
 #define DEBOUNCE_TIME 50   // Czas debounce w ms
 
 // --- Kolory LED
@@ -73,6 +74,10 @@ struct PumpConfig {
 
 // Struktura konfiguracji sieciowej
 struct NetworkConfig {
+    char hostname[32];
+    char ssid[32];
+    char password[64];
+    bool dhcp;
     char mqtt_server[64];
     int mqtt_port;
     char mqtt_user[32];
@@ -93,9 +98,12 @@ struct SystemConfig {
 // --- Stałe offsety w EEPROM
 const uint32_t EEPROM_VALIDATION_MARK = 0x12345678;
 const int MQTT_CONFIG_ADDR = sizeof(uint32_t);
-const int PUMPS_CONFIG_ADDR = MQTT_CONFIG_ADDR + sizeof(MQTTConfig);
-const int NETWORK_CONFIG_ADDR = PUMPS_CONFIG_ADDR + (sizeof(PumpConfig) * NUMBER_OF_PUMPS);
-const int SYSTEM_STATUS_ADDR = NETWORK_CONFIG_ADDR + sizeof(NetworkConfig);
+// Adresy EEPROM - usuń stare definicje #define i zastąp je:
+const int VERSION_ADDR = 0;
+const int PUMPS_CONFIG_ADDR = sizeof(uint32_t);
+const int MQTT_CONFIG_ADDR = PUMPS_CONFIG_ADDR + (sizeof(PumpConfig) * NUMBER_OF_PUMPS);
+const int NETWORK_CONFIG_ADDR = MQTT_CONFIG_ADDR + sizeof(MQTTConfig);
+const int SYSTEM_CONFIG_ADDR = NETWORK_CONFIG_ADDR + sizeof(NetworkConfig);
 
 // Zmienne globalne do obsługi czasu
 DateTime now;
@@ -110,6 +118,7 @@ PumpState pumpStates[NUMBER_OF_PUMPS];
 NetworkConfig networkConfig;
 SystemConfig systemConfig;
 SystemStatus systemStatus;
+MQTTConfig mqttConfig;
 
 // Home Assistant
 WiFiClient client;
@@ -126,46 +135,19 @@ const unsigned long MQTT_RECONNECT_DELAY = 5000;   // Opóźnienie ponownego po�
 
 // --- Funkcje obsługi EEPROM
 void initStorage() {
-    EEPROM.begin(2048); // Dostosuj rozmiar według potrzeb
-    
-    // Sprawdź znacznik walidacji
-    uint32_t validationMark;
-    EEPROM.get(0, validationMark);
-    
-    if (validationMark != EEPROM_VALIDATION_MARK) {
-        // Pierwsze uruchomienie - inicjalizuj EEPROM
-        EEPROM.put(0, EEPROM_VALIDATION_MARK);
-        
-        // Ustaw wartości domyślne
-        strlcpy(mqttConfig.broker, "mqtt.example.com", sizeof(mqttConfig.broker));
-        mqttConfig.port = 1883;
-        mqttConfig.username[0] = '\0';
-        mqttConfig.password[0] = '\0';
-        
-        for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-            snprintf(pumps[i].name, sizeof(pumps[i].name), "Pompa %d", i + 1);
-            pumps[i].enabled = false;
-            pumps[i].calibration = 1.0;
-            pumps[i].dose = 0.0;
-            pumps[i].schedule_hour = 12;
-            pumps[i].minute = 0;
-            pumps[i].schedule_days = 0;
-            pumps[i].lastDosing = 0;
-            pumps[i].isRunning = false;
-        }
-        
-        strlcpy(networkConfig.hostname, "AquaDoser", sizeof(networkConfig.hostname));
-        networkConfig.ssid[0] = '\0';
-        networkConfig.password[0] = '\0';
-        networkConfig.dhcp = true;
-        
-        systemStatus.mqtt_connected = false;
-        systemStatus.wifi_connected = false;
-        systemStatus.uptime = 0;
-        
-        // Zapisz wszystkie konfiguracje
-        saveConfig();
-    }
+    // Inicjalizacja MQTT
+    strlcpy(mqttConfig.broker, "mqtt.example.com", sizeof(mqttConfig.broker));
+    mqttConfig.port = 1883;
+    mqttConfig.username[0] = '\0';
+    mqttConfig.password[0] = '\0';
+
+    // Inicjalizacja sieci
+    strlcpy(networkConfig.hostname, "AquaDoser", sizeof(networkConfig.hostname));
+    strlcpy(networkConfig.ssid, "", sizeof(networkConfig.ssid));
+    strlcpy(networkConfig.password, "", sizeof(networkConfig.password));
+    networkConfig.dhcp = true;
+
+    saveConfiguration();
 }
 
 // --- Konfiguracja MQTT dla Home Assistant
@@ -282,10 +264,11 @@ struct SystemInfo {
 
 SystemInfo sysInfo = {0, false};
 
+// Struktura stanu pompy
 struct PumpState {
     bool isActive;
     unsigned long lastDoseTime;
-    HANumber* sensor;
+    HASensor* sensor;  // Zmiana z HANumber na HASensor
     
     PumpState() : isActive(false), lastDoseTime(0), sensor(nullptr) {}
 };
@@ -538,7 +521,6 @@ void saveMQTTConfig() {
     EEPROM.commit();
 }
 
-// Wczytywanie konfiguracji MQTT
 void loadMQTTConfig() {
     EEPROM.get(MQTT_CONFIG_ADDR, mqttConfig);
 }
@@ -1100,30 +1082,12 @@ void onServiceModeSwitch(bool state, HASwitch* sender) {
 
 // --- Inicjalizacja encji Home Assistant
 void initHomeAssistant() {
-    // Konfiguracja urządzenia
-    haDevice.setName("AquaDoser");
-    haDevice.setSoftwareVersion("1.0.0");
-    haDevice.setManufacturer("DIY");
-    haDevice.setModel("AquaDoser 8-channel");
-    
-    // Przełącznik trybu serwisowego
-    serviceModeSwitch = new HASwitch("service_mode");
-    serviceModeSwitch->setName("Tryb serwisowy");
-    serviceModeSwitch->onCommand(onServiceModeSwitch);
-    serviceModeSwitch->setIcon("mdi:wrench");
-    
-    // Tworzenie encji dla każdej pompy
-    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-        char entityId[32];
-        snprintf(entityId, sizeof(entityId), "pump_%d_state", i + 1);
-        
-        char name[32];
-        snprintf(name, sizeof(name), "Pump %d State", i + 1);
-        
-        // Tworzymy nowy sensor i przypisujemy go do pola sensor w PumpState
-        pumpStates[i].sensor = new HASensor(entityId);
-        pumpStates[i].sensor->setName(name);
-        pumpStates[i].sensor->setIcon("mdi:state-machine");
+    char entityId[32];
+    for (uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
+        snprintf(entityId, sizeof(entityId), "pump_%d", i);
+        pumpStates[i].sensor = new HASensor(entityId); // Teraz używamy HASensor
+        pumpStates[i].sensor->setName(pumps[i].name);
+        pumpStates[i].sensor->setIcon("mdi:water-pump");
     }
 }
 
