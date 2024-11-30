@@ -1,3 +1,10 @@
+/*
+    AquaDoser (dozowanie nawozów)
+    HydroSense (dolewanie wody)
+    LumaSense (oświetlenie)
+    ClimaCore (CO2 i temperatura)
+*/
+
 // --- Biblioteki
 
 // Podstawowe biblioteki systemowe
