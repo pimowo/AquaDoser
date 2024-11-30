@@ -28,19 +28,106 @@
 #include <NTPClient.h>  // Klient NTP - synchronizacja czasu z serwerami czasu
 #include <WiFiUDP.h>    // Obsługa protokołu UDP - wymagana dla NTP
 
-// 1. Najpierw stałe
+// Deklaracja wyprzedzająca
+class HASensor;
+
+// Stałe
 const int NUMBER_OF_PUMPS = 8;
 const int BUZZER_PIN = 13;    // GPIO 13
-const int LED_PIN = 12;    // GPIO 12
+const int WS2812_PIN = 12;    // GPIO 12
 const int BUTTON_PIN = 14;    // GPIO 14
 const int SDA_PIN = 4;        // GPIO 4
 const int SCL_PIN = 5;        // GPIO 5
+const int PCF8574_ADDRESS = 0x20;
 
-// Definicje adresów EEPROM jako stałe
+#define MQTT_SERVER_LENGTH 40
+#define MQTT_USER_LENGTH 20
+#define MQTT_PASSWORD_LENGTH 20
+
+// Definicje struktur
+struct PumpState {
+    bool isActive;
+    unsigned long lastDoseTime;
+    HASensor* sensor;
+    
+    PumpState() : isActive(false), lastDoseTime(0), sensor(nullptr) {}
+};
+
+struct MQTTConfig {
+    char broker[64];
+    int port;
+    char username[32];
+    char password[32];
+    bool enabled;
+};
+
+struct PumpConfig {
+    char name[20];
+    bool enabled;
+    float calibration;
+    float dose;
+    uint8_t schedule_hour;
+    uint8_t minute;
+    uint8_t schedule_days;
+    time_t lastDosing;
+    bool isRunning;
+};
+
+struct NetworkConfig {
+    char hostname[32];
+    char ssid[32];
+    char password[32];
+    char mqtt_server[64];
+    int mqtt_port;
+    char mqtt_user[32];
+    char mqtt_password[32];
+};
+
+struct SystemConfig {
+    bool soundEnabled;
+};
+
+struct SystemStatus {
+    bool mqtt_connected;
+    bool wifi_connected;
+    unsigned long uptime;
+};
+
+struct SystemInfo {
+    unsigned long uptime;
+    bool mqtt_connected;
+};
+
+struct LEDState {
+    uint32_t currentColor;
+    uint32_t targetColor;
+    unsigned long lastUpdateTime;
+    bool immediate;
+};
+
+// Adresy EEPROM
 const int PUMPS_CONFIG_ADDR = 0;
 const int MQTT_CONFIG_ADDR = PUMPS_CONFIG_ADDR + (sizeof(PumpConfig) * NUMBER_OF_PUMPS);
 const int NETWORK_CONFIG_ADDR = MQTT_CONFIG_ADDR + sizeof(MQTTConfig);
 const int SYSTEM_CONFIG_ADDR = NETWORK_CONFIG_ADDR + sizeof(NetworkConfig);
+const int SYSTEM_STATUS_ADDR = SYSTEM_CONFIG_ADDR + sizeof(SystemConfig);
+
+// Zmienne globalne
+PumpConfig pumps[NUMBER_OF_PUMPS];
+PumpState pumpStates[NUMBER_OF_PUMPS];
+NetworkConfig networkConfig;
+SystemConfig systemConfig;
+SystemStatus systemStatus;
+MQTTConfig mqttConfig;
+LEDState ledStates[NUMBER_OF_PUMPS];
+
+// Deklaracje obiektów
+ESP8266WebServer server(80);
+WebSocketsServer webSocket(81);
+WiFiClient client;
+HADevice device;
+HAMqtt mqtt(client, device);
+PCF8574 pcf(PCF8574_ADDRESS);
 
 // --- Stałe dla systemu plików
 const char* CONFIG_DIR = "/config";
@@ -58,17 +145,6 @@ bool hasActivePumps = false;
 // --- Zmienne dla obsługi przycisku
 unsigned long lastButtonPress = 0;
 bool lastButtonState = HIGH;
-
-// Forward declaration dla HASensor
-class HASensor;
-
-// Globalne zmienne
-PumpConfig pumps[NUMBER_OF_PUMPS];
-PumpState pumpStates[NUMBER_OF_PUMPS];
-NetworkConfig networkConfig;
-SystemConfig systemConfig;
-SystemStatus systemStatus;
-MQTTConfig mqttConfig;
 
 // Home Assistant
 WiFiClient client;
@@ -98,11 +174,6 @@ unsigned long lastLogTime = 0;
 bool firstRun = true;
 const char* dayNames[] = {"Pn", "Wt", "Śr", "Cz", "Pt", "Sb", "Nd"};
 
-// Definicje MQTT
-#define MQTT_SERVER_LENGTH 40
-#define MQTT_USER_LENGTH 20
-#define MQTT_PASSWORD_LENGTH 20
-
 #define DEBOUNCE_TIME 50   // Czas debounce w ms
 
 // --- Kolory LED
@@ -115,8 +186,6 @@ const char* dayNames[] = {"Pn", "Wt", "Śr", "Cz", "Pt", "Sb", "Nd"};
 RTC_DS3231 rtc;
 PCF8574 pcf(PCF8574_ADDRESS);
 
-ESP8266WebServer server(80);
-WebSocketsServer webSocket = WebSocketsServer(81);
 ESP8266HTTPUpdateServer httpUpdateServer;
 
 WiFiUDP ntpUDP;
@@ -170,68 +239,7 @@ HASwitch* pumpSwitches[NUMBER_OF_PUMPS];
 HANumber* pumpCalibrations[NUMBER_OF_PUMPS];
 HASwitch* serviceModeSwitch;
 
-// --- Struktury danych
-// Struktura konfiguracji MQTT
-struct MQTTConfig {
-    char broker[64];
-    int port;
-    char username[32];
-    char password[32];
-    bool enabled;
-};
-
-// Struktura konfiguracji pompy
-struct PumpConfig {
-    char name[20];
-    bool enabled;
-    float calibration;
-    float dose;
-    uint8_t schedule_hour;
-    uint8_t minute;
-    uint8_t schedule_days;
-    time_t lastDosing;
-    bool isRunning;
-};
-
-// Struktura konfiguracji sieciowej
-struct NetworkConfig {
-    char hostname[32];
-    char ssid[32];
-    char password[32];
-    char mqtt_server[64];
-    int mqtt_port;
-    char mqtt_user[32];
-    char mqtt_password[32];
-    bool dhcp;
-};
-
-// Struktura statusu systemu
-struct SystemStatus {
-    bool mqtt_connected;
-    bool wifi_connected;
-    unsigned long uptime;
-};
-
-struct SystemConfig {
-    bool soundEnabled;
-};
-
-// Struktura dla informacji systemowych
-struct SystemInfo {
-    unsigned long uptime;
-    bool mqtt_connected;
-};
-
 SystemInfo sysInfo = {0, false};
-
-// Struktura stanu pompy
-struct PumpState {
-    bool isActive;
-    unsigned long lastDoseTime;
-    HASensor* sensor;  // Zmienione z HANumber* na HASensor*
-    
-    PumpState() : isActive(false), lastDoseTime(0), sensor(nullptr) {}
-};
 
 // Deklaracje funkcji - będą zaimplementowane w kolejnych częściach
 void loadConfiguration();
@@ -827,15 +835,6 @@ void stopAllPumps() {
         }
     }
 }
-
-// --- Struktury i zmienne dla LED
-struct LEDState {
-    uint32_t targetColor;     // Docelowy kolor
-    uint32_t currentColor;    // Aktualny kolor
-    uint8_t brightness;       // Aktualna jasność
-    bool pulsing;            // Czy LED pulsuje
-    int pulseDirection;      // Kierunek pulsowania (1 lub -1)
-};
 
 // --- Inicjalizacja LED
 void initializeLEDs() {
