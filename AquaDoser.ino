@@ -35,13 +35,13 @@
 
 // --- Definicje pinów i stałych
 #define NUMBER_OF_PUMPS 8  // Liczba podłączonych pomp
-// #define MQTT_CONFIG_ADDR 0
-// #define NETWORK_CONFIG_ADDR 100
-// #define PUMP_CONFIG_ADDR 200
 
-#define LED_PIN 12         // Pin danych dla WS2812
-#define BUTTON_PIN 14      // Pin przycisku serwisowego
-#define BUZZER_PIN 13
+const int BUZZER_PIN = 13;    // GPIO 13
+const int LED_PIN = 12;    // GPIO 12
+const int BUTTON_PIN = 14;    // GPIO 14
+const int SDA_PIN = 4;        // GPIO 4
+const int SCL_PIN = 5;        // GPIO 5
+
 #define DEBOUNCE_TIME 50   // Czas debounce w ms
 
 // --- Kolory LED
@@ -1179,14 +1179,24 @@ DateTime calculateNextDosing(uint8_t pumpIndex) {
 }
 
 void handleConfigSave() {
-    String mqtt_broker = server.arg("mqtt_broker");
-    String mqtt_port = server.arg("mqtt_port");
-    
-    if (mqtt_broker != networkConfig.mqtt_server ||
-        mqtt_port.toInt() != networkConfig.mqtt_port) {
-        strlcpy(networkConfig.mqtt_server, mqtt_broker.c_str(), sizeof(networkConfig.mqtt_server));
-        networkConfig.mqtt_port = mqtt_port.toInt();
-        saveConfiguration();
+    if (server.hasArg("mqtt_broker") && server.hasArg("mqtt_port")) {
+        String mqtt_broker = server.arg("mqtt_broker");
+        String mqtt_port = server.arg("mqtt_port");
+        String mqtt_user = server.arg("mqtt_user");
+        String mqtt_password = server.arg("mqtt_password");
+        
+        // Zapisz do konfiguracji MQTT
+        strlcpy(mqttConfig.broker, mqtt_broker.c_str(), sizeof(mqttConfig.broker));
+        mqttConfig.port = mqtt_port.toInt();
+        strlcpy(mqttConfig.username, mqtt_user.c_str(), sizeof(mqttConfig.username));
+        strlcpy(mqttConfig.password, mqtt_password.c_str(), sizeof(mqttConfig.password));
+        
+        // Zapisz do EEPROM
+        saveMQTTConfig();
+        
+        server.send(200, "text/plain", "Konfiguracja zapisana");
+    } else {
+        server.send(400, "text/plain", "Brak wymaganych parametrów");
     }
 }
 
