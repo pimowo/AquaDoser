@@ -275,15 +275,42 @@ bool initializePumps() {
     return true;
 }
 
-// Inicjalizacja Home Assistant
-void initHomeAssistant() {
-    char entityId[32];
+// Konfiguracja MQTT z Home Assistant
+void setupHA() {
+    // Konfiguracja urządzenia dla Home Assistant
+    device.setName("AquaDoser");  
+    device.setModel("AD ESP8266");  
+    device.setManufacturer("PMW");  
+    device.setSoftwareVersion("1.0.0");
+
+    // Konfiguracja pomp w HA
     for (uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
-        snprintf(entityId, sizeof(entityId), "pump_%d", i);
-        pumpStates[i].sensor = new HASensor(entityId); // Teraz używamy HASensor
-        pumpStates[i].sensor->setName(pumps[i].name);
-        pumpStates[i].sensor->setIcon("mdi:water-pump");
+        // Switch do włączania/wyłączania pompy
+        pumpSwitches[i] = new HASwitch(String("pump_" + String(i + 1)).c_str());
+        pumpSwitches[i]->setName(String("Pompa " + String(i + 1)).c_str());
+        pumpSwitches[i]->setIcon("mdi:water-pump");
+        pumpSwitches[i]->onCommand(onPumpSwitch);
+
+        // Sensor stanu pompy
+        pumpStates[i].sensor = new HASensor(String("pump_state_" + String(i + 1)).c_str());
+        pumpStates[i].sensor->setName(String("Stan pompy " + String(i + 1)).c_str());
+        pumpStates[i].sensor->setIcon("mdi:water-pump-off");
+
+        // Kalibracja pompy
+        pumpCalibrations[i] = new HANumber(String("pump_calibration_" + String(i + 1)).c_str());
+        pumpCalibrations[i]->setName(String("Kalibracja pompy " + String(i + 1)).c_str());
+        pumpCalibrations[i]->setIcon("mdi:ruler");
+        pumpCalibrations[i]->setMin(0);
+        pumpCalibrations[i]->setMax(100);
+        pumpCalibrations[i]->setStep(0.1);
+        pumpCalibrations[i]->onCommand(onPumpCalibration);
     }
+
+    // Przełącznik trybu serwisowego
+    serviceModeSwitch = new HASwitch("service_mode");
+    serviceModeSwitch->setName("Tryb serwisowy");
+    serviceModeSwitch->setIcon("mdi:wrench");
+    serviceModeSwitch->onCommand(onServiceModeSwitch);
 }
 
 // --- Funkcje konfiguracyjne
@@ -645,6 +672,21 @@ void setupWiFi() {
     Serial.println(WiFi.localIP());
 }
 
+// Pierwsza aktualizacja stanu w Home Assistant
+void firstUpdateHA() {
+    // Aktualizacja stanu wszystkich pomp
+    for (uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
+        pumpSwitches[i]->setState(pumps[i].enabled);
+        pumpCalibrations[i]->setValue(pumps[i].calibration);
+        if (pumpStates[i].sensor) {
+            pumpStates[i].sensor->setValue(pumpStates[i].isActive ? "active" : "inactive");
+        }
+    }
+    
+    // Aktualizacja trybu serwisowego
+    serviceModeSwitch->setState(false);
+}
+
 // Konfiguracja MQTT
 void setupMQTT() {
     if (strlen(networkConfig.mqtt_server) == 0) {
@@ -664,20 +706,15 @@ void setupMQTT() {
         Serial.println("MQTT Disconnected");
     });
 
-    // Konfiguracja urządzenia HA
-    byte mac[6];
-    WiFi.macAddress(mac);
-    device.setUniqueId(mac, sizeof(mac));
-    device.setName("AquaDoser");
-    device.setSoftwareVersion("1.0.0");
+    setupHA();  // Konfiguracja Home Assistant
     
     // Konfiguracja MQTT
-    mqtt.begin(
-        networkConfig.mqtt_server,
-        networkConfig.mqtt_port,
-        networkConfig.mqtt_user,
-        networkConfig.mqtt_password
-    );
+    if (mqtt.begin(networkConfig.mqtt_server,
+                   networkConfig.mqtt_port,
+                   networkConfig.mqtt_user,
+                   networkConfig.mqtt_password)) {
+        firstUpdateHA();  // Pierwsza aktualizacja stanu
+    }
 }
 
 // Konfiguracja serwera WWW
@@ -1490,45 +1527,129 @@ String getStyles() {
     return styles;
 }
 
-// --- Funkcje callback Home Assistant
-void onPumpSwitch(bool state, HASwitch* sender) {
-    // Znajdź indeks pompy na podstawie wskaźnika do przełącznika
-    int pumpIndex = -1;
-    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-        if (sender == pumpSwitches[i]) {
-            pumpIndex = i;
-            break;
-        }
+String getCalibrationSection() {
+    String html = F("<div class='section'>");
+    html += F("<h2>Kalibracja pomp</h2>");
+    
+    for (uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
+        html += F("<div class='pump-calibration'>");
+        html += F("<h3>Pompa ") + String(i + 1) + F("</h3>");
+        html += F("<p>Aktualna kalibracja: <span id='calibration") + String(i) + F("'>") + 
+                String(pumps[i].calibration, 2) + F("</span> ml/min</p>");
+        
+        // Krok 1: Uruchomienie pompy
+        html += F("<div class='step-1'>");
+        html += F("<h4>Krok 1: Uruchom pompę</h4>");
+        html += F("<div class='input-group'>");
+        html += F("<label>Czas pracy (sek):");
+        html += F("<input type='number' step='1' id='time") + String(i) + F("' value='15'></label>");
+        html += F("<button onclick='startCalibration(") + String(i) + F(")'>Uruchom pompę</button>");
+        html += F("</div></div>");
+        
+        // Krok 2: Wprowadzenie zmierzonej objętości
+        html += F("<div class='step-2' id='step2_") + String(i) + F("' style='display:none;'>");
+        html += F("<h4>Krok 2: Wprowadź zmierzoną objętość</h4>");
+        html += F("<div class='input-group'>");
+        html += F("<label>Zmierzona objętość (ml):");
+        html += F("<input type='number' step='0.1' id='volume") + String(i) + F("'></label>");
+        html += F("<button onclick='saveCalibration(") + String(i) + F(")'>Zapisz kalibrację</button>");
+        html += F("</div></div>");
+        
+        html += F("<div id='result") + String(i) + F("' class='result'></div>");
+        html += F("</div>");
     }
     
-    if (pumpIndex >= 0) {
+    html += F("</div>");
+    
+    // Style CSS
+    html += F("<style>");
+    html += F(".pump-calibration { margin-bottom: 20px; padding: 15px; border: 1px solid #ccc; border-radius: 5px; }");
+    html += F(".input-group { margin-bottom: 10px; }");
+    html += F(".input-group label { display: block; margin-bottom: 5px; }");
+    html += F(".result { margin-top: 10px; font-weight: bold; color: #008000; }");
+    html += F(".step-1, .step-2 { margin-top: 15px; }");
+    html += F("button { padding: 5px 10px; margin-top: 5px; }");
+    html += F("</style>");
+    
+    // JavaScript
+    html += F("<script>");
+    html += F("function startCalibration(pumpIndex) {");
+    html += F("    const time = document.getElementById('time' + pumpIndex).value;");
+    html += F("    if (!time || time <= 0) {");
+    html += F("        alert('Wprowadź prawidłowy czas');");
+    html += F("        return;");
+    html += F("    }");
+    html += F("    if (!confirm('Rozpocząć kalibrację pompy ' + (pumpIndex + 1) + '?\\nPompa będzie pracować przez ' + time + ' sekund.')) {");
+    html += F("        return;");
+    html += F("    }");
+    html += F("    document.getElementById('result' + pumpIndex).innerHTML = 'Uruchamiam pompę...';");
+    html += F("    fetch('/calibrate?start=1&pump=' + pumpIndex + '&time=' + time)");
+    html += F("        .then(response => {");
+    html += F("            if (response.ok) {");
+    html += F("                document.getElementById('step2_' + pumpIndex).style.display = 'block';");
+    html += F("                document.getElementById('result' + pumpIndex).innerHTML = ");
+    html += F("                    'Pompa zatrzymana. Zmierz objętość płynu i wprowadź wynik.';");
+    html += F("            } else {");
+    html += F("                throw new Error('Błąd kalibracji');");
+    html += F("            }");
+    html += F("        })");
+    html += F("        .catch(error => {");
+    html += F("            document.getElementById('result' + pumpIndex).innerHTML = ");
+    html += F("                'Błąd: ' + error.message;");
+    html += F("        });");
+    html += F("}");
+    
+    html += F("function saveCalibration(pumpIndex) {");
+    html += F("    const volume = document.getElementById('volume' + pumpIndex).value;");
+    html += F("    if (!volume || volume <= 0) {");
+    html += F("        alert('Wprowadź zmierzoną objętość');");
+    html += F("        return;");
+    html += F("    }");
+    html += F("    fetch('/calibrate?save=1&pump=' + pumpIndex + '&volume=' + volume)");
+    html += F("        .then(response => response.json())");
+    html += F("        .then(data => {");
+    html += F("            document.getElementById('calibration' + pumpIndex).textContent = data.flowRate;");
+    html += F("            document.getElementById('result' + pumpIndex).innerHTML = ");
+    html += F("                'Kalibracja zapisana! Nowy przepływ: ' + data.flowRate + ' ml/min';");
+    html += F("            document.getElementById('step2_' + pumpIndex).style.display = 'none';");
+    html += F("        })");
+    html += F("        .catch(error => {");
+    html += F("            document.getElementById('result' + pumpIndex).innerHTML = ");
+    html += F("                'Błąd zapisu kalibracji: ' + error;");
+    html += F("        });");
+    html += F("}");
+    html += F("</script>");
+    
+    return html;
+}
+
+// --- Funkcje callback Home Assistant
+void onPumpSwitch(bool state, HASwitch* sender) {
+    String name = sender->getName();
+    int pumpIndex = name.substring(name.length() - 1).toInt() - 1;
+    
+    if (pumpIndex >= 0 && pumpIndex < NUMBER_OF_PUMPS) {
         pumps[pumpIndex].enabled = state;
+        savePumpsConfig();
         updatePumpLED(pumpIndex);
-        saveConfiguration();
     }
 }
 
 void onPumpCalibration(HANumeric value, HANumber* sender) {
-    // Znajdź indeks pompy na podstawie wskaźnika do kalibracji
-    int pumpIndex = -1;
-    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-        if (sender == pumpCalibrations[i]) {
-            pumpIndex = i;
-            break;
-        }
-    }
+    String name = sender->getName();
+    int pumpIndex = name.substring(name.length() - 1).toInt() - 1;
     
-    if (pumpIndex >= 0) {
+    if (pumpIndex >= 0 && pumpIndex < NUMBER_OF_PUMPS) {
         pumps[pumpIndex].calibration = value.toFloat();
-        saveConfiguration();
+        savePumpsConfig();
     }
 }
 
 void onServiceModeSwitch(bool state, HASwitch* sender) {
-    serviceMode = state;
-    if (serviceMode) {
+    if (state) {
         stopAllPumps();
     }
+    toggleServiceMode();
     updateServiceModeLEDs();
 }
 
