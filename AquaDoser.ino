@@ -28,19 +28,80 @@
 #include <NTPClient.h>  // Klient NTP - synchronizacja czasu z serwerami czasu
 #include <WiFiUDP.h>    // Obsługa protokołu UDP - wymagana dla NTP
 
-// Definicje MQTT
-#define MQTT_SERVER_LENGTH 40
-#define MQTT_USER_LENGTH 20
-#define MQTT_PASSWORD_LENGTH 20
-
-// --- Definicje pinów i stałych
-#define NUMBER_OF_PUMPS 8  // Liczba podłączonych pomp
-
+// 1. Najpierw stałe
+const int NUMBER_OF_PUMPS = 8;
 const int BUZZER_PIN = 13;    // GPIO 13
 const int LED_PIN = 12;    // GPIO 12
 const int BUTTON_PIN = 14;    // GPIO 14
 const int SDA_PIN = 4;        // GPIO 4
 const int SCL_PIN = 5;        // GPIO 5
+
+// Definicje adresów EEPROM jako stałe
+const int PUMPS_CONFIG_ADDR = 0;
+const int MQTT_CONFIG_ADDR = PUMPS_CONFIG_ADDR + (sizeof(PumpConfig) * NUMBER_OF_PUMPS);
+const int NETWORK_CONFIG_ADDR = MQTT_CONFIG_ADDR + sizeof(MQTTConfig);
+const int SYSTEM_CONFIG_ADDR = NETWORK_CONFIG_ADDR + sizeof(NetworkConfig);
+
+// --- Stałe dla systemu plików
+const char* CONFIG_DIR = "/config";
+const char* PUMPS_FILE = "/config/pumps.json";
+const char* NETWORK_FILE = "/config/network.json";
+const char* SYSTEM_FILE = "/config/system.json";
+
+// Zmienne globalne do obsługi czasu
+DateTime now;
+uint8_t currentDay;
+uint8_t currentHour;
+uint8_t currentMinute;
+bool hasActivePumps = false;
+
+// --- Zmienne dla obsługi przycisku
+unsigned long lastButtonPress = 0;
+bool lastButtonState = HIGH;
+
+// Forward declaration dla HASensor
+class HASensor;
+
+// Globalne zmienne
+PumpConfig pumps[NUMBER_OF_PUMPS];
+PumpState pumpStates[NUMBER_OF_PUMPS];
+NetworkConfig networkConfig;
+SystemConfig systemConfig;
+SystemStatus systemStatus;
+MQTTConfig mqttConfig;
+
+// Home Assistant
+WiFiClient client;
+HADevice device("aquadoser");
+HAMqtt mqtt(client, device);
+
+// --- Interwały czasowe
+const unsigned long MQTT_LOOP_INTERVAL = 100;      // Obsługa MQTT co 100ms
+const unsigned long OTA_CHECK_INTERVAL = 1000;     // Sprawdzanie OTA co 1s
+const unsigned long PUMP_CHECK_INTERVAL = 1000;    // Sprawdzanie pomp co 1s
+const unsigned long BUTTON_DEBOUNCE_TIME = 50;     // Czas debounce przycisku (ms)
+const unsigned long WIFI_RECONNECT_DELAY = 5000;   // Opóźnienie ponownego połączenia WiFi
+const unsigned long MQTT_RECONNECT_DELAY = 5000;   // Opóźnienie ponownego połączenia MQTT
+
+// Zmienne MQTT
+bool mqttEnabled = false;
+char mqttServer[MQTT_SERVER_LENGTH] = "";
+uint16_t mqttPort = 1883;
+char mqttUser[MQTT_USER_LENGTH] = "";
+char mqttPassword[MQTT_PASSWORD_LENGTH] = "";
+bool shouldRestart = false;
+unsigned long restartTime = 0;
+unsigned long lastStatusPrint = 0;
+const unsigned long STATUS_PRINT_INTERVAL = 60000; // Wyświetlaj status co 1 minutę
+const unsigned long LOG_INTERVAL = 60000; // 60 sekund między wyświetlaniem statusu
+unsigned long lastLogTime = 0;
+bool firstRun = true;
+const char* dayNames[] = {"Pn", "Wt", "Śr", "Cz", "Pt", "Sb", "Nd"};
+
+// Definicje MQTT
+#define MQTT_SERVER_LENGTH 40
+#define MQTT_USER_LENGTH 20
+#define MQTT_PASSWORD_LENGTH 20
 
 #define DEBOUNCE_TIME 50   // Czas debounce w ms
 
@@ -49,6 +110,65 @@ const int SCL_PIN = 5;        // GPIO 5
 #define COLOR_ON 0x00FF00       // Zielony (pompa włączona)
 #define COLOR_WORKING 0x0000FF  // Niebieski (pompa pracuje)
 #define COLOR_SERVICE 0xFFFF00  // Żółty (tryb serwisowy)
+
+#define DEBUG_SERIAL(x)
+RTC_DS3231 rtc;
+PCF8574 pcf(PCF8574_ADDRESS);
+
+ESP8266WebServer server(80);
+WebSocketsServer webSocket = WebSocketsServer(81);
+ESP8266HTTPUpdateServer httpUpdateServer;
+
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, "pool.ntp.org");
+
+// Tablica stanów pomp - tylko jedna deklaracja!
+PumpState pumpStates[NUMBER_OF_PUMPS];
+
+// --- Globalne obiekty
+WiFiClient wifiClient;
+HADevice haDevice("AquaDoser");
+//HAMqtt mqtt(wifiClient, haDevice);
+//RTC_DS3231 rtc;
+PCF8574 pcf8574(0x20);
+Adafruit_NeoPixel strip(NUMBER_OF_PUMPS, LED_PIN, NEO_GRB + NEO_KHZ800);
+
+// --- Globalne zmienne stanu
+bool serviceMode = false;
+bool pumpRunning[NUMBER_OF_PUMPS] = {false};
+unsigned long doseStartTime[NUMBER_OF_PUMPS] = {0};
+
+// Dodaj stałe dla timeoutów i interwałów jak w HydroSense
+const unsigned long MQTT_RETRY_INTERVAL = 10000;   
+const unsigned long MILLIS_OVERFLOW_THRESHOLD = 4294967295U - 60000; // ~49.7 dni
+
+unsigned long lastMQTTLoop = 0;
+unsigned long lastMeasurement = 0;
+unsigned long lastOTACheck = 0;
+
+// --- Stałe czasowe
+#define DOSE_CHECK_INTERVAL 1000    // Sprawdzanie dozowania co 1 sekundę
+#define MIN_DOSE_TIME 100          // Minimalny czas dozowania (ms)
+#define MAX_DOSE_TIME 60000        // Maksymalny czas dozowania (60 sekund)
+
+// --- Zmienne dla obsługi pomp
+unsigned long lastDoseCheck = 0;
+bool pumpInitialized = false;
+// --- Stałe dla animacji LED
+#define LED_UPDATE_INTERVAL 50    // Aktualizacja LED co 50ms
+#define FADE_STEPS 20            // Liczba kroków w animacji fade
+#define PULSE_MIN_BRIGHTNESS 20  // Minimalna jasność podczas pulsowania (0-255)
+#define PULSE_MAX_BRIGHTNESS 255 // Maksymalna jasność podczas pulsowania
+LEDState ledStates[NUMBER_OF_PUMPS];
+unsigned long lastLedUpdate = 0;
+// --- Stałe dla Home Assistant
+#define HA_UPDATE_INTERVAL 30000  // Aktualizacja HA co 30 sekund
+unsigned long lastHaUpdate = 0;
+
+// --- Deklaracje encji Home Assistant
+HASwitch* pumpSwitches[NUMBER_OF_PUMPS];
+HANumber* pumpCalibrations[NUMBER_OF_PUMPS];
+HASwitch* serviceModeSwitch;
 
 // --- Struktury danych
 // Struktura konfiguracji MQTT
@@ -96,57 +216,33 @@ struct SystemConfig {
     bool soundEnabled;
 };
 
-// Definicje adresów EEPROM jako stałe
-const int PUMPS_CONFIG_ADDR = 0;
-const int MQTT_CONFIG_ADDR = PUMPS_CONFIG_ADDR + (sizeof(PumpConfig) * NUMBER_OF_PUMPS);
-const int NETWORK_CONFIG_ADDR = MQTT_CONFIG_ADDR + sizeof(MQTTConfig);
-const int SYSTEM_CONFIG_ADDR = NETWORK_CONFIG_ADDR + sizeof(NetworkConfig);
-const int SYSTEM_STATUS_ADDR = SYSTEM_CONFIG_ADDR + sizeof(SystemConfig);
+// Struktura dla informacji systemowych
+struct SystemInfo {
+    unsigned long uptime;
+    bool mqtt_connected;
+};
 
-// Zmienne globalne do obsługi czasu
-DateTime now;
-uint8_t currentDay;
-uint8_t currentHour;
-uint8_t currentMinute;
-bool hasActivePumps = false;
+SystemInfo sysInfo = {0, false};
 
-// Globalne zmienne
-PumpConfig pumps[NUMBER_OF_PUMPS];
-PumpState pumpStates[NUMBER_OF_PUMPS];
-NetworkConfig networkConfig;
-SystemConfig systemConfig;
-SystemStatus systemStatus;
-MQTTConfig mqttConfig;
+// Struktura stanu pompy
+struct PumpState {
+    bool isActive;
+    unsigned long lastDoseTime;
+    HASensor* sensor;  // Zmienione z HANumber* na HASensor*
+    
+    PumpState() : isActive(false), lastDoseTime(0), sensor(nullptr) {}
+};
 
-// Home Assistant
-WiFiClient client;
-HADevice device("aquadoser");
-HAMqtt mqtt(client, device);
-
-// --- Interwały czasowe
-const unsigned long MQTT_LOOP_INTERVAL = 100;      // Obsługa MQTT co 100ms
-const unsigned long OTA_CHECK_INTERVAL = 1000;     // Sprawdzanie OTA co 1s
-const unsigned long PUMP_CHECK_INTERVAL = 1000;    // Sprawdzanie pomp co 1s
-const unsigned long BUTTON_DEBOUNCE_TIME = 50;     // Czas debounce przycisku (ms)
-const unsigned long WIFI_RECONNECT_DELAY = 5000;   // Opóźnienie ponownego połączenia WiFi
-const unsigned long MQTT_RECONNECT_DELAY = 5000;   // Opóźnienie ponownego połączenia MQTT
-
-// Zmienne MQTT
-bool mqttEnabled = false;
-char mqttServer[MQTT_SERVER_LENGTH] = "";
-uint16_t mqttPort = 1883;
-char mqttUser[MQTT_USER_LENGTH] = "";
-char mqttPassword[MQTT_PASSWORD_LENGTH] = "";
-bool shouldRestart = false;
-unsigned long restartTime = 0;
-unsigned long lastStatusPrint = 0;
-const unsigned long STATUS_PRINT_INTERVAL = 60000; // Wyświetlaj status co 1 minutę
-const unsigned long LOG_INTERVAL = 60000; // 60 sekund między wyświetlaniem statusu
-unsigned long lastLogTime = 0;
-bool firstRun = true;
-const char* dayNames[] = {"Pn", "Wt", "Śr", "Cz", "Pt", "Sb", "Nd"};
-
-// Deklaracje funkcji
+// Deklaracje funkcji - będą zaimplementowane w kolejnych częściach
+void loadConfiguration();
+void saveConfiguration();
+void setupWiFi();
+void setupMQTT();
+void setupRTC();
+void setupLED();
+void handlePumps();
+void updateHomeAssistant();
+bool validateConfigValues();
 void saveConfiguration();
 void loadConfiguration();
 
@@ -189,133 +285,6 @@ void setupMQTT() {
         networkConfig.mqtt_password
     );
 }
-
-#define TEST_MODE  // Zakomentuj tę linię w wersji produkcyjnej
-
-#ifdef TEST_MODE
-  #define DEBUG_SERIAL(x) Serial.println(x)
-  // Emulacja RTC
-  class RTCEmulator {
-    private:
-      unsigned long startupTime;
-      DateTime currentTime;
-      
-    public:
-      RTCEmulator() {
-        startupTime = millis();
-        currentTime = DateTime(2024, 1, 1, 0, 0, 0);
-      }
-      
-      bool begin() {
-        return true;
-      }
-      
-      void adjust(const DateTime& dt) {
-        currentTime = dt;
-        startupTime = millis();
-      }
-      
-      DateTime now() {
-        // Symuluj czas od ostatniego ustawienia
-        unsigned long currentMillis = millis();
-        unsigned long secondsElapsed = (currentMillis - startupTime) / 1000;
-        
-        uint32_t totalSeconds = currentTime.unixtime() + secondsElapsed;
-        return DateTime(totalSeconds);
-      }
-  };
-
-  // Emulacja PCF8574
-  class PCF8574Emulator {
-    public:
-      uint8_t currentState;
-      PCF8574Emulator() : currentState(0xFF) {}
-      bool begin() { return true; }
-      uint8_t read8() { return currentState; }
-      void write(uint8_t pin, uint8_t value) {
-        if (value == HIGH) {
-          currentState |= (1 << pin);
-        } else {
-          currentState &= ~(1 << pin);
-        }
-        DEBUG_SERIAL("PCF Pin " + String(pin) + " set to " + String(value));
-      }
-  };
-
-  RTCEmulator rtc;
-  PCF8574Emulator pcf;
-
-#else
-  #define DEBUG_SERIAL(x)
-  RTC_DS3231 rtc;
-  PCF8574 pcf(PCF8574_ADDRESS);
-#endif
-
-ESP8266WebServer server(80);
-WebSocketsServer webSocket = WebSocketsServer(81);
-ESP8266HTTPUpdateServer httpUpdateServer;
-
-WiFiUDP ntpUDP;
-NTPClient timeClient(ntpUDP, "pool.ntp.org");
-
-// Struktura dla informacji systemowych
-struct SystemInfo {
-    unsigned long uptime;
-    bool mqtt_connected;
-};
-
-SystemInfo sysInfo = {0, false};
-
-// Struktura stanu pompy
-struct PumpState {
-    bool isActive;
-    unsigned long lastDoseTime;
-    HASensor* sensor;  // Zmienione z HANumber* na HASensor*
-    
-    PumpState() : isActive(false), lastDoseTime(0), sensor(nullptr) {}
-};
-
-// Tablica stanów pomp - tylko jedna deklaracja!
-PumpState pumpStates[NUMBER_OF_PUMPS];
-
-// --- Globalne obiekty
-WiFiClient wifiClient;
-HADevice haDevice("AquaDoser");
-//HAMqtt mqtt(wifiClient, haDevice);
-//RTC_DS3231 rtc;
-PCF8574 pcf8574(0x20);
-Adafruit_NeoPixel strip(NUMBER_OF_PUMPS, LED_PIN, NEO_GRB + NEO_KHZ800);
-
-// --- Globalne zmienne stanu
-bool serviceMode = false;
-bool pumpRunning[NUMBER_OF_PUMPS] = {false};
-unsigned long doseStartTime[NUMBER_OF_PUMPS] = {0};
-
-// Dodaj stałe dla timeoutów i interwałów jak w HydroSense
-const unsigned long MQTT_RETRY_INTERVAL = 10000;   
-const unsigned long MILLIS_OVERFLOW_THRESHOLD = 4294967295U - 60000; // ~49.7 dni
-
-unsigned long lastMQTTLoop = 0;
-unsigned long lastMeasurement = 0;
-unsigned long lastOTACheck = 0;
-
-// --- Deklaracje encji Home Assistant
-HASwitch* pumpSwitches[NUMBER_OF_PUMPS];
-HANumber* pumpCalibrations[NUMBER_OF_PUMPS];
-HASwitch* serviceModeSwitch;
-
-// Deklaracje funkcji - będą zaimplementowane w kolejnych częściach
-void loadConfiguration();
-void saveConfiguration();
-void setupWiFi();
-void setupMQTT();
-void setupRTC();
-void setupLED();
-void handlePumps();
-void updateHomeAssistant();
-bool validateConfigValues();
-
-const int BUZZER_PIN = D2;
 
 bool hasIntervalPassed(unsigned long current, unsigned long previous, unsigned long interval) {
     return (current - previous >= interval);
@@ -403,12 +372,6 @@ void printPumpStatus(int pumpIndex) {
 
     Serial.println(status);
 }
-
-// --- Stałe dla systemu plików
-const char* CONFIG_DIR = "/config";
-const char* PUMPS_FILE = "/config/pumps.json";
-const char* NETWORK_FILE = "/config/network.json";
-const char* SYSTEM_FILE = "/config/system.json";
 
 // Dodaj obsługę dźwięku jak w HydroSense
 void playShortWarningSound() {
@@ -713,15 +676,6 @@ void saveConfiguration() {
     }
 }
 
-// --- Stałe czasowe
-#define DOSE_CHECK_INTERVAL 1000    // Sprawdzanie dozowania co 1 sekundę
-#define MIN_DOSE_TIME 100          // Minimalny czas dozowania (ms)
-#define MAX_DOSE_TIME 60000        // Maksymalny czas dozowania (60 sekund)
-
-// --- Zmienne dla obsługi pomp
-unsigned long lastDoseCheck = 0;
-bool pumpInitialized = false;
-
 // --- Inicjalizacja PCF8574 i pomp
 bool initializePumps() {
     if (!pcf8574.begin()) {
@@ -874,12 +828,6 @@ void stopAllPumps() {
     }
 }
 
-// --- Stałe dla animacji LED
-#define LED_UPDATE_INTERVAL 50    // Aktualizacja LED co 50ms
-#define FADE_STEPS 20            // Liczba kroków w animacji fade
-#define PULSE_MIN_BRIGHTNESS 20  // Minimalna jasność podczas pulsowania (0-255)
-#define PULSE_MAX_BRIGHTNESS 255 // Maksymalna jasność podczas pulsowania
-
 // --- Struktury i zmienne dla LED
 struct LEDState {
     uint32_t targetColor;     // Docelowy kolor
@@ -888,9 +836,6 @@ struct LEDState {
     bool pulsing;            // Czy LED pulsuje
     int pulseDirection;      // Kierunek pulsowania (1 lub -1)
 };
-
-LEDState ledStates[NUMBER_OF_PUMPS];
-unsigned long lastLedUpdate = 0;
 
 // --- Inicjalizacja LED
 void initializeLEDs() {
@@ -1026,10 +971,6 @@ void updateAllPumpLEDs() {
         updatePumpLED(i);
     }
 }
-
-// --- Stałe dla Home Assistant
-#define HA_UPDATE_INTERVAL 30000  // Aktualizacja HA co 30 sekund
-unsigned long lastHaUpdate = 0;
 
 // --- Funkcje callback dla Home Assistant
 void onPumpSwitch(bool state, HASwitch* sender) {
@@ -1209,10 +1150,6 @@ bool validateMQTTConfig() {
     }
     return true;
 }
-
-// --- Zmienne dla obsługi przycisku
-unsigned long lastButtonPress = 0;
-bool lastButtonState = HIGH;
 
 // --- Obsługa przycisku
 void handleButton() {
@@ -1708,18 +1645,6 @@ void setup() {
     Serial.println("Inicjalizacja zakończona");
 }
 
-#ifdef TEST_MODE
-void simulateButton(uint8_t buttonPin) {
-    // Symuluj naciśnięcie przycisku
-    pcf.currentState &= ~(1 << buttonPin);
-    handleButton();
-    delay(50);
-    // Symuluj zwolnienie przycisku
-    pcf.currentState |= (1 << buttonPin);
-    handleButton();
-}
-#endif
-
 // --- Loop
 void loop() {
     server.handleClient();
@@ -1751,45 +1676,7 @@ void loop() {
     static unsigned long lastCheck = 0;
     if (currentMillis - lastCheck > 5000) {
         lastCheck = currentMillis;
-        //Serial.printf("Free Heap: %d bytes\n", ESP.getFreeHeap());
-        //Serial.printf("WiFi Status: %d\n", WiFi.status());
     }
-
-    #ifdef TEST_MODE
-        if (Serial.available()) {
-            String cmd = Serial.readStringUntil('\n');
-            cmd.trim();
-            
-            if (cmd.startsWith("button")) {
-                int buttonNum = cmd.substring(6).toInt();
-                if (buttonNum >= 1 && buttonNum <= 4) {
-                    DEBUG_SERIAL("Symulacja przycisku " + String(buttonNum));
-                    simulateButton(buttonNum - 1);
-                }
-            }
-            else if (cmd == "status") {
-                DateTime now = rtc.now();
-                DEBUG_SERIAL("Czas: " + String(now.hour()) + ":" + String(now.minute()) + ":" + String(now.second()));
-                DEBUG_SERIAL("Dzień: " + String(now.dayOfTheWeek()));
-                
-                for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-                    DEBUG_SERIAL("Pompa " + String(i + 1) + ":");
-                    DEBUG_SERIAL("  Enabled: " + String(pumps[i].enabled));          // Zmieniono z config.pumps na pumps
-                    DEBUG_SERIAL("  Calibration: " + String(pumps[i].calibration));  // Zmieniono z config.pumps na pumps
-                    DEBUG_SERIAL("  Dose: " + String(pumps[i].dose));               // Zmieniono z config.pumps na pumps
-                    DEBUG_SERIAL("  Schedule Hour: " + String(pumps[i].schedule_hour)); // Zmieniono z config.pumps na pumps
-                    DEBUG_SERIAL("  Schedule Days: " + String(pumps[i].schedule_days, BIN)); // Zmieniono z config.pumps na pumps
-                    DEBUG_SERIAL("  Is Running: " + String(pumps[i].isRunning));     // Zmieniono z config.pumps na pumps
-                }
-            }
-            else if (cmd == "help") {
-                DEBUG_SERIAL("Dostępne komendy:");
-                DEBUG_SERIAL("button X - symuluj naciśnięcie przycisku X (1-4)");
-                DEBUG_SERIAL("status - pokaż aktualny stan urządzenia");
-                DEBUG_SERIAL("help - pokaż tę pomoc");
-            }
-        }
-    #endif
 
     // Obsługa połączenia WiFi
     if (WiFi.status() != WL_CONNECTED) {
