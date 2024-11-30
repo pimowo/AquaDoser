@@ -35,6 +35,10 @@
 
 // --- Definicje pinów i stałych
 #define NUMBER_OF_PUMPS 8  // Liczba podłączonych pomp
+#define MQTT_CONFIG_ADDR 0
+#define NETWORK_CONFIG_ADDR 100
+#define PUMP_CONFIG_ADDR 200
+
 #define LED_PIN D1         // Pin danych dla WS2812
 #define BUTTON_PIN D2      // Pin przycisku serwisowego
 #define DEBOUNCE_TIME 50   // Czas debounce w ms
@@ -69,16 +73,6 @@ struct PumpConfig {
 
 // Struktura konfiguracji sieciowej
 struct NetworkConfig {
-    char hostname[32];
-    char ssid[32];
-    char password[64];
-    bool dhcp;
-    IPAddress ip;
-    IPAddress gateway;
-    IPAddress subnet;
-    IPAddress dns1;
-    IPAddress dns2;
-    // Konfiguracja MQTT
     char mqtt_server[64];
     int mqtt_port;
     char mqtt_user[32];
@@ -90,6 +84,10 @@ struct SystemStatus {
     bool mqtt_connected;
     bool wifi_connected;
     unsigned long uptime;
+};
+
+struct SystemConfig {
+    bool soundEnabled;
 };
 
 // --- Stałe offsety w EEPROM
@@ -106,14 +104,16 @@ uint8_t currentHour;
 uint8_t currentMinute;
 bool hasActivePumps = false;
 
-// --- Zmienne globalne
-MQTTConfig mqttConfig;
+// Globalne zmienne
 PumpConfig pumps[NUMBER_OF_PUMPS];
 PumpState pumpStates[NUMBER_OF_PUMPS];
 NetworkConfig networkConfig;
+SystemConfig systemConfig;
 SystemStatus systemStatus;
+
+// Home Assistant
 WiFiClient client;
-HADevice device("aquadoser"); // Dodaj unikalny identyfikator
+HADevice device("aquadoser");
 HAMqtt mqtt(client, device);
 
 // --- Interwały czasowe
@@ -282,13 +282,10 @@ struct SystemInfo {
 
 SystemInfo sysInfo = {0, false};
 
-// Globalna instancja konfiguracji
-Config config;
-
 struct PumpState {
     bool isActive;
     unsigned long lastDoseTime;
-    HASensor* sensor;      // Dodajemy wskaźnik do HASensor
+    HANumber* sensor;
     
     PumpState() : isActive(false), lastDoseTime(0), sensor(nullptr) {}
 };
@@ -373,9 +370,9 @@ void printPumpStatus(uint8_t pumpIndex) {
         DateTime nextDose = calculateNextDosing(pumpIndex);
         Serial.print(formatDateTime(nextDose));
         
-        if (config.pumps[pumpIndex].lastDosing > 0) {
+        if (pumps[pumpIndex].lastDosing > 0) {
             Serial.print(F(" (Last: "));
-            time_t lastDose = config.pumps[pumpIndex].lastDosing;
+            time_t lastDose = pumps[pumpIndex].lastDosing;
             DateTime lastDoseTime(lastDose);
             Serial.print(formatDateTime(lastDoseTime));
             Serial.print(F(")"));
@@ -385,7 +382,7 @@ void printPumpStatus(uint8_t pumpIndex) {
 }
 
 void printPumpStatus(int pumpIndex) {
-    if (!config.pumps[pumpIndex].enabled) {
+    if (!pumps[pumpIndex].enabled) {
         Serial.print(F("Pump "));
         Serial.print(pumpIndex + 1);
         Serial.println(F(": Disabled"));
@@ -394,11 +391,11 @@ void printPumpStatus(int pumpIndex) {
 
     String status = "Pump " + String(pumpIndex + 1) + ": ";
     
-    if (config.pumps[pumpIndex].isRunning) {
+    if (pumps[pumpIndex].isRunning) {
         status += "Active (Dosing)";
     } else {
-        if (config.pumps[pumpIndex].lastDosing > 0) {
-            time_t lastDose = config.pumps[pumpIndex].lastDosing;
+        if (pumps[pumpIndex].lastDosing > 0) {
+            time_t lastDose = pumps[pumpIndex].lastDosing;
             struct tm* timeinfo = localtime(&lastDose);
             char timeStr[20];
             strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M", timeinfo);
@@ -408,7 +405,7 @@ void printPumpStatus(int pumpIndex) {
         }
 
         // Dodaj informację o następnym zaplanowanym dozowaniu
-        if (config.pumps[pumpIndex].enabled) {
+        if (pumps[pumpIndex].enabled) {
             DateTime nextDose = calculateNextDosing(pumpIndex);
             status += " - Next: ";
             status += String(nextDose.year()) + "-";
@@ -1162,7 +1159,7 @@ void updateHomeAssistant() {
             }
             
             // Dodaj informację o następnym zaplanowanym dozowaniu
-            if (!pumpStates[i].isActive && config.pumps[i].enabled) {
+            if (!pumpStates[i].isActive && pumps[i].enabled) {
                 char nextRunBuffer[64];
                 DateTime nextRun = calculateNextDosing(i);
                 snprintf(nextRunBuffer, sizeof(nextRunBuffer), 
