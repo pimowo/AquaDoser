@@ -162,12 +162,6 @@ SystemStatus systemStatus;
 MQTTConfig mqttConfig;
 LEDState ledStates[NUMBER_OF_PUMPS];
 
-// // --- Stałe dla systemu plików
-// const char* CONFIG_DIR = "/config";
-// const char* PUMPS_FILE = "/config/pumps.json";
-// const char* NETWORK_FILE = "/config/network.json";
-// const char* SYSTEM_FILE = "/config/system.json";
-
 // Zmienne globalne do obsługi czasu
 DateTime now;
 uint8_t currentDay;
@@ -276,39 +270,41 @@ void saveConfiguration();
 void loadConfiguration();
 
 // --- Funkcje obsługi EEPROM
+// void initStorage() {   
+//     // Inicjalizacja struktury pomp
+//     for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+//         pumps[i].enabled = false;
+//         pumps[i].calibration = 1.0;
+//         pumps[i].dose = 0.0;
+//         pumps[i].schedule_hour = 0;
+//         pumps[i].schedule_days = 0;
+//         pumps[i].minute = 0;
+//         pumps[i].lastDosing = 0;
+//         pumps[i].isRunning = false;
+//         strncpy(pumps[i].name, ("Pump " + String(i+1)).c_str(), 19);
+//         pumps[i].name[19] = '\0';
+//     }
+    
+//     // Inicjalizacja konfiguracji sieciowej
+//     networkConfig.dhcp = true;
+//     strncpy(networkConfig.hostname, "aquadoser", 31);
+//     networkConfig.hostname[31] = '\0';
+//     networkConfig.mqtt_port = 1883;
+//     networkConfig.mqtt_server[0] = '\0';
+//     networkConfig.mqtt_user[0] = '\0';
+//     networkConfig.mqtt_password[0] = '\0';
+    
+//     // Inicjalizacja statusu systemu
+//     systemStatus.mqtt_connected = false;
+//     systemStatus.wifi_connected = false;
+//     systemStatus.uptime = 0;
+    
+//     // Zapisz domyślną konfigurację
+//     saveConfiguration();
+// }
+
 void initStorage() {
-    EEPROM.begin(1024);
-    
-    // Inicjalizacja struktury pomp
-    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-        pumps[i].enabled = false;
-        pumps[i].calibration = 1.0;
-        pumps[i].dose = 0.0;
-        pumps[i].schedule_hour = 0;
-        pumps[i].schedule_days = 0;
-        pumps[i].minute = 0;
-        pumps[i].lastDosing = 0;
-        pumps[i].isRunning = false;
-        strncpy(pumps[i].name, ("Pump " + String(i+1)).c_str(), 19);
-        pumps[i].name[19] = '\0';
-    }
-    
-    // Inicjalizacja konfiguracji sieciowej
-    networkConfig.dhcp = true;
-    strncpy(networkConfig.hostname, "aquadoser", 31);
-    networkConfig.hostname[31] = '\0';
-    networkConfig.mqtt_port = 1883;
-    networkConfig.mqtt_server[0] = '\0';
-    networkConfig.mqtt_user[0] = '\0';
-    networkConfig.mqtt_password[0] = '\0';
-    
-    // Inicjalizacja statusu systemu
-    systemStatus.mqtt_connected = false;
-    systemStatus.wifi_connected = false;
-    systemStatus.uptime = 0;
-    
-    // Zapisz domyślną konfigurację
-    saveConfiguration();
+    systemConfig.soundEnabled = true;  // wartość domyślna
 }
 
 // --- Konfiguracja MQTT dla Home Assistant
@@ -587,10 +583,6 @@ void saveMQTTConfig() {
     EEPROM.commit();
 }
 
-void loadMQTTConfig() {
-    EEPROM.get(MQTT_CONFIG_ADDR, mqttConfig);
-}
-
 // --- Ładowanie konfiguracji pomp
 bool loadPumpsConfig() {
     for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
@@ -620,22 +612,15 @@ bool saveNetworkConfig() {
 }
 
 // --- Ogólna funkcja ładowania konfiguracji
-void loadConfiguration() {
-    if (!loadPumpsConfig()) {
-        Serial.println("Używam domyślnych ustawień pomp");
-        // Tutaj możemy zainicjować domyślne wartości dla pomp
-        for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-            pumps[i].enabled = false;
-            pumps[i].calibration = 1.0;
-            pumps[i].dose = 0.0;
-            pumps[i].schedule_days = 0;
-            pumps[i].schedule_hour = 0;
-        }
-    }
-
-    if (!loadNetworkConfig()) {
-        Serial.println("Używam domyślnych ustawień sieciowych");
-        // WiFiManager zajmie się konfiguracją sieci
+void loadConfiguration() {   
+    loadPumpsConfig();  // Wczytaj konfigurację pomp
+    loadMQTTConfig();  // Wczytaj konfigurację MQTT
+    loadNetworkConfig();  // Wczytaj konfigurację sieci    
+    EEPROM.get(SYSTEM_CONFIG_ADDR, systemConfig);  // Wczytaj konfigurację systemu
+    
+    // Sprawdź poprawność danych
+    if (!validateConfigValues()) {        
+        resetFactorySettings();  // Ustaw wartości domyślne jeśli dane są nieprawidłowe
     }
 }
 
@@ -752,11 +737,6 @@ void loadConfig() {
     EEPROM.get(SYSTEM_STATUS_ADDR, systemStatus);
 }
 
-// Funkcja inicjalizująca EEPROM
-void initializeStorage() {
-    EEPROM.begin(1024); // Inicjalizacja z odpowiednim rozmiarem
-}
-
 // Funkcja zapisująca konfigurację
 void saveConfig() {
     EEPROM.put(PUMPS_CONFIG_ADDR, pumps);
@@ -769,11 +749,21 @@ void saveConfig() {
 
 // --- Ogólna funkcja zapisywania konfiguracji
 void saveConfiguration() {
-    if (!savePumpsConfig()) {
-        Serial.println("Błąd zapisu konfiguracji pomp!");
-    }
-    if (!saveNetworkConfig()) {
-        Serial.println("Błąd zapisu konfiguracji sieciowej!");
+    // Zapisz konfigurację pomp
+    savePumpsConfig();
+    
+    // Zapisz konfigurację MQTT
+    saveMQTTConfig();
+    
+    // Zapisz konfigurację sieci
+    saveNetworkConfig();
+    
+    // Zapisz konfigurację systemu
+    EEPROM.put(SYSTEM_CONFIG_ADDR, systemConfig);
+    
+    // Wykonaj commit tylko raz na końcu
+    if (!EEPROM.commit()) {
+        Serial.println("Błąd zapisu konfiguracji do EEPROM");
     }
 }
 
@@ -1879,22 +1869,60 @@ String getConfigPage() {
     return page;
 }
 
+// void resetFactorySettings() {
+//     // Wyczyść EEPROM zapisując wartość inną niż znacznik walidacji
+//     uint32_t invalidMark = 0;
+//     EEPROM.put(0, invalidMark);
+//     EEPROM.commit();
+    
+//     // Załaduj domyślne wartości
+//     loadConfig();
+    
+//     // Zresetuj pozostałe ustawienia
+//     for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+//         pumps[i].lastDosing = 0;
+//         pumps[i].isRunning = false;
+//     }
+    
+//     saveConfig();
+// }
+
 void resetFactorySettings() {
-    // Wyczyść EEPROM zapisując wartość inną niż znacznik walidacji
-    uint32_t invalidMark = 0;
-    EEPROM.put(0, invalidMark);
+    // Wyczyść EEPROM
+    for (int i = 0; i < 1024; i++) {
+        EEPROM.write(i, 0);
+    }
     EEPROM.commit();
     
-    // Załaduj domyślne wartości
-    loadConfig();
-    
-    // Zresetuj pozostałe ustawienia
+    // Ustaw wartości domyślne
     for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        pumps[i].enabled = false;
+        pumps[i].calibration = 1.0;
+        pumps[i].dose = 0.0;
+        pumps[i].schedule_hour = 0;
+        pumps[i].schedule_days = 0;
+        pumps[i].minute = 0;
         pumps[i].lastDosing = 0;
         pumps[i].isRunning = false;
+        snprintf(pumps[i].name, sizeof(pumps[i].name), "Pump %d", i+1);
     }
     
-    saveConfig();
+    // Domyślna konfiguracja MQTT
+    mqttConfig.port = 1883;
+    mqttConfig.enabled = false;
+    mqttConfig.broker[0] = '\0';
+    mqttConfig.username[0] = '\0';
+    mqttConfig.password[0] = '\0';
+    
+    // Domyślna konfiguracja sieci
+    networkConfig.dhcp = true;
+    networkConfig.mqtt_port = 1883;
+    networkConfig.mqtt_server[0] = '\0';
+    networkConfig.mqtt_user[0] = '\0';
+    networkConfig.mqtt_password[0] = '\0';
+    
+    // Zapisz wszystkie konfiguracje
+    saveConfiguration();
 }
 
 // --- Setup
@@ -1902,18 +1930,16 @@ void setup() {
     Serial.begin(115200);
     Serial.println("\nAquaDoser Start");
     Wire.begin();
+
+    // Inicjalizacja EEPROM
+    EEPROM.begin(1024);
+
+    // Wczytaj konfiguracje - uporządkuj kolejność ładowania
+    loadConfiguration();
     
     // Inicjalizacja EEPROM
     initStorage();
     
-    // Wczytaj konfiguracje
-    loadMQTTConfig();
-    loadPumpsConfig();
-    loadNetworkConfig();
-
-    // Wczytaj konfigurację przed inicjalizacją innych komponentów
-    loadConfig();
-
     // Inicjalizacja pinów
     pinMode(BUTTON_PIN, INPUT_PULLUP);
 
@@ -1923,14 +1949,10 @@ void setup() {
     strip.begin();
     strip.show(); // Wyczyść wszystkie LEDy
 
-    loadConfiguration();  // Wczytaj konfigurację z EEPROM
     checkMQTTConfig();   // Sprawdź i wyświetl status konfiguracji MQTT
 
     // Inicjalizacja EEPROM zamiast LittleFS
     initializeStorage();
-    
-    // Wczytaj konfigurację
-    loadConfig();
 
     // Inicjalizacja RTC
     if (!rtc.begin()) {
