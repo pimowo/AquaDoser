@@ -1,85 +1,106 @@
-### README.md po polsku z instrukcją obsługi i ikonkami
+Oczywiście, przygotuję po polsku README.md z ikonami i szczegółową instrukcją obsługi urządzenia na podstawie analizy kodu.
 
-```markdown
-# AquaDoser
+# 🌊 AquaDoser
 
-AquaDoser to system dozowania cieczy przeznaczony do automatyzacji procesu dozowania płynów do akwarium. Projekt oparty jest na mikrokontrolerze Arduino, który steruje pompami, zarządza konfiguracjami i integruje się z Home Assistant, umożliwiając zdalne monitorowanie i kontrolę.
+## 📝 Opis
+AquaDoser to automatyczny system dozowania nawozów i dodatków do akwarium. Urządzenie zostało zaprojektowane do precyzyjnego i regularnego dozowania płynów według ustalonego harmonogramu.
 
-## Funkcje
+## ⚡ Funkcje
+- 🕒 Automatyczne dozowanie według harmonogramu
+- 📱 Sterowanie przez WiFi
+- 🏠 Integracja z Home Assistant
+- 🔄 Synchronizacja czasu przez NTP
+- 🚨 Sygnalizacja dźwiękowa i świetlna (LED)
+- 🛠️ Tryb serwisowy
+- 💾 Zapisywanie ustawień w pamięci EEPROM
 
-- **Sterowanie pompami**: Automatyczne sterowanie wieloma pompami dla precyzyjnego dozowania cieczy.
-- **Integracja z Home Assistant**: Bezproblemowa integracja z Home Assistant przez MQTT do zdalnego monitorowania i kontroli.
-- **Wskaźniki LED**: Wizualne wskaźniki statusu pomp, stanu systemu i błędów.
-- **Interfejs webowy**: Wbudowany serwer WWW do konfiguracji i monitorowania.
-- **Pamięć EEPROM**: Trwałe przechowywanie konfiguracji w pamięci EEPROM.
-- **Zegar czasu rzeczywistego (RTC)**: Dokładne odmierzanie czasu z synchronizacją NTP.
-- **Powiadomienia dźwiękowe**: Dźwiękowe alerty i powiadomienia.
+## 🛠️ Instrukcja obsługi
 
-## Wymagania wstępne
+### Pierwsze uruchomienie
+1. Po włączeniu urządzenia, AquaDoser utworzy punkt dostępowy WiFi
+2. Połącz się z siecią WiFi urządzenia
+3. Skonfiguruj połączenie z Twoją siecią WiFi poprzez panel konfiguracyjny
 
-- Arduino IDE
-- Wymagane biblioteki:
-  - [PCF8574](https://github.com/xreef/PCF8574_library) ![Library](https://img.shields.io/badge/library-PCF8574-blue)
-  - [PubSubClient](https://github.com/knolleary/pubsubclient) ![Library](https://img.shields.io/badge/library-PubSubClient-blue)
-  - [ArduinoJson](https://github.com/bblanchon/ArduinoJson) ![Library](https://img.shields.io/badge/library-ArduinoJson-blue)
-  - [NTPClient](https://github.com/arduino-libraries/NTPClient) ![Library](https://img.shields.io/badge/library-NTPClient-blue)
-  - [ESP8266WiFi](https://github.com/esp8266/Arduino) ![Library](https://img.shields.io/badge/library-ESP8266WiFi-blue)
+### Panel sterowania
+Panel webowy pozwala na:
+- Konfigurację ustawień pomp:
+  - Godziny dozowania
+  - Ilość dozowanego płynu (ml)
+  - Kalibrację wydajności pompy
+- Ustawienia MQTT dla Home Assistant
+- Włączanie/wyłączanie dźwięków
+- Monitoring stanu urządzenia
 
-## Wymagania sprzętowe
+### 💡 Wskaźniki LED
+- 🟢 Zielony - pompa pracuje prawidłowo
+- 🔵 Niebieski - trwa dozowanie
+- 🔴 Czerwony - błąd lub problem z pompą
+- 💫 Pulsowanie - tryb serwisowy
 
-- Mikrokontroler kompatybilny z Arduino (np. ESP8266)
-- Ekspander I/O PCF8574
-- Moduł RTC (np. DS3231)
-- Wskaźniki LED
-- Pompy i czujniki
-- Buzzer do powiadomień dźwiękowych
+### 🔊 Sygnały dźwiękowe
+- Pojedynczy sygnał - potwierdzenie operacji
+- Podwójny sygnał - ostrzeżenie
+- Melodia powitalna - uruchomienie urządzenia
 
-## Instalacja
+### 🛠️ Tryb serwisowy
+1. Aby włączyć tryb serwisowy, przytrzymaj przycisk przez 3 sekundy
+2. W trybie serwisowym możesz:
+   - Ręcznie testować pompy
+   - Kalibrować wydajność pomp
+   - Sprawdzać poprawność działania
+3. Ponowne przytrzymanie przycisku wyłącza tryb serwisowy
 
-1. Sklonuj repozytorium:
-   ```sh
-   git clone https://github.com/pimowo/AquaDoser.git
-   ```
-2. Otwórz `AquaDoser.ino` w Arduino IDE.
-3. Zainstaluj wymagane biblioteki za pomocą Arduino Library Manager.
-4. Skonfiguruj ustawienia WiFi, MQTT i inne w kodzie.
-5. Załaduj kod na swój mikrokontroler.
+### 🏠 Integracja z Home Assistant
+AquaDoser automatycznie integruje się z Home Assistant poprzez MQTT, oferując:
+- Status każdej pompy
+- Możliwość zdalnego sterowania
+- Monitorowanie najbliższego zaplanowanego dozowania
+- Informacje o ostatnim dozowaniu
 
-## Użytkowanie
+### ⚙️ Kalibracja pomp
+1. Włącz tryb serwisowy
+2. Przygotuj menzurkę lub inny pojemnik z miarką
+3. Uruchom pompę na określony czas
+4. Zmierz ilość przepompowanego płynu
+5. Wprowadź wartość kalibracji w panelu konfiguracyjnym
 
-- **Interfejs webowy**: Uzyskaj dostęp do interfejsu webowego poprzez adres IP mikrokontrolera, aby skonfigurować i monitorować system.
-- **Home Assistant**: Skonfiguruj Home Assistant do połączenia z brokerem MQTT i zdalnego sterowania systemem dozowania.
-- **Przycisk**: Użyj fizycznego przycisku do bezpośredniej interakcji z systemem.
-- **Wskaźniki LED**: Obserwuj wskaźniki LED dla statusu systemu i aktywności pompy.
+### 🚨 Rozwiązywanie problemów
+- Brak połączenia z WiFi:
+  - Sprawdź ustawienia sieci
+  - Zresetuj urządzenie do ustawień fabrycznych
+- Pompa nie dozuje:
+  - Sprawdź czy rurki nie są zapowietrzone
+  - Skontroluj ustawienia harmonogramu
+  - Sprawdź kalibrację pompy
+- Nieprawidłowy czas dozowania:
+  - Sprawdź połączenie z serwerem NTP
+  - Zweryfikuj strefę czasową w ustawieniach
 
-### Instrukcja Obsługi
+### ⚠️ Ważne uwagi
+- Regularnie sprawdzaj szczelność połączeń
+- Kontroluj poziom płynów w zbiornikach
+- Wykonuj okresową kalibrację pomp
+- Nie odłączaj zasilania podczas aktualizacji ustawień
 
-1. **Podłączenie sprzętu**:
-   - Podłącz mikrokontroler do ekspandera I/O PCF8574, modułu RTC, wskaźników LED, pomp i czujników zgodnie z dokumentacją sprzętu.
-   - Podłącz buzzer do odpowiedniego pinu mikrokontrolera.
+## 🔄 Aktualizacje
+System posiada możliwość aktualizacji oprogramowania przez interfejs webowy. Aby zaktualizować:
+1. Przejdź do zakładki aktualizacji
+2. Wybierz plik z nowym oprogramowaniem
+3. Potwierdź aktualizację
+4. Poczekaj na restart urządzenia
 
-2. **Konfiguracja**:
-   - Otwórz `AquaDoser.ino` w Arduino IDE i skonfiguruj ustawienia WiFi, MQTT oraz inne odpowiednie parametry.
-   - Załaduj kod na mikrokontroler.
+## 📝 Dane techniczne
+- Zasilanie: 12V DC
+- Liczba pomp: 8
+- Interfejs: WiFi
+- Wyświetlacz: LED RGB
+- Pamięć konfiguracji: EEPROM
+- Zegar: RTC z podtrzymaniem bateryjnym
 
-3. **Uruchomienie**:
-   - Podłącz mikrokontroler do zasilania.
-   - Uzyskaj dostęp do interfejsu webowego poprzez adres IP mikrokontrolera.
-   - Skonfiguruj Home Assistant do połączenia z brokerem MQTT.
-
-4. **Codzienne użytkowanie**:
-   - Monitoruj system poprzez interfejs webowy lub Home Assistant.
-   - Używaj przycisku do ręcznego sterowania dozowaniem.
-   - Obserwuj wskaźniki LED dla statusu systemu i aktywności pomp.
-
-## Wkład
-
-Chętnie przyjmujemy wkład! Prosimy o otwieranie problemów lub przesyłanie pull requestów dotyczących wszelkich usprawnień lub poprawek błędów.
-
-## Licencja
-
-Ten projekt jest licencjonowany na warunkach licencji MIT. Zobacz plik [LICENSE](LICENSE) po więcej szczegółów.
-
-```
-
-Możesz dostosować i rozszerzyć ten README.md, aby lepiej pasował do wymagań Twojego projektu.
+## 🔧 Reset do ustawień fabrycznych
+W przypadku problemów możesz przywrócić ustawienia fabryczne:
+1. Wyłącz urządzenie
+2. Przytrzymaj przycisk
+3. Włącz urządzenie trzymając przycisk
+4. Poczekaj na sygnał dźwiękowy
+5. Puść przycisk
