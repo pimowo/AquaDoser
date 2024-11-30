@@ -35,13 +35,13 @@
 
 // --- Definicje pinów i stałych
 #define NUMBER_OF_PUMPS 8  // Liczba podłączonych pomp
-#define MQTT_CONFIG_ADDR 0
-#define NETWORK_CONFIG_ADDR 100
-#define PUMP_CONFIG_ADDR 200
+// #define MQTT_CONFIG_ADDR 0
+// #define NETWORK_CONFIG_ADDR 100
+// #define PUMP_CONFIG_ADDR 200
 
 #define LED_PIN 12         // Pin danych dla WS2812
 #define BUTTON_PIN 14      // Pin przycisku serwisowego
-#define BUZZER 13
+#define BUZZER_PIN 13
 #define DEBOUNCE_TIME 50   // Czas debounce w ms
 
 // --- Kolory LED
@@ -57,6 +57,7 @@ struct MQTTConfig {
     int port;
     char username[32];
     char password[32];
+    bool enabled;
 };
 
 // Struktura konfiguracji pompy
@@ -74,10 +75,6 @@ struct PumpConfig {
 
 // Struktura konfiguracji sieciowej
 struct NetworkConfig {
-    char hostname[32];
-    char ssid[32];
-    char password[64];
-    bool dhcp;
     char mqtt_server[64];
     int mqtt_port;
     char mqtt_user[32];
@@ -95,15 +92,12 @@ struct SystemConfig {
     bool soundEnabled;
 };
 
-// --- Stałe offsety w EEPROM
-const uint32_t EEPROM_VALIDATION_MARK = 0x12345678;
-const int MQTT_CONFIG_ADDR = sizeof(uint32_t);
-// Adresy EEPROM - usuń stare definicje #define i zastąp je:
-const int VERSION_ADDR = 0;
-const int PUMPS_CONFIG_ADDR = sizeof(uint32_t);
+// Definicje adresów EEPROM jako stałe
+const int PUMPS_CONFIG_ADDR = 0;
 const int MQTT_CONFIG_ADDR = PUMPS_CONFIG_ADDR + (sizeof(PumpConfig) * NUMBER_OF_PUMPS);
 const int NETWORK_CONFIG_ADDR = MQTT_CONFIG_ADDR + sizeof(MQTTConfig);
 const int SYSTEM_CONFIG_ADDR = NETWORK_CONFIG_ADDR + sizeof(NetworkConfig);
+const int SYSTEM_STATUS_ADDR = SYSTEM_CONFIG_ADDR + sizeof(SystemConfig);
 
 // Zmienne globalne do obsługi czasu
 DateTime now;
@@ -132,6 +126,25 @@ const unsigned long PUMP_CHECK_INTERVAL = 1000;    // Sprawdzanie pomp co 1s
 const unsigned long BUTTON_DEBOUNCE_TIME = 50;     // Czas debounce przycisku (ms)
 const unsigned long WIFI_RECONNECT_DELAY = 5000;   // Opóźnienie ponownego połączenia WiFi
 const unsigned long MQTT_RECONNECT_DELAY = 5000;   // Opóźnienie ponownego połączenia MQTT
+
+// Zmienne MQTT
+bool mqttEnabled = false;
+char mqttServer[MQTT_SERVER_LENGTH] = "";
+uint16_t mqttPort = 1883;
+char mqttUser[MQTT_USER_LENGTH] = "";
+char mqttPassword[MQTT_PASSWORD_LENGTH] = "";
+bool shouldRestart = false;
+unsigned long restartTime = 0;
+unsigned long lastStatusPrint = 0;
+const unsigned long STATUS_PRINT_INTERVAL = 60000; // Wyświetlaj status co 1 minutę
+const unsigned long LOG_INTERVAL = 60000; // 60 sekund między wyświetlaniem statusu
+unsigned long lastLogTime = 0;
+bool firstRun = true;
+const char* dayNames[] = {"Pn", "Wt", "Śr", "Cz", "Pt", "Sb", "Nd"};
+
+// Deklaracje funkcji
+void saveConfiguration();
+void loadConfiguration();
 
 // --- Funkcje obsługi EEPROM
 void initStorage() {
@@ -172,21 +185,6 @@ void setupMQTT() {
         networkConfig.mqtt_password
     );
 }
-
-// Zmienne MQTT
-bool mqttEnabled = false;
-char mqttServer[MQTT_SERVER_LENGTH] = "";
-uint16_t mqttPort = 1883;
-char mqttUser[MQTT_USER_LENGTH] = "";
-char mqttPassword[MQTT_PASSWORD_LENGTH] = "";
-bool shouldRestart = false;
-unsigned long restartTime = 0;
-unsigned long lastStatusPrint = 0;
-const unsigned long STATUS_PRINT_INTERVAL = 60000; // Wyświetlaj status co 1 minutę
-const unsigned long LOG_INTERVAL = 60000; // 60 sekund między wyświetlaniem statusu
-unsigned long lastLogTime = 0;
-bool firstRun = true;
-const char* dayNames[] = {"Pn", "Wt", "Śr", "Cz", "Pt", "Sb", "Nd"};
 
 #define TEST_MODE  // Zakomentuj tę linię w wersji produkcyjnej
 
@@ -268,7 +266,7 @@ SystemInfo sysInfo = {0, false};
 struct PumpState {
     bool isActive;
     unsigned long lastDoseTime;
-    HASensor* sensor;  // Zmiana z HANumber na HASensor
+    HANumber* sensor;
     
     PumpState() : isActive(false), lastDoseTime(0), sensor(nullptr) {}
 };
@@ -679,14 +677,10 @@ void handleSave() {
 }
 
 void loadConfig() {
-    // Wczytaj wszystkie konfiguracje z EEPROM
+    EEPROM.get(PUMPS_CONFIG_ADDR, pumps);
     EEPROM.get(MQTT_CONFIG_ADDR, mqttConfig);
-    
-    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-        EEPROM.get(PUMPS_CONFIG_ADDR + (i * sizeof(PumpConfig)), pumps[i]);
-    }
-    
     EEPROM.get(NETWORK_CONFIG_ADDR, networkConfig);
+    EEPROM.get(SYSTEM_CONFIG_ADDR, systemConfig);
     EEPROM.get(SYSTEM_STATUS_ADDR, systemStatus);
 }
 
@@ -697,16 +691,11 @@ void initializeStorage() {
 
 // Funkcja zapisująca konfigurację
 void saveConfig() {
-    // Zapisz wszystkie konfiguracje do EEPROM
+    EEPROM.put(PUMPS_CONFIG_ADDR, pumps);
     EEPROM.put(MQTT_CONFIG_ADDR, mqttConfig);
-    
-    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-        EEPROM.put(PUMPS_CONFIG_ADDR + (i * sizeof(PumpConfig)), pumps[i]);
-    }
-    
     EEPROM.put(NETWORK_CONFIG_ADDR, networkConfig);
+    EEPROM.put(SYSTEM_CONFIG_ADDR, systemConfig);
     EEPROM.put(SYSTEM_STATUS_ADDR, systemStatus);
-    
     EEPROM.commit();
 }
 
@@ -1186,43 +1175,15 @@ DateTime calculateNextDosing(uint8_t pumpIndex) {
 }
 
 void handleConfigSave() {
-    String page = "";
-    bool needRestart = false;
-
-    if (server.hasArg("mqtt_broker")) {
-        // Zapisz dane MQTT
-        String mqtt_broker = server.arg("mqtt_broker");
-        String mqtt_port = server.arg("mqtt_port");
-        String mqtt_user = server.arg("mqtt_user");
-        String mqtt_password = server.arg("mqtt_password");
-        
-        // Sprawdź, czy dane się zmieniły
-        if (mqtt_broker != networkConfig.mqtt_server || 
-            mqtt_port.toInt() != config.mqtt.port ||
-            mqtt_user != config.mqtt.username ||
-            mqtt_password != config.mqtt.password) {
-                
-            // Kopiuj dane do konfiguracji
-            strlcpy(config.mqtt.broker, mqtt_broker.c_str(), sizeof(config.mqtt.broker));
-            config.mqtt.port = mqtt_port.toInt();
-            strlcpy(config.mqtt.username, mqtt_user.c_str(), sizeof(config.mqtt.username));
-            strlcpy(config.mqtt.password, mqtt_password.c_str(), sizeof(config.mqtt.password));
-            
-            needRestart = true;
-        }
-        
-        // Zapisz konfigurację do EEPROM
-        saveConfiguration();
-        
-        page = "Configuration saved.";
-        if (needRestart) {
-            page += " Device will restart in 3 seconds...";
-            shouldRestart = true;
-            restartTime = millis() + 3000;
-        }
-    }
+    String mqtt_broker = server.arg("mqtt_broker");
+    String mqtt_port = server.arg("mqtt_port");
     
-    server.send(200, "text/html", page);
+    if (mqtt_broker != networkConfig.mqtt_server ||
+        mqtt_port.toInt() != networkConfig.mqtt_port) {
+        strlcpy(networkConfig.mqtt_server, mqtt_broker.c_str(), sizeof(networkConfig.mqtt_server));
+        networkConfig.mqtt_port = mqtt_port.toInt();
+        saveConfiguration();
+    }
 }
 
 bool validateMQTTConfig() {
@@ -1308,18 +1269,10 @@ void setupWebServer() {
 }
 
 void checkMQTTConfig() {
+    Serial.print(F("MQTT Broker: "));
     Serial.println(networkConfig.mqtt_server);
-    if (validateMQTTConfig()) {
-        Serial.println("Konfiguracja MQTT znaleziona:");
-        Serial.print("Broker: ");
-        Serial.println(networkConfig.mqtt_server);
-        Serial.print("Port: ");
-        Serial.println(config.mqtt.port);
-        Serial.print("Username: ");
-        Serial.println(config.mqtt.username);
-    } else {
-        Serial.println("Brak poprawnej konfiguracji MQTT");
-    }
+    Serial.print(F("MQTT Port: "));
+    Serial.println(networkConfig.mqtt_port);
 }
 
 String getStyles() {
