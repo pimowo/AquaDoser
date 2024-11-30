@@ -287,19 +287,165 @@ void initHomeAssistant() {
 }
 
 // --- Funkcje konfiguracyjne
-void loadConfiguration();        // Wczytanie konfiguracji
-void saveConfiguration();        // Zapisanie konfiguracji
-bool loadPumpsConfig();         // Wczytanie konfiguracji pomp
-bool savePumpsConfig();         // Zapisanie konfiguracji pomp
-void loadMQTTConfig();          // Wczytanie konfiguracji MQTT
-void saveMQTTConfig();          // Zapisanie konfiguracji MQTT
-bool loadNetworkConfig();        // Wczytanie konfiguracji sieci
-bool saveNetworkConfig();        // Zapisanie konfiguracji sieci
-void resetFactorySettings();     // Reset do ustawień fabrycznych
+// Wczytanie konfiguracji
+void loadConfiguration() {
+    loadMQTTConfig();
+    loadPumpsConfig();
+    loadNetworkConfig();
+    EEPROM.get(SYSTEM_CONFIG_ADDR, systemConfig);
+    
+    if (!validateConfigValues()) {
+        resetFactorySettings();
+    }
+}
+
+// Zapisanie konfiguracji
+void saveConfiguration() {
+    saveMQTTConfig();
+    savePumpsConfig();
+    saveNetworkConfig();
+    EEPROM.put(SYSTEM_CONFIG_ADDR, systemConfig);
+    EEPROM.commit();
+}
+
+// Wczytanie konfiguracji pomp
+bool loadPumpsConfig() {
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        EEPROM.get(PUMPS_CONFIG_ADDR + (i * sizeof(PumpConfig)), pumps[i]);
+    }
+    return true;
+}
+
+// Zapisanie konfiguracji pomp
+bool savePumpsConfig() {
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        EEPROM.put(PUMPS_CONFIG_ADDR + (i * sizeof(PumpConfig)), pumps[i]);
+    }
+    return EEPROM.commit();
+}
+
+// Wczytanie konfiguracji MQTT
+void loadMQTTConfig() {
+    EEPROM.get(MQTT_CONFIG_ADDR, mqttConfig);
+    if (!validateMQTTConfig()) {
+        mqttConfig.port = 1883;
+        mqttConfig.enabled = false;
+        mqttConfig.broker[0] = '\0';
+        mqttConfig.username[0] = '\0';
+        mqttConfig.password[0] = '\0';
+        saveMQTTConfig();
+    }
+}
+
+// Zapisanie konfiguracji MQTT
+void saveMQTTConfig() {
+    mqttConfig.broker[sizeof(mqttConfig.broker) - 1] = '\0';
+    mqttConfig.username[sizeof(mqttConfig.username) - 1] = '\0';
+    mqttConfig.password[sizeof(mqttConfig.password) - 1] = '\0';
+    EEPROM.put(MQTT_CONFIG_ADDR, mqttConfig);
+    EEPROM.commit();
+}
+
+// Wczytanie konfiguracji sieci
+bool loadNetworkConfig() {
+    EEPROM.get(NETWORK_CONFIG_ADDR, networkConfig);
+    return true;
+}
+
+// Zapisanie konfiguracji sieci
+bool saveNetworkConfig() {
+    EEPROM.put(NETWORK_CONFIG_ADDR, networkConfig);
+    return EEPROM.commit();
+}
+
+// Reset do ustawień fabrycznych
+void resetFactorySettings() {
+    // Wyczyść EEPROM
+    for (int i = 0; i < 1024; i++) {
+        EEPROM.write(i, 0);
+    }
+    EEPROM.commit();
+    
+    // Ustaw wartości domyślne
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        pumps[i].enabled = false;
+        pumps[i].calibration = 1.0;
+        pumps[i].dose = 0.0;
+        pumps[i].schedule_hour = 0;
+        pumps[i].schedule_days = 0;
+        pumps[i].minute = 0;
+        pumps[i].lastDosing = 0;
+        pumps[i].isRunning = false;
+        snprintf(pumps[i].name, sizeof(pumps[i].name), "Pump %d", i+1);
+    }
+    
+    // Domyślna konfiguracja MQTT
+    mqttConfig.port = 1883;
+    mqttConfig.enabled = false;
+    mqttConfig.broker[0] = '\0';
+    mqttConfig.username[0] = '\0';
+    mqttConfig.password[0] = '\0';
+    
+    // Domyślna konfiguracja sieci
+    networkConfig.dhcp = true;
+    networkConfig.mqtt_port = 1883;
+    networkConfig.mqtt_server[0] = '\0';
+    networkConfig.mqtt_user[0] = '\0';
+    networkConfig.mqtt_password[0] = '\0';
+    
+    // Zapisz wszystkie konfiguracje
+    saveConfiguration();
+}
 
 // --- Funkcje obsługi pomp
-void startPump(uint8_t pumpIndex);    // Uruchomienie pompy
-void stopPump(uint8_t pumpIndex);     // Zatrzymanie pompy
+// Uruchomienie pompy
+void startPump(uint8_t pumpIndex) {
+    if (!pumpInitialized || pumpIndex >= NUMBER_OF_PUMPS || pumpRunning[pumpIndex]) {
+        return;
+    }
+
+    // Oblicz czas dozowania na podstawie kalibracji i dawki
+    float dosingTime = (pumps[pumpIndex].dose / pumps[pumpIndex].calibration) * 1000; // konwersja na ms
+    
+    // Sprawdź czy czas dozowania mieści się w limitach
+    if (dosingTime < MIN_DOSE_TIME || dosingTime > MAX_DOSE_TIME) {
+        Serial.printf("Błąd: Nieprawidłowy czas dozowania dla pompy %d: %.1f ms\n", pumpIndex + 1, dosingTime);
+        return;
+    }
+
+    // Włącz pompę
+    pcf8574.digitalWrite(pumpIndex, HIGH);
+    pumpRunning[pumpIndex] = true;
+    doseStartTime[pumpIndex] = millis();
+    
+    // Aktualizuj stan LED
+    strip.setPixelColor(pumpIndex, COLOR_WORKING);
+    strip.show();
+    
+    Serial.printf("Pompa %d rozpoczęła dozowanie. Zaplanowany czas: %.1f ms\n", 
+                 pumpIndex + 1, dosingTime);
+}
+
+// Zatrzymanie pompy
+void stopPump(uint8_t pumpIndex) {
+    if (!pumpInitialized || pumpIndex >= NUMBER_OF_PUMPS || !pumpRunning[pumpIndex]) {
+        return;
+    }
+
+    // Wyłącz pompę
+    pcf8574.digitalWrite(pumpIndex, LOW);
+    pumpRunning[pumpIndex] = false;
+    
+    // Oblicz faktyczny czas dozowania
+    unsigned long actualDoseTime = millis() - doseStartTime[pumpIndex];
+    
+    // Aktualizuj stan LED
+    strip.setPixelColor(pumpIndex, pumps[pumpIndex].enabled ? COLOR_ON : COLOR_OFF);
+    strip.show();
+    
+    Serial.printf("Pompa %d zakończyła dozowanie. Rzeczywisty czas: %lu ms\n", 
+                 pumpIndex + 1, actualDoseTime);
+}
 
 // Zatrzymanie wszystkich pomp
 void stopAllPumps() {
