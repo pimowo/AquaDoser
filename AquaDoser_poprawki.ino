@@ -300,23 +300,254 @@ void resetFactorySettings();     // Reset do ustawień fabrycznych
 // --- Funkcje obsługi pomp
 void startPump(uint8_t pumpIndex);    // Uruchomienie pompy
 void stopPump(uint8_t pumpIndex);     // Zatrzymanie pompy
-void stopAllPumps();                  // Zatrzymanie wszystkich pomp
-void handlePumps();                   // Obsługa pomp
-bool shouldStartDosing(uint8_t pumpIndex); // Sprawdzenie warunku dozowania
-void servicePump(uint8_t pumpIndex, bool state); // Obsługa trybu serwisowego
-void toggleServiceMode();             // Przełączenie trybu serwisowego
+
+// Zatrzymanie wszystkich pomp
+void stopAllPumps() {
+    for (uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
+        if (pumpRunning[i]) {
+            stopPump(i);
+        }
+    }
+}
+
+// Obsługa pomp
+void handlePumps() {
+    if (!pumpInitialized || serviceMode) {
+        return;
+    }
+
+    unsigned long currentMillis = millis();
+    
+    // Sprawdzaj stan pomp co DOSE_CHECK_INTERVAL
+    if (currentMillis - lastDoseCheck >= DOSE_CHECK_INTERVAL) {
+        lastDoseCheck = currentMillis;
+        
+        for (uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
+            if (pumpRunning[i]) {
+                // Sprawdź czy czas dozowania minął
+                float dosingTime = (pumps[i].dose / pumps[i].calibration) * 1000;
+                if (currentMillis - doseStartTime[i] >= dosingTime) {
+                    stopPump(i);
+                }
+            } else if (shouldStartDosing(i)) {
+                startPump(i);
+            }
+        }
+    }
+}
+
+// Sprawdzenie warunku dozowania
+bool shouldStartDosing(uint8_t pumpIndex) {
+    if (!pumps[pumpIndex].enabled) {
+        return false;
+    }
+
+    DateTime now = rtc.now();
+    uint8_t currentHour = now.hour();
+    uint8_t currentDay = now.dayOfTheWeek(); // 0 = Sunday, 6 = Saturday
+
+    // Sprawdź czy jest odpowiednia godzina
+    if (currentHour != pumps[pumpIndex].schedule_hour) {
+        return false;
+    }
+
+    // Sprawdź czy jest odpowiedni dzień
+    if (!(pumps[pumpIndex].schedule_days & (1 << currentDay))) {
+        return false;
+    }
+
+    // Sprawdź czy już nie dozowano dzisiaj
+    unsigned long currentTime = now.unixtime();
+    if (currentTime - pumps[pumpIndex].lastDosing < 24*60*60) {
+        return false;
+    }
+
+    return true;
+}
+
+// Obsługa trybu serwisowego
+void servicePump(uint8_t pumpIndex, bool state) {
+    if (!pumpInitialized || pumpIndex >= NUMBER_OF_PUMPS || !serviceMode) {
+        return;
+    }
+
+    // Ustaw stan pompy
+    pcf8574.digitalWrite(pumpIndex, state ? HIGH : LOW);
+    
+    // Aktualizuj wyświetlanie
+    strip.show();
+}
+
+// Przełączenie trybu serwisowego
+void toggleServiceMode() {
+    serviceMode = !serviceMode;
+    if (serviceMode) {
+        // Zatrzymaj wszystkie pompy w trybie serwisowym
+        for (uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
+            stopPump(i);
+        }
+    }
+}
 
 // --- Funkcje obsługi LED
-void updateLEDs();              // Aktualizacja wszystkich LED
-void updateServiceModeLEDs();   // Aktualizacja LED w trybie serwisowym
-void updatePumpLED(uint8_t pumpIndex); // Aktualizacja LED pojedynczej pompy
-void updateAllPumpLEDs();       // Aktualizacja LED wszystkich pomp
-void setLEDColor(uint8_t index, uint32_t color, bool withPulsing = false);
+// Aktualizacja wszystkich LED
+void updateLEDs() {
+    unsigned long currentMillis = millis();
+    
+    // Aktualizuj tylko co LED_UPDATE_INTERVAL
+    if (currentMillis - lastLedUpdate < LED_UPDATE_INTERVAL) {
+        return;
+    }
+    lastLedUpdate = currentMillis;
+    
+    // Aktualizacja każdego LED
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        LEDState &state = ledStates[i];
+        
+        // Obsługa pulsowania
+        if (state.pulsing) {
+            state.brightness += state.pulseDirection * 5;
+            
+            if (state.brightness >= PULSE_MAX_BRIGHTNESS) {
+                state.brightness = PULSE_MAX_BRIGHTNESS;
+                state.pulseDirection = -1;
+            } else if (state.brightness <= PULSE_MIN_BRIGHTNESS) {
+                state.brightness = PULSE_MIN_BRIGHTNESS;
+                state.pulseDirection = 1;
+            }
+        } else {
+            state.brightness = 255;
+        }
+        
+        // Płynne przejście do docelowego koloru
+        if (state.currentColor != state.targetColor) {
+            state.currentColor = interpolateColor(
+                state.currentColor, 
+                state.targetColor, 
+                0.1 // współczynnik płynności przejścia
+            );
+        }
+        
+        // Zastosowanie jasności do koloru
+        uint8_t r, g, b;
+        colorToRGB(state.currentColor, r, g, b);
+        float brightnessRatio = state.brightness / 255.0;
+        
+        strip.setPixelColor(i, 
+            (uint8_t)(r * brightnessRatio),
+            (uint8_t)(g * brightnessRatio),
+            (uint8_t)(b * brightnessRatio)
+        );
+    }
+    
+    strip.show();
+}
+
+// Aktualizacja LED w trybie serwisowym
+void updateServiceModeLEDs() {
+    uint32_t color = serviceMode ? COLOR_SERVICE : COLOR_OFF;
+    
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        if (!pumpRunning[i]) {
+            setLEDColor(i, color, serviceMode);
+        }
+    }
+}
+
+// Aktualizacja LED pojedynczej pompy
+void updatePumpLED(uint8_t pumpIndex) {
+    if (pumpIndex >= NUMBER_OF_PUMPS) return;
+    
+    if (serviceMode) {
+        setLEDColor(pumpIndex, COLOR_SERVICE, true);
+    } else if (pumpRunning[pumpIndex]) {
+        setLEDColor(pumpIndex, COLOR_WORKING, true);
+    } else {
+        setLEDColor(pumpIndex, pumps[pumpIndex].enabled ? COLOR_ON : COLOR_OFF, false);
+    }
+}
+
+// Aktualizacja LED wszystkich pomp
+void updateAllPumpLEDs() {
+    for (uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
+        updatePumpLED(i);
+    }
+}
+
+void setLEDColor(uint8_t index, uint32_t color, bool withPulsing = false) {
+    if (index >= NUMBER_OF_PUMPS) return;
+    
+    ledStates[index].targetColor = color;
+    ledStates[index].pulsing = withPulsing;
+}
 
 // --- Funkcje sieciowe
-void setupWiFi();               // Konfiguracja WiFi
-void setupMQTT();              // Konfiguracja MQTT
-void setupWebServer();          // Konfiguracja serwera WWW
+// Konfiguracja WiFi
+void setupWiFi() {
+    WiFiManager wifiManager;
+    wifiManager.setConfigPortalTimeout(180); // timeout po 3 minutach
+    
+    String apName = "AquaDoser-" + String(ESP.getChipId(), HEX);
+    if (!wifiManager.autoConnect(apName.c_str())) {
+        Serial.println("Nie udało się połączyć i timeout został osiągnięty");
+        ESP.restart();
+        delay(1000);
+    }
+    
+    Serial.println("WiFi połączone!");
+    Serial.print("IP: ");
+    Serial.println(WiFi.localIP());
+}
+
+// Konfiguracja MQTT
+void setupMQTT() {
+    if (strlen(networkConfig.mqtt_server) == 0) {
+        Serial.println(F("Brak konfiguracji MQTT"));
+        return;
+    }
+
+    if (!mqttConfig.enabled) return;
+    
+    mqtt.onConnected([]() {
+        systemStatus.mqtt_connected = true;
+        Serial.println("MQTT Connected");
+    });
+    
+    mqtt.onDisconnected([]() {
+        systemStatus.mqtt_connected = false;
+        Serial.println("MQTT Disconnected");
+    });
+
+    // Konfiguracja urządzenia HA
+    byte mac[6];
+    WiFi.macAddress(mac);
+    device.setUniqueId(mac, sizeof(mac));
+    device.setName("AquaDoser");
+    device.setSoftwareVersion("1.0.0");
+    
+    // Konfiguracja MQTT
+    mqtt.begin(
+        networkConfig.mqtt_server,
+        networkConfig.mqtt_port,
+        networkConfig.mqtt_user,
+        networkConfig.mqtt_password
+    );
+}
+
+// Konfiguracja serwera WWW
+void setupWebServer() {
+    server.on("/", HTTP_GET, handleRoot);
+    server.on("/save", HTTP_POST, handleSave);
+    server.on("/update", HTTP_GET, []() {
+        server.sendHeader("Connection", "close");
+        server.send(200, "text/html", getUpdatePage());
+    });
+    
+    httpUpdateServer.setup(&server);
+    server.begin();
+    webSocket.begin();
+    webSocket.onEvent(webSocketEvent);
+}
 
 // Sprawdzenie konfiguracji MQTT
 void checkMQTTConfig() {
