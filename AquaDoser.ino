@@ -75,10 +75,14 @@ struct PumpConfig {
 
 // Struktura konfiguracji sieciowej
 struct NetworkConfig {
+    char hostname[32];
+    char ssid[32];
+    char password[32];
     char mqtt_server[64];
     int mqtt_port;
     char mqtt_user[32];
     char mqtt_password[32];
+    bool dhcp;
 };
 
 // Struktura statusu systemu
@@ -266,7 +270,7 @@ SystemInfo sysInfo = {0, false};
 struct PumpState {
     bool isActive;
     unsigned long lastDoseTime;
-    HANumber* sensor;
+    HASensor* sensor;  // Zmienione z HANumber* na HASensor*
     
     PumpState() : isActive(false), lastDoseTime(0), sensor(nullptr) {}
 };
