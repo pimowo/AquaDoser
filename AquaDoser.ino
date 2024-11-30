@@ -579,6 +579,9 @@ void handleMillisOverflow() {
 
 // Funkcje specyficzne dla różnych typów konfiguracji
 void saveMQTTConfig() {
+    mqttConfig.broker[sizeof(mqttConfig.broker) - 1] = '\0';
+    mqttConfig.username[sizeof(mqttConfig.username) - 1] = '\0';
+    mqttConfig.password[sizeof(mqttConfig.password) - 1] = '\0';
     EEPROM.put(MQTT_CONFIG_ADDR, mqttConfig);
     EEPROM.commit();
 }
@@ -612,15 +615,16 @@ bool saveNetworkConfig() {
 }
 
 // --- Ogólna funkcja ładowania konfiguracji
-void loadConfiguration() {   
-    loadPumpsConfig();  // Wczytaj konfigurację pomp
-    loadMQTTConfig();  // Wczytaj konfigurację MQTT
-    loadNetworkConfig();  // Wczytaj konfigurację sieci    
-    EEPROM.get(SYSTEM_CONFIG_ADDR, systemConfig);  // Wczytaj konfigurację systemu
+void loadConfiguration() {
+    // Wczytaj wszystkie konfiguracje
+    loadMQTTConfig();
+    loadPumpsConfig();
+    loadNetworkConfig();
+    EEPROM.get(SYSTEM_CONFIG_ADDR, systemConfig);
     
     // Sprawdź poprawność danych
-    if (!validateConfigValues()) {        
-        resetFactorySettings();  // Ustaw wartości domyślne jeśli dane są nieprawidłowe
+    if (!validateConfigValues()) {
+        resetFactorySettings();
     }
 }
 
@@ -729,42 +733,31 @@ void handleSave() {
     }
 }
 
-void loadConfig() {
-    EEPROM.get(PUMPS_CONFIG_ADDR, pumps);
-    EEPROM.get(MQTT_CONFIG_ADDR, mqttConfig);
-    EEPROM.get(NETWORK_CONFIG_ADDR, networkConfig);
-    EEPROM.get(SYSTEM_CONFIG_ADDR, systemConfig);
-    EEPROM.get(SYSTEM_STATUS_ADDR, systemStatus);
-}
+// void loadConfig() {
+//     EEPROM.get(PUMPS_CONFIG_ADDR, pumps);
+//     EEPROM.get(MQTT_CONFIG_ADDR, mqttConfig);
+//     EEPROM.get(NETWORK_CONFIG_ADDR, networkConfig);
+//     EEPROM.get(SYSTEM_CONFIG_ADDR, systemConfig);
+//     EEPROM.get(SYSTEM_STATUS_ADDR, systemStatus);
+// }
 
 // Funkcja zapisująca konfigurację
-void saveConfig() {
-    EEPROM.put(PUMPS_CONFIG_ADDR, pumps);
-    EEPROM.put(MQTT_CONFIG_ADDR, mqttConfig);
-    EEPROM.put(NETWORK_CONFIG_ADDR, networkConfig);
-    EEPROM.put(SYSTEM_CONFIG_ADDR, systemConfig);
-    EEPROM.put(SYSTEM_STATUS_ADDR, systemStatus);
-    EEPROM.commit();
-}
+// void saveConfig() {
+//     EEPROM.put(PUMPS_CONFIG_ADDR, pumps);
+//     EEPROM.put(MQTT_CONFIG_ADDR, mqttConfig);
+//     EEPROM.put(NETWORK_CONFIG_ADDR, networkConfig);
+//     EEPROM.put(SYSTEM_CONFIG_ADDR, systemConfig);
+//     EEPROM.put(SYSTEM_STATUS_ADDR, systemStatus);
+//     EEPROM.commit();
+// }
 
 // --- Ogólna funkcja zapisywania konfiguracji
 void saveConfiguration() {
-    // Zapisz konfigurację pomp
-    savePumpsConfig();
-    
-    // Zapisz konfigurację MQTT
     saveMQTTConfig();
-    
-    // Zapisz konfigurację sieci
+    savePumpsConfig();
     saveNetworkConfig();
-    
-    // Zapisz konfigurację systemu
     EEPROM.put(SYSTEM_CONFIG_ADDR, systemConfig);
-    
-    // Wykonaj commit tylko raz na końcu
-    if (!EEPROM.commit()) {
-        Serial.println("Błąd zapisu konfiguracji do EEPROM");
-    }
+    EEPROM.commit();
 }
 
 // --- Inicjalizacja PCF8574 i pomp
@@ -781,6 +774,18 @@ bool initializePumps() {
 
     pumpInitialized = true;
     return true;
+}
+
+void loadMQTTConfig() {
+    EEPROM.get(MQTT_CONFIG_ADDR, mqttConfig);
+    if (!validateMQTTConfig()) {
+        mqttConfig.port = 1883;
+        mqttConfig.enabled = false;
+        mqttConfig.broker[0] = '\0';
+        mqttConfig.username[0] = '\0';
+        mqttConfig.password[0] = '\0';
+        saveMQTTConfig();
+    }
 }
 
 // --- Rozpoczęcie dozowania dla pompy
@@ -1927,74 +1932,65 @@ void resetFactorySettings() {
 
 // --- Setup
 void setup() {
+    // 1. Inicjalizacja komunikacji
     Serial.begin(115200);
     Serial.println("\nAquaDoser Start");
     Wire.begin();
-
-    // Inicjalizacja EEPROM
+    
+    // 2. Inicjalizacja pamięci i konfiguracji
     EEPROM.begin(1024);
-
-    // Wczytaj konfiguracje - uporządkuj kolejność ładowania
+    initStorage();
     loadConfiguration();
     
-    // Inicjalizacja EEPROM
-    initStorage();
-    
-    // Inicjalizacja pinów
+    // 3. Inicjalizacja sprzętu
+    // Piny
     pinMode(BUTTON_PIN, INPUT_PULLUP);
-
-    pinMode(BUZZER_PIN, OUTPUT);  // Wyjście - buzzer
-    digitalWrite(BUZZER_PIN, LOW);  // Wyłączenie buzzera
+    pinMode(BUZZER_PIN, OUTPUT);
+    digitalWrite(BUZZER_PIN, LOW);
     
-    strip.begin();
-    strip.show(); // Wyczyść wszystkie LEDy
-
-    checkMQTTConfig();   // Sprawdź i wyświetl status konfiguracji MQTT
-
-    // Inicjalizacja EEPROM zamiast LittleFS
-    initializeStorage();
-
-    // Inicjalizacja RTC
+    // RTC
     if (!rtc.begin()) {
         Serial.println("Nie znaleziono RTC!");
     }
     
-    // Inicjalizacja PCF8574
+    // PCF8574
     if (!pcf8574.begin()) {
         Serial.println("Nie znaleziono PCF8574!");
     }
     
+    // LED
+    strip.begin();
+    strip.show();
     initializeLEDs();
     
-    // Konfiguracja WiFi i MQTT
+    // 4. Inicjalizacja sieci i komunikacji
     setupWiFi();
-
-    setupWebServer();
-    
-    // Inicjalizacja Home Assistant
+    checkMQTTConfig();
     initHomeAssistant();
     setupMQTT();
     
-    // Synchronizacja czasu
-    syncRTC();
-    
+    // 5. Konfiguracja serwera Web
+    setupWebServer();
     server.on("/save", HTTP_POST, handleSave);
-
     server.on("/restart", HTTP_POST, []() {
         server.send(200, "text/plain", "Restarting...");
         delay(1000);
         ESP.restart();
     });
-
     server.on("/factory-reset", HTTP_POST, []() {
         server.send(200, "text/plain", "Resetting to factory defaults...");
-        resetFactorySettings();  // Funkcja do zaimplementowania
+        resetFactorySettings();
         delay(1000);
         ESP.restart();
     });
     
+    // 6. Synchronizacja czasu
+    syncRTC();
+    
+    // 7. Efekty startowe
     playWelcomeEffect();
     welcomeMelody();
+    
     Serial.println("Inicjalizacja zakończona");
 }
 
