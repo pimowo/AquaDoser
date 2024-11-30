@@ -1,8 +1,9 @@
 /*
-    AquaDoser (dozowanie nawozów)
-    HydroSense (dolewanie wody)
-    LumaSense (oświetlenie)
-    ClimaCore (CO2 i temperatura)
+AquaDoser - dozowanie nawozów
+HydroSense - dolewanie wody
+LumaSense - oświetlenie
+ClimaCore - sterowanie temperaturą/CO2
+GasSense - monitoring butli CO2
 */
 
 // --- Biblioteki
