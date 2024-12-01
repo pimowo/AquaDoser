@@ -227,9 +227,6 @@ bool firstRun = true;               // Pierwsze uruchomienie
 // --- Stan LED
 LEDState ledStates[NUMBER_OF_PUMPS];  // Stan diod LED
 
-// --- Przycisk
-bool lastButtonState = HIGH;
-
 /***************************************
  * ZMIENNE CZASOWE I LICZNIKI
  ***************************************/
@@ -1731,10 +1728,17 @@ void setupPumpEntities(uint8_t index) {
     sprintf(name, "Pompa %d", index + 1);
     sprintf(uniqueId, "pump_%d", index + 1);
     
-    HASwitch* pumpSwitch = new HASwitch(uniqueId, false);
+    HASwitch* pumpSwitch = new HASwitch(uniqueId);  // Usunięto drugi parametr
     pumpSwitch->setName(name);
     pumpSwitch->onCommand(onPumpSwitch);
     pumpSwitch->setIcon("mdi:water-pump");
+}
+
+void setupServiceModeSwitch() {
+    HASwitch* serviceSwitch = new HASwitch("service_mode");  // Usunięto drugi parametr
+    serviceSwitch->setName("Tryb serwisowy");
+    serviceSwitch->onCommand(onServiceModeSwitch);
+    serviceSwitch->setIcon("mdi:tools");
 }
 
 void setupServiceModeSwitch() {
