@@ -738,10 +738,11 @@ void setupWebServer() {
     server.on("/", HTTP_GET, handleRoot);
     //server.on("/save", HTTP_POST, handleSave);
     server.on("/save", HTTP_POST, handleConfigSave);
-    server.on("/update", HTTP_GET, []() {
-        server.sendHeader("Connection", "close");
-        server.send(200, "text/html", getUpdatePage());
-    });
+    server.on("/update", HTTP_POST, handleUpdateResult, handleDoUpdate);
+    // server.on("/update", HTTP_GET, []() {
+    //     server.sendHeader("Connection", "close");
+    //     server.send(200, "text/html", getUpdatePage());
+    // });
     
     httpUpdateServer.setup(&server);
     server.begin();
@@ -989,38 +990,73 @@ void handleConfigSave() {
     server.send(200, "application/json", "{\"status\":\"ok\"}");
 }
 
-void handleWebSocketMessage(uint8_t num, uint8_t * payload, size_t length) {
-    String message = String((char*)payload);
-    StaticJsonDocument<200> doc;
-    DeserializationError error = deserializeJson(doc, message);
-    
-    if (error) {
-        Serial.println("Failed to parse WebSocket message");
-        return;
-    }
-    
-    const char* type = doc["type"];
-    if (strcmp(type, "getPumpStatus") == 0) {
-        String status = getSystemStatusJSON();
-        webSocket.sendTXT(num, status);
+// Obsługa zdarzeń WebSocket
+void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
+    // Na razie obsługujemy tylko połączenie - tak jak w HydroSense
+    switch(type) {
+        case WStype_DISCONNECTED:
+            break;
+        case WStype_CONNECTED:
+            break;
     }
 }
 
-void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
-    switch(type) {
-        case WStype_DISCONNECTED:
-            Serial.printf("[WebSocket] Client #%u Disconnected\n", num);
-            break;
-        case WStype_CONNECTED:
-            {
-                Serial.printf("[WebSocket] Client #%u Connected\n", num);
-                String json = getSystemStatusJSON();
-                webSocket.sendTXT(num, json);
-            }
-            break;
-        case WStype_TEXT:
-            handleWebSocketMessage(num, payload, length);
-            break;
+// Obsługa aktualizacji firmware
+void handleDoUpdate() {
+    HTTPUpload& upload = server.upload();
+    
+    if (upload.status == UPLOAD_FILE_START) {
+        if (upload.filename == "") {
+            webSocket.broadcastTXT("update:error:No file selected");
+            server.send(204);
+            return;
+        }
+        
+        if (!Update.begin(upload.contentLength)) {
+            Update.printError(Serial);
+            webSocket.broadcastTXT("update:error:Update initialization failed");
+            server.send(204);
+            return;
+        }
+        webSocket.broadcastTXT("update:0");  // Start progress
+    } 
+    else if (upload.status == UPLOAD_FILE_WRITE) {
+        if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+            Update.printError(Serial);
+            webSocket.broadcastTXT("update:error:Write failed");
+            return;
+        }
+        // Aktualizacja paska postępu
+        int progress = (upload.totalSize * 100) / upload.contentLength;
+        String progressMsg = "update:" + String(progress);
+        webSocket.broadcastTXT(progressMsg);
+    } 
+    else if (upload.status == UPLOAD_FILE_END) {
+        if (Update.end(true)) {
+            webSocket.broadcastTXT("update:100");  // Completed
+            server.send(204);
+            delay(1000);
+            ESP.restart();
+        } else {
+            Update.printError(Serial);
+            webSocket.broadcastTXT("update:error:Update failed");
+            server.send(204);
+        }
+    }
+}
+
+// Obsługa wyniku aktualizacji
+void handleUpdateResult() {
+    if (Update.hasError()) {
+        server.send(200, "text/html", 
+            "<h1>Aktualizacja nie powiodła się</h1>"
+            "<a href='/'>Powrót</a>");
+    } else {
+        server.send(200, "text/html", 
+            "<h1>Aktualizacja zakończona powodzeniem</h1>"
+            "Urządzenie zostanie zrestartowane...");
+        delay(1000);
+        ESP.restart();
     }
 }
 
@@ -1183,10 +1219,55 @@ String getConfigPage() {
     // JavaScript with WebSocket and functions
     page += F("<script>");
     // WebSocket setup
-    page += F("let ws = new WebSocket('ws://' + window.location.hostname + ':81/');");
-    page += F("ws.onmessage = function(event) {");
-    page += F("    let status = JSON.parse(event.data);");
-    page += F("    updateStatus(status);");
+    page += F("var ws = new WebSocket('ws://' + window.location.hostname + ':81/');");
+    page += F("ws.onmessage = function(evt) {");
+    page += F("  var msg = evt.data;");
+    page += F("  if(msg.startsWith('update:')) {");
+    page += F("    var status = msg.substring(7);");
+    page += F("    if(status === 'error') {");
+    page += F("      document.getElementById('prg').style.display = 'none';");
+    page += F("      alert('Błąd aktualizacji!');");
+    page += F("    } else if(!isNaN(status)) {");
+    page += F("      var progress = parseInt(status);");
+    page += F("      document.getElementById('prg').style.display = 'block';");
+    page += F("      document.getElementById('progress').style.width = progress + '%';");
+    page += F("      document.getElementById('progress-text').innerHTML = progress + '%';");
+    page += F("      if(progress === 100) {");
+    page += F("        alert('Aktualizacja zakończona. Urządzenie zostanie zrestartowane.');");
+    page += F("      }");
+    page += F("    }");
+    page += F("  }");
+    page += F("};");
+    
+    // Obsługa formularza aktualizacji
+    page += F("document.getElementById('upload_form').onsubmit = function(e) {");
+    page += F("  e.preventDefault();");
+    page += F("  var file = document.getElementById('file').files[0];");
+    page += F("  if(!file) {");
+    page += F("    alert('Wybierz plik!');");
+    page += F("    return false;");
+    page += F("  }");
+    page += F("  document.getElementById('prg').style.display = 'block';");
+    page += F("  var xhr = new XMLHttpRequest();");
+    page += F("  xhr.open('POST', '/update', true);");
+    page += F("  xhr.upload.onprogress = function(e) {");
+    page += F("    if(e.lengthComputable) {");
+    page += F("      var progress = (e.loaded * 100) / e.total;");
+    page += F("      document.getElementById('progress').style.width = progress + '%';");
+    page += F("      document.getElementById('progress-text').innerHTML = progress + '%';");
+    page += F("    }");
+    page += F("  };");
+    page += F("  xhr.onload = function() {");
+    page += F("    if(xhr.status === 200) {");
+    page += F("      alert('Aktualizacja zakończona pomyślnie!');");
+    page += F("    } else {");
+    page += F("      alert('Błąd podczas aktualizacji.');");
+    page += F("    }");
+    page += F("  };");
+    page += F("  var formData = new FormData();");
+    page += F("  formData.append('update', file);");
+    page += F("  xhr.send(formData);");
+    page += F("  return false;");
     page += F("};");
     
     // Status update function
@@ -1472,6 +1553,15 @@ String getStyles() {
         "  .buttons-container {flex-direction: column;}"
         "  .btn {width: 100%;}"
         "}");
+
+        // Dodaj style dla sekcji aktualizacji
+        styles += F(".update-section {margin-top: 30px;}");
+        styles += F(".update-section h2 {color: #333;}");
+        styles += F(".progress-bar {width: 100%; height: 24px; border: 1px solid #2196F3; border-radius: 4px; overflow: hidden;}");
+        styles += F(".progress {background: #2196F3; height: 100%; width: 0%;}");
+        styles += F(".progress-text {text-align: center; margin-top: 8px;}");
+        styles += F(".update-button {background: #2196F3; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px;}");
+        styles += F("#file {margin: 10px 0;}");
     
     return styles;
 }
@@ -1955,6 +2045,10 @@ void setup() {
     checkMQTTConfig();
     initHomeAssistant();
     setupMQTT();
+
+    // Inicjalizacja WebSocket
+    webSocket.begin();
+    webSocket.onEvent(webSocketEvent);
     
     // 5. Konfiguracja serwera Web
     setupWebServer();
