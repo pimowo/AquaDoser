@@ -254,6 +254,11 @@ unsigned long lastStatusPrint = 0;    // Ostatni wydruk statusu
 /***************************************
  * DEKLARACJE FUNKCJI
  ***************************************/
+ 
+// Deklaracje funkcji LED - dodaj na początku pliku
+void setLEDColor(uint8_t index, uint32_t color, bool immediate = false);
+uint32_t interpolateColor(uint32_t color1, uint32_t color2, float ratio);
+void colorToRGB(uint32_t color, uint8_t &r, uint8_t &g, uint8_t &b);
 
 // --- Funkcje inicjalizacyjne
 // Inicjalizacja pamięci
@@ -366,23 +371,25 @@ bool savePumpsConfig() {
 // Wczytanie konfiguracji MQTT
 void loadMQTTConfig() {
     EEPROM.get(MQTT_CONFIG_ADDR, mqttConfig);
-    if (!validateMQTTConfig()) {
-        mqttConfig.port = 1883;
-        mqttConfig.enabled = false;
-        mqttConfig.broker[0] = '\0';
-        mqttConfig.username[0] = '\0';
-        mqttConfig.password[0] = '\0';
-        saveMQTTConfig();
+    
+    // Sprawdzenie czy konfiguracja jest prawidłowa
+    if (strlen(mqttConfig.broker) > 0) {
+        Serial.println("Wczytano konfigurację MQTT:");
+        Serial.print("Broker: "); Serial.println(mqttConfig.broker);
+        Serial.print("Port: "); Serial.println(mqttConfig.port);
+    } else {
+        Serial.println("Brak zapisanej konfiguracji MQTT");
     }
 }
 
 // Zapisanie konfiguracji MQTT
 void saveMQTTConfig() {
-    mqttConfig.broker[sizeof(mqttConfig.broker) - 1] = '\0';
-    mqttConfig.username[sizeof(mqttConfig.username) - 1] = '\0';
-    mqttConfig.password[sizeof(mqttConfig.password) - 1] = '\0';
     EEPROM.put(MQTT_CONFIG_ADDR, mqttConfig);
-    EEPROM.commit();
+    if (EEPROM.commit()) {
+        Serial.println("Zapisano konfigurację MQTT");
+    } else {
+        Serial.println("Błąd zapisu konfiguracji MQTT!");
+    }
 }
 
 // Wczytanie konfiguracji sieci
@@ -915,25 +922,25 @@ void handleSave() {
 
 // Obsługa zapisu konfiguracji
 void handleConfigSave() {
-    if (server.hasArg("mqtt_broker") && server.hasArg("mqtt_port")) {
-        String mqtt_broker = server.arg("mqtt_broker");
-        String mqtt_port = server.arg("mqtt_port");
-        String mqtt_user = server.arg("mqtt_user");
-        String mqtt_password = server.arg("mqtt_password");
+    if (server.hasArg("mqtt_broker")) {
+        String broker = server.arg("mqtt_broker");
+        String port = server.arg("mqtt_port");
         
-        // Zapisz do konfiguracji MQTT
-        strlcpy(mqttConfig.broker, mqtt_broker.c_str(), sizeof(mqttConfig.broker));
-        mqttConfig.port = mqtt_port.toInt();
-        strlcpy(mqttConfig.username, mqtt_user.c_str(), sizeof(mqttConfig.username));
-        strlcpy(mqttConfig.password, mqtt_password.c_str(), sizeof(mqttConfig.password));
+        // Czyszczenie poprzedniej konfiguracji
+        memset(&mqttConfig, 0, sizeof(MQTTConfig));
         
-        // Zapisz do EEPROM
+        // Kopiowanie nowych wartości
+        strncpy(mqttConfig.broker, broker.c_str(), sizeof(mqttConfig.broker) - 1);
+        mqttConfig.port = port.toInt();
+        
+        // Zapisanie konfiguracji
         saveMQTTConfig();
         
-        server.send(200, "text/plain", "Konfiguracja zapisana");
-    } else {
-        server.send(400, "text/plain", "Brak wymaganych parametrów");
+        // Restart połączenia MQTT
+        setupMQTT();
     }
+    
+    server.send(200, "application/json", "{\"status\":\"ok\"}");
 }
 
 void handleWebSocketMessage(uint8_t num, uint8_t * payload, size_t length) {
@@ -1017,24 +1024,24 @@ void playWelcomeEffect() {
     }
     
     // Efekt 3: Pulsowanie wszystkich diod (1.5s)
-    for(int j = 0; j < 3; j++) {  // Trzy pulsy
-        // Rozjaśnianie
-        for(int b = 0; b < 255; b += 5) {
-            for(int i = 0; i < NUMBER_OF_PUMPS; i++) {
-                strip.setPixelColor(i, strip.Color(b, b, b));
-            }
-            strip.show();
-            delay(2);
-        }
-        // Ściemnianie
-        for(int b = 255; b >= 0; b -= 5) {
-            for(int i = 0; i < NUMBER_OF_PUMPS; i++) {
-                strip.setPixelColor(i, strip.Color(b, b, b));
-            }
-            strip.show();
-            delay(2);
-        }
-    }
+    // for(int j = 0; j < 3; j++) {  // Trzy pulsy
+    //     // Rozjaśnianie
+    //     for(int b = 0; b < 255; b += 5) {
+    //         for(int i = 0; i < NUMBER_OF_PUMPS; i++) {
+    //             strip.setPixelColor(i, strip.Color(b, b, b));
+    //         }
+    //         strip.show();
+    //         delay(2);
+    //     }
+    //     // Ściemnianie
+    //     for(int b = 255; b >= 0; b -= 5) {
+    //         for(int i = 0; i < NUMBER_OF_PUMPS; i++) {
+    //             strip.setPixelColor(i, strip.Color(b, b, b));
+    //         }
+    //         strip.show();
+    //         delay(2);
+    //     }
+    // }
 }
 
 // Melodia powitalna
@@ -1681,7 +1688,7 @@ void colorToRGB(uint32_t color, uint8_t &r, uint8_t &g, uint8_t &b) {
     b = color & 0xFF;
 }
 
-void setLEDColor(uint8_t index, uint32_t color, bool immediate = false) {
+void setLEDColor(uint8_t index, uint32_t color, bool immediate) {
     if (index >= NUMBER_OF_PUMPS) return;
     
     LEDState &state = ledStates[index];
@@ -1792,7 +1799,8 @@ void setup() {
     Wire.begin();
     
     // 2. Inicjalizacja pamięci i konfiguracji
-    EEPROM.begin(1024);
+    EEPROM.begin(512);
+    loadMQTTConfig(); 
     initStorage();
     loadConfiguration();
     
