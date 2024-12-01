@@ -1523,288 +1523,75 @@ String getConfigPage() {
 }
 
 // Funkcja getStyles() - style CSS
-// String getStyles() {
-//     String styles = F("* {box-sizing: border-box; margin: 0; padding: 0;}"
-//         "body {font-family: Arial, sans-serif; line-height: 1.6; background: #f4f4f4; color: #333;}"
-//         ".container {max-width: 1200px; margin: 0 auto; padding: 20px;}"
-//         "h1 {text-align: center; color: #2196F3; margin-bottom: 30px;}"
-//         "h2 {color: #333; margin-bottom: 20px;}"
-        
-//         ".section {background: white; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);}"
-        
-//         ".config-table {width: 100%; border-collapse: collapse;}"
-//         ".config-table td {padding: 12px; border-bottom: 1px solid #eee;}"
-//         ".config-table td:first-child {width: 200px; font-weight: bold;}"
-        
-//         "input[type='text'], input[type='password'], input[type='number'] {width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;}"
-//         "input[type='checkbox'] {margin-right: 5px;}"
-        
-//         ".status {padding: 5px 10px; border-radius: 4px; font-weight: bold;}"
-//         ".success {background: #28a745; color: white;}"
-//         ".error {background: #dc3545; color: white;}"
-        
-//         ".buttons-container {display: flex; gap: 10px; justify-content: center;}"
-        
-//         ".btn {padding: 12px 24px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; transition: background-color 0.3s;}"
-//         ".btn-blue {background: #2196F3; color: white;}"
-//         ".btn-blue:hover {background: #1976D2;}"
-//         ".btn-red {background: #DC3545; color: white;}"
-//         ".btn-red:hover {background: #C82333;}"
-//         ".btn-green {background: #28A745; color: white; width: 100%;}"
-//         ".btn-green:hover {background: #218838;}"
-        
-//         ".days-container {display: flex; flex-wrap: wrap; gap: 10px;}"
-//         ".day-checkbox {display: inline-flex; align-items: center; background: #f8f9fa; padding: 5px 10px; border-radius: 4px;}"
-        
-//         ".footer {text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; color: #666;}"
-//         ".footer a {color: #2196F3; text-decoration: none;}"
-//         ".footer a:hover {text-decoration: underline;}"
-        
-//         "@media (max-width: 768px) {"
-//         "  .container {padding: 10px;}"
-//         "  .section {padding: 15px;}"
-//         "  .config-table td:first-child {width: 140px;}"
-//         "  .buttons-container {flex-direction: column;}"
-//         "  .btn {width: 100%;}"
-//         "}");
-
-//         // Dodaj style dla sekcji aktualizacji
-//         styles += F(".update-section {margin-top: 30px;}");
-//         styles += F(".update-section h2 {color: #333;}");
-//         styles += F(".progress-bar {width: 100%; height: 24px; border: 1px solid #2196F3; border-radius: 4px; overflow: hidden;}");
-//         styles += F(".progress {background: #2196F3; height: 100%; width: 0%;}");
-//         styles += F(".progress-text {text-align: center; margin-top: 8px;}");
-//         styles += F(".update-button {background: #2196F3; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px;}");
-//         styles += F("#file {margin: 10px 0;}");
-
-//         // Dodaj style dla kalibracji
-//         css += F(".calibration-section { margin: 10px 0; padding: 10px; border: 1px solid #ddd; border-radius: 4px; }");
-//         css += F(".calib-step { margin: 5px 0; }");
-//         css += F(".calib-step input { width: 60px; margin: 0 5px; }");
-//         css += F(".calib-status { margin-top: 5px; font-size: 0.9em; color: #666; }");
-//         css += F(".btn-small { padding: 2px 8px; margin-left: 5px; }");
-    
-//     return styles;
-// }
-
-// Pobranie stylów CSS
 String getStyles() {
-    String styles = F(
-        "body { "
-        "    font-family: Arial, sans-serif; "
-        "    margin: 0; "
-        "    padding: 20px; "
-        "    background-color: #1a1a1a;"
-        "    color: #ffffff;"
-        "}"
-
-        ".buttons-container {"
-        "    display: flex;"
-        "    justify-content: space-between;"
-        "    margin: -5px;"
-        "}"
-
-        ".container { "
-        "    max-width: 800px; "
-        "    margin: 0 auto; "
-        "    padding: 0 15px;"
-        "}"
-
-        ".section {"
-        "    background-color: #2a2a2a;"
-        "    padding: 20px;"
-        "    margin-bottom: 20px;"
-        "    border-radius: 8px;"
-        "    width: 100%;"
-        "    box-sizing: border-box;"
-        "}"
-
-        "h1 { "
-        "    color: #ffffff; "
-        "    text-align: center;"
-        "    margin-bottom: 30px;"
-        "    font-size: 2.5em;"
-        "    background-color: #2d2d2d;"
-        "    padding: 20px;"
-        "    border-radius: 8px;"
-        "    box-shadow: 0 2px 4px rgba(0,0,0,0.2);"
-        "}"
-
-        "h2 { "
-        "    color: #2196F3;"
-        "    margin-top: 0;"
-        "    font-size: 1.5em;"
-        "}"
-
-        ".config-table {"
-        "    width: 100%;"
-        "    border-collapse: collapse;"
-        "    table-layout: fixed;"
-        "}"
-
-        ".config-table td {"
-        "    padding: 8px;"
-        "    border-bottom: 1px solid #3d3d3d;"
-        "}"
-
-        ".config-table td:first-child {"
-        "    width: 65%;"
-        "}"
-
-        ".config-table td:last-child {"
-        "    width: 35%;"
-        "}"
-
-        "input[type='text'],"
-        "input[type='password'],"
-        "input[type='number'] {"
-        "    width: 100%;"
-        "    padding: 8px;"
-        "    border: 1px solid #3d3d3d;"
-        "    border-radius: 4px;"
-        "    background-color: #1a1a1a;"
-        "    color: #ffffff;"
-        "    box-sizing: border-box;"
-        "    text-align: left;"
-        "}"
-
-        "input[type='checkbox'] {"
-        "    width: 20px;"
-        "    height: 20px;"
-        "    margin: 0;"
-        "    vertical-align: middle;"
-        "}"
-
-        ".btn {"
-        "    padding: 12px 24px;"
-        "    border: none;"
-        "    border-radius: 4px;"
-        "    cursor: pointer;"
-        "    font-size: 14px;"
-        "    width: calc(50% - 10px);"  // zostaje bez zmian
-        "    display: inline-block;"     // zostaje bez zmian
-        "    margin: 5px;"              // zostaje bez zmian
-        "    text-align: center;"       // zostaje bez zmian
-        "    transition: background-color 0.3s;" // dodajemy efekt hover
-        "}"
-
-        ".btn-blue { "
-        "    background-color: #2196F3;"  // jasnoniebieski
-        "    color: white; "
-        "}"    
-
-        ".btn-blue:hover { "  // dodajemy efekt hover
-        "    background-color: #1976D2;" 
-        "}"
-
-        ".btn-red { "
-        "    background-color: #DC3545;"  // zmieniamy na kolor z HydroSense
-        "    color: white; "
-        "}"
-        
-        ".btn-red:hover { "  // dodajemy efekt hover
-        "    background-color: #C82333;"
-        "}"
-
-        ".btn-green { "  // dodajemy nowy styl dla przycisku "Zapisz"
-        "    background-color: #28A745;"
-        "    color: white;"
-        "    width: 100% !important;"  // przycisk na całą szerokość
-        "}"
-        
-        ".btn-green:hover { "
-        "    background-color: #218838;"
-        "}"
+    String styles = F("");
     
-        ".status {"
-        "    padding: 4px 8px;"
-        "    border-radius: 4px;"
-        "    display: inline-block;"
-        "}"
-
-        ".success { "
-        "    color: #4CAF50; "
-        "}"
-
-        ".error { "
-        "    color: #F44336;"
-        "}"
-
-        ".message {"
-        "    position: fixed;"
-        "    top: 20px;"
-        "    left: 50%;"
-        "    transform: translateX(-50%);"
-        "    padding: 15px 30px;"
-        "    border-radius: 5px;"
-        "    color: white;"
-        "    opacity: 0;"
-        "    transition: opacity 0.3s ease-in-out;"
-        "    z-index: 1000;"
-        "}"
-
-        "@media (max-width: 600px) {"
-        "    body { padding: 10px; }"
-        "    .container { padding: 0; }"
-        "    .section { padding: 15px; margin-bottom: 15px; }"
-        "    .config-table td:first-child { width: 50%; }"
-        "    .config-table td:last-child { width: 50%; }"
-        "    .btn { width: 100%; margin: 5px 0; }"
-        "    .buttons-container { flex-direction: column; }"
-        "}"
-
-        // Stopka
-        ".footer { "
-        "    text-align: center; "
-        "    padding: 20px 0; "
-        "}"
-        
-        ".footer a { "
-        "    display: inline-block; "
-        "    padding: 10px 20px; "
-        "    background-color: #333; "
-        "    color: #fff; "
-        "    text-decoration: none; "
-        "    border-radius: 4px; "
-        "}"
-        
-        ".footer a:hover { "
-        "    background-color: #444; "
-        "}"
-
-        ".dosing-days {"
-        "    margin-top: 20px;"
-        "}"
-        
-        ".dosing-days h3 {"
-        "    margin: 0 0 10px 0;"
-        "    font-size: 1em;"
-        "    font-weight: normal;"
-        "}"
-
-        ".days-container {"
-        "    display: flex;"
-        "    flex-wrap: wrap;"
-        "    gap: 10px;"
-        "    justify-content: flex-start;"
-        "}"
-
-        // Dodaj style dla sekcji aktualizacji
-        styles += F(".update-section {margin-top: 30px;}");
-        styles += F(".update-section h2 {color: #333;}");
-        styles += F(".progress-bar {width: 100%; height: 24px; border: 1px solid #2196F3; border-radius: 4px; overflow: hidden;}");
-        styles += F(".progress {background: #2196F3; height: 100%; width: 0%;}");
-        styles += F(".progress-text {text-align: center; margin-top: 8px;}");
-        styles += F(".update-button {background: #2196F3; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px;}");
-        styles += F("#file {margin: 10px 0;}");
-
-        // Dodaj style dla kalibracji
-        css += F(".calibration-section { margin: 10px 0; padding: 10px; border: 1px solid #ddd; border-radius: 4px; }");
-        css += F(".calib-step { margin: 5px 0; }");
-        css += F(".calib-step input { width: 60px; margin: 0 5px; }");
-        css += F(".calib-status { margin-top: 5px; font-size: 0.9em; color: #666; }");
-        css += F(".btn-small { padding: 2px 8px; margin-left: 5px; }");
-    );
+    // Podstawowe style
+    styles += F("* { box-sizing: border-box; margin: 0; padding: 0; }");
+    styles += F("body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #1a1a1a; color: #ffffff; }");
+    
+    // Kontenery
+    styles += F(".container { max-width: 800px; margin: 0 auto; padding: 0 15px; }");
+    styles += F(".buttons-container { display: flex; justify-content: space-between; margin: -5px; }");
+    styles += F(".section { background-color: #2a2a2a; padding: 20px; margin-bottom: 20px; border-radius: 8px; width: 100%; box-sizing: border-box; }");
+    
+    // Nagłówki
+    styles += F("h1 { color: #ffffff; text-align: center; margin-bottom: 30px; font-size: 2.5em; background-color: #2d2d2d; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }");
+    styles += F("h2 { color: #2196F3; margin-top: 0; font-size: 1.5em; }");
+    
+    // Tabela konfiguracji
+    styles += F(".config-table { width: 100%; border-collapse: collapse; table-layout: fixed; }");
+    styles += F(".config-table td { padding: 8px; border-bottom: 1px solid #3d3d3d; }");
+    styles += F(".config-table td:first-child { width: 65%; }");
+    styles += F(".config-table td:last-child { width: 35%; }");
+    
+    // Formularze
+    styles += F("input[type='text'], input[type='password'], input[type='number'] { width: 100%; padding: 8px; border: 1px solid #3d3d3d; border-radius: 4px; background-color: #1a1a1a; color: #ffffff; box-sizing: border-box; text-align: left; }");
+    styles += F("input[type='checkbox'] { width: 20px; height: 20px; margin: 0; vertical-align: middle; }");
+    
+    // Przyciski
+    styles += F(".btn { padding: 12px 24px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; width: calc(50% - 10px); display: inline-block; margin: 5px; text-align: center; transition: background-color 0.3s; }");
+    styles += F(".btn-blue { background-color: #2196F3; color: white; }");
+    styles += F(".btn-blue:hover { background-color: #1976D2; }");
+    styles += F(".btn-red { background-color: #DC3545; color: white; }");
+    styles += F(".btn-red:hover { background-color: #C82333; }");
+    styles += F(".btn-green { background-color: #28A745; color: white; width: 100% !important; }");
+    styles += F(".btn-green:hover { background-color: #218838; }");
+    
+    // Statusy i komunikaty
+    styles += F(".status { padding: 4px 8px; border-radius: 4px; display: inline-block; }");
+    styles += F(".success { color: #4CAF50; }");
+    styles += F(".error { color: #F44336; }");
+    styles += F(".message { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); padding: 15px 30px; border-radius: 5px; color: white; opacity: 0; transition: opacity 0.3s ease-in-out; z-index: 1000; }");
+    
+    // Sekcja dni dozowania
+    styles += F(".dosing-days { margin-top: 20px; }");
+    styles += F(".dosing-days h3 { margin: 0 0 10px 0; font-size: 1em; font-weight: normal; }");
+    styles += F(".days-container { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-start; }");
+    
+    // Sekcja aktualizacji
+    styles += F(".update-section { margin-top: 30px; }");
+    styles += F(".progress-bar { width: 100%; height: 24px; border: 1px solid #2196F3; border-radius: 4px; overflow: hidden; }");
+    styles += F(".progress { background: #2196F3; height: 100%; width: 0%; }");
+    styles += F(".progress-text { text-align: center; margin-top: 8px; }");
+    styles += F(".update-button { background: #2196F3; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px; }");
+    styles += F("#file { margin: 10px 0; }");
+    
+    // Sekcja kalibracji
+    styles += F(".calibration-section { margin: 10px 0; padding: 10px; border: 1px solid #3d3d3d; border-radius: 4px; }");
+    styles += F(".calib-step { margin: 5px 0; }");
+    styles += F(".calib-step input { width: 60px; margin: 0 5px; }");
+    styles += F(".calib-status { margin-top: 5px; font-size: 0.9em; color: #666; }");
+    styles += F(".btn-small { padding: 2px 8px; margin-left: 5px; }");
+    
+    // Stopka
+    styles += F(".footer { text-align: center; padding: 20px 0; }");
+    styles += F(".footer a { display: inline-block; padding: 10px 20px; background-color: #333; color: #fff; text-decoration: none; border-radius: 4px; }");
+    styles += F(".footer a:hover { background-color: #444; }");
+    
+    // Media Queries
+    styles += F("@media (max-width: 600px) { body { padding: 10px; } .container { padding: 0; } .section { padding: 15px; margin-bottom: 15px; } .config-table td:first-child { width: 50%; } .config-table td:last-child { width: 50%; } .btn { width: 100%; margin: 5px 0; } .buttons-container { flex-direction: column; } }");
+    
     return styles;
 }
 
