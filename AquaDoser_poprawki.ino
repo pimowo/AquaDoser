@@ -30,6 +30,12 @@ class HASensor;
 #include <Adafruit_NeoPixel.h>  // Sterowanie LED
 #include <NTPClient.h>          // Klient NTP
 
+#define SYSTEM_CONFIG_ADDR 0
+#define NETWORK_CONFIG_ADDR 100
+#define MQTT_CONFIG_ADDR 200
+#define PUMPS_CONFIG_ADDR 300
+#define DEBOUNCE_TIME 50
+
 /***************************************
  * DEFINICJE STAŁYCH
  ***************************************/
@@ -219,6 +225,10 @@ bool firstRun = true;               // Pierwsze uruchomienie
 
 // --- Stan LED
 LEDState ledStates[NUMBER_OF_PUMPS];  // Stan diod LED
+
+// --- Przycisk
+bool lastButtonState = HIGH;
+unsigned long lastButtonPress = 0;
 
 /***************************************
  * ZMIENNE CZASOWE I LICZNIKI
@@ -649,13 +659,6 @@ void updateAllPumpLEDs() {
     for (uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
         updatePumpLED(i);
     }
-}
-
-void setLEDColor(uint8_t index, uint32_t color, bool withPulsing = false) {
-    if (index >= NUMBER_OF_PUMPS) return;
-    
-    ledStates[index].targetColor = color;
-    ledStates[index].pulsing = withPulsing;
 }
 
 // --- Funkcje sieciowe
@@ -1708,8 +1711,8 @@ DateTime calculateNextDosing(uint8_t pumpIndex) {
         now.year(),
         now.month(),
         now.day(),
-        pumps[pumpIndex].hour,
-        pumps[pumpIndex].minute,
+        pumps[pumpIndex].dosingHour,    // upewnij się, że używasz właściwej nazwy pola
+        pumps[pumpIndex].dosingMinute,   // upewnij się, że używasz właściwej nazwy pola
         0
     );
     
