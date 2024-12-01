@@ -104,6 +104,7 @@ struct PumpConfig {
     float dose;
     uint8_t schedule_hour;
     uint8_t minute;
+    uint8_t hour;        
     uint8_t schedule_days;
     time_t lastDosing;
     bool isRunning;
@@ -228,7 +229,6 @@ LEDState ledStates[NUMBER_OF_PUMPS];  // Stan diod LED
 
 // --- Przycisk
 bool lastButtonState = HIGH;
-unsigned long lastButtonPress = 0;
 
 /***************************************
  * ZMIENNE CZASOWE I LICZNIKI
@@ -243,6 +243,7 @@ const char* dayNames[] = {"Pn", "Wt", "Śr", "Cz", "Pt", "Sb", "Nd"};
 
 // --- Liczniki i ostatnie wykonania
 unsigned long lastButtonPress = 0;    // Ostatnie naciśnięcie przycisku
+bool lastButtonState = HIGH;
 unsigned long lastMQTTLoop = 0;       // Ostatnia pętla MQTT
 unsigned long lastMeasurement = 0;    // Ostatni pomiar
 unsigned long lastOTACheck = 0;       // Ostatnie sprawdzenie OTA
@@ -1711,8 +1712,8 @@ DateTime calculateNextDosing(uint8_t pumpIndex) {
         now.year(),
         now.month(),
         now.day(),
-        pumps[pumpIndex].dosingHour,    // upewnij się, że używasz właściwej nazwy pola
-        pumps[pumpIndex].dosingMinute,   // upewnij się, że używasz właściwej nazwy pola
+        pumps[pumpIndex].hour,    // Zmienione z dosingHour
+        pumps[pumpIndex].minute,  // Zmienione z dosingMinute
         0
     );
     
@@ -1721,6 +1722,26 @@ DateTime calculateNextDosing(uint8_t pumpIndex) {
     }
     
     return nextRun;
+}
+
+void setupPumpEntities(uint8_t index) {
+    char name[32];
+    char uniqueId[32];
+    
+    sprintf(name, "Pompa %d", index + 1);
+    sprintf(uniqueId, "pump_%d", index + 1);
+    
+    HASwitch* pumpSwitch = new HASwitch(uniqueId, false);
+    pumpSwitch->setName(name);
+    pumpSwitch->onCommand(onPumpSwitch);
+    pumpSwitch->setIcon("mdi:water-pump");
+}
+
+void setupServiceModeSwitch() {
+    HASwitch* serviceSwitch = new HASwitch("service_mode", false);
+    serviceSwitch->setName("Tryb serwisowy");
+    serviceSwitch->onCommand(onServiceModeSwitch);
+    serviceSwitch->setIcon("mdi:tools");
 }
 
 void printLogHeader() {
