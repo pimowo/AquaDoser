@@ -119,7 +119,15 @@ struct PumpState {
     unsigned long lastDoseTime;
     HASensor* sensor;
     
-    PumpState() : isActive(false), lastDoseTime(0), sensor(nullptr) {}
+    // Dodane pola dla kalibracji
+    bool isCalibrating;
+    unsigned long calibrationStartTime;
+    unsigned long calibrationDuration;
+    bool calibrationCompleted;
+    
+    PumpState() : isActive(false), lastDoseTime(0), sensor(nullptr),
+                  isCalibrating(false), calibrationStartTime(0), 
+                  calibrationDuration(0), calibrationCompleted(false) {}
 };
 
 // --- Konfiguracja MQTT
@@ -504,11 +512,18 @@ void stopPump(uint8_t pumpIndex) {
 }
 
 // Zatrzymanie wszystkich pomp
+// void stopAllPumps() {
+//     for (uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
+//         if (pumpRunning[i]) {
+//             stopPump(i);
+//         }
+//     }
+// }
+
 void stopAllPumps() {
     for (uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
-        if (pumpRunning[i]) {
-            stopPump(i);
-        }
+        pumpRunning[i] = false;
+        pcf8574.write(i, HIGH);
     }
 }
 
@@ -1570,6 +1585,13 @@ String getStyles() {
         styles += F(".progress-text {text-align: center; margin-top: 8px;}");
         styles += F(".update-button {background: #2196F3; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px;}");
         styles += F("#file {margin: 10px 0;}");
+
+        // Dodaj style dla kalibracji
+        css += F(".calibration-section { margin: 10px 0; padding: 10px; border: 1px solid #ddd; border-radius: 4px; }");
+        css += F(".calib-step { margin: 5px 0; }");
+        css += F(".calib-step input { width: 60px; margin: 0 5px; }");
+        css += F(".calib-status { margin-top: 5px; font-size: 0.9em; color: #666; }");
+        css += F(".btn-small { padding: 2px 8px; margin-left: 5px; }");
     
     return styles;
 }
@@ -1876,6 +1898,198 @@ String getCalibrationSection() {
     return html;
 }
 
+String getPumpConfigSection(uint8_t index) {
+    String html = F("<div class='pump-config'>");
+    html += F("<h3>Pompa "); html += (index + 1); html += F("</h3>");
+    
+    // Nazwa pompy
+    html += getPumpInputField(index, "name", "Nazwa", pumps[index].name, "text");
+    
+    // Włącznik pompy
+    html += getPumpCheckbox(index, "enabled", "Aktywna", pumps[index].enabled);
+    
+    // Sekcja kalibracji
+    html += F("<div class='calibration-section'>");
+    html += F("<label>Kalibracja: <span id='calibration"); 
+    html += index; html += F("'>"); 
+    html += String(pumps[index].calibration, 1);
+    html += F("</span> ml/s</label>");
+    
+    // Pola kalibracji
+    html += F("<div class='calib-step' id='step1_"); html += index; html += F("'>");
+    html += F("<label>Czas kalibracji: <input type='number' id='calibTime");
+    html += index; html += F("' min='1' max='60' value='10'> s </label>");
+    html += F("<button onclick='startCalib("); html += index; 
+    html += F(")' class='btn-small'>Kalibruj</button></div>");
+    
+    // Pole do wprowadzenia zmierzonej objętości (początkowo ukryte)
+    html += F("<div class='calib-step' id='step2_"); html += index; 
+    html += F("' style='display:none'>");
+    html += F("<label>Zmierzona objętość: <input type='number' id='measuredVol");
+    html += index; html += F("' min='0' step='0.1' value='0.0'> ml </label>");
+    html += F("<button onclick='finishCalib("); html += index;
+    html += F(")' class='btn-small'>Zapisz</button></div>");
+    
+    // Status kalibracji
+    html += F("<div id='result"); html += index; html += F("' class='calib-status'></div>");
+    html += F("</div>");
+    
+    // Pozostałe pola
+    html += getPumpInputField(index, "dose", "Dawka (ml)", String(pumps[index].dose), "number", "step='0.1'");
+    html += getPumpInputField(index, "hour", "Godzina dozowania", String(pumps[index].hour), "number", "min='0' max='23'");
+    html += getPumpInputField(index, "minute", "Minuta dozowania", String(pumps[index].minute), "number", "min='0' max='59'");
+    html += getScheduleDaysField(index);
+    
+    html += F("</div>");
+    return html;
+}
+
+String getScripts() {
+    String js = existingScripts; // twoje obecne skrypty
+
+    js += F("function startCalib(pumpIndex) {");
+    js += F("    var time = document.getElementById('calibTime' + pumpIndex).value;");
+    js += F("    if (!time || time < 1 || time > 60) {");
+    js += F("        alert('Wprowadź prawidłowy czas (1-60 sekund)');");
+    js += F("        return;");
+    js += F("    }");
+    js += F("    document.getElementById('result' + pumpIndex).innerHTML = ");
+    js += F("        'Kalibracja w toku... Proszę czekać ' + time + ' sekund';");
+    js += F("    fetch('/calibrate?start=1&pump=' + pumpIndex + '&time=' + time)");
+    js += F("        .then(response => {");
+    js += F("            document.getElementById('step1_' + pumpIndex).style.display = 'none';");
+    js += F("            setTimeout(() => {");
+    js += F("                document.getElementById('step2_' + pumpIndex).style.display = 'block';");
+    js += F("                document.getElementById('result' + pumpIndex).innerHTML = ");
+    js += F("                    'Pompa zatrzymana. Podaj zmierzoną objętość.';");
+    js += F("            }, time * 1000);");
+    js += F("        });");
+    js += F("}");
+    
+    js += F("function finishCalib(pumpIndex) {");
+    js += F("    var volume = document.getElementById('measuredVol' + pumpIndex).value;");
+    js += F("    if (!volume || volume <= 0) {");
+    js += F("        alert('Wprowadź zmierzoną objętość');");
+    js += F("        return;");
+    js += F("    }");
+    js += F("    fetch('/calibrate?finish=1&pump=' + pumpIndex + '&volume=' + volume)");
+    js += F("        .then(response => response.json())");
+    js += F("        .then(data => {");
+    js += F("            document.getElementById('calibration' + pumpIndex).textContent = ");
+    js += F("                data.flowRate.toFixed(1);");
+    js += F("            document.getElementById('result' + pumpIndex).innerHTML = ");
+    js += F("                'Kalibracja zapisana!';");
+    js += F("            document.getElementById('step1_' + pumpIndex).style.display = 'block';");
+    js += F("            document.getElementById('step2_' + pumpIndex).style.display = 'none';");
+    js += F("        });");
+    js += F("}");
+
+    return js;
+}
+
+// Obsługa żądań HTTP dla kalibracji
+void handleCalibration() {
+    if (!server.hasArg("pump")) {
+        server.send(400, F("application/json"), F("{\"error\":\"Missing pump index\"}"));
+        return;
+    }
+    
+    int pumpIndex = server.arg("pump").toInt();
+    if (pumpIndex < 0 || pumpIndex >= NUMBER_OF_PUMPS) {
+        server.send(400, F("application/json"), F("{\"error\":\"Invalid pump index\"}"));
+        return;
+    }
+    
+    if (server.hasArg("start")) {
+        // Rozpoczęcie kalibracji
+        int seconds = server.arg("time").toInt();
+        if (seconds < 1 || seconds > 60) {
+            server.send(400, F("application/json"), F("{\"error\":\"Invalid time\"}"));
+            return;
+        }
+        startCalibration(pumpIndex, seconds);
+        server.send(200, F("application/json"), F("{\"status\":\"started\"}"));
+    }
+    else if (server.hasArg("finish")) {
+        // Zakończenie kalibracji
+        if (!pumpStates[pumpIndex].calibrationCompleted) {
+            server.send(400, F("application/json"), F("{\"error\":\"Calibration not completed\"}"));
+            return;
+        }
+        
+        float volume = server.arg("volume").toFloat();
+        if (volume <= 0) {
+            server.send(400, F("application/json"), F("{\"error\":\"Invalid volume\"}"));
+            return;
+        }
+        
+        float flowRate = finishCalibration(pumpIndex, volume);
+        String response = "{\"flowRate\":" + String(flowRate, 1) + "}";
+        server.send(200, F("application/json"), response);
+    }
+}
+
+// Rozpoczęcie procesu kalibracji
+void startCalibration(uint8_t pumpIndex, int seconds) {
+    // Zatrzymaj wszystkie pompy
+    stopAllPumps();
+    
+    // Ustaw stan kalibracji
+    pumpStates[pumpIndex].isCalibrating = true;
+    pumpStates[pumpIndex].calibrationDuration = seconds * 1000UL; // konwersja na ms
+    pumpStates[pumpIndex].calibrationStartTime = millis();
+    pumpStates[pumpIndex].calibrationCompleted = false;
+    
+    // Uruchom pompę
+    pumpRunning[pumpIndex] = true;
+    pcf8574.write(pumpIndex, LOW);
+    
+    // Ustaw fioletowy kolor LED
+    setLEDColor(pumpIndex, COLOR_RAINBOW_6);
+}
+
+// Zakończenie kalibracji i obliczenie wydajności
+float finishCalibration(uint8_t pumpIndex, float measuredVolume) {
+    // Oblicz wydajność (ml/s)
+    float seconds = pumpStates[pumpIndex].calibrationDuration / 1000.0;
+    float flowRate = measuredVolume / seconds;
+    
+    // Zapisz nową kalibrację
+    pumps[pumpIndex].calibration = flowRate;
+    savePumpsConfig();
+    
+    // Zresetuj stan kalibracji
+    pumpStates[pumpIndex].isCalibrating = false;
+    pumpStates[pumpIndex].calibrationCompleted = false;
+    
+    // Przywróć normalny kolor LED
+    updatePumpLED(pumpIndex);
+    
+    return flowRate;
+}
+
+// Sprawdzanie stanu kalibracji (dodaj do loop())
+void checkCalibration() {
+    for (uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
+        if (pumpStates[i].isCalibrating && !pumpStates[i].calibrationCompleted) {
+            unsigned long currentTime = millis();
+            unsigned long elapsedTime = currentTime - pumpStates[i].calibrationStartTime;
+            
+            // Sprawdź czy minął zadany czas
+            if (elapsedTime >= pumpStates[i].calibrationDuration) {
+                // Zatrzymaj pompę
+                pumpRunning[i] = false;
+                pcf8574.write(i, HIGH);
+                pumpStates[i].calibrationCompleted = true;
+                
+                // Ustaw LED na pulsujący fioletowy
+                ledStates[i].pulsing = true;
+                ledStates[i].currentColor = COLOR_RAINBOW_6;
+            }
+        }
+    }
+}
+
 // --- Funkcje callback Home Assistant
 void onPumpSwitch(bool state, HASwitch* sender) {
     String name = sender->getName();
@@ -2090,6 +2304,7 @@ void setup() {
         delay(1000);
         ESP.restart();
     });
+    server.on("/calibrate", handleCalibration);
     
     // 6. Synchronizacja czasu
     syncRTC();
@@ -2108,6 +2323,7 @@ void loop() {
     server.handleClient();          // Obsługa żądań HTTP
     webSocket.loop();              // Obsługa WebSocket
     mqtt.loop();                   // Obsługa MQTT
+    checkCalibration();
     
     // Obsługa interfejsu użytkownika
     handleButton();                // Obsługa przycisku
