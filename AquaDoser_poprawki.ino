@@ -1523,69 +1523,69 @@ String getConfigPage() {
 }
 
 // Funkcja getStyles() - style CSS
-String getStyles() {
-    String styles = F("* {box-sizing: border-box; margin: 0; padding: 0;}"
-        "body {font-family: Arial, sans-serif; line-height: 1.6; background: #f4f4f4; color: #333;}"
-        ".container {max-width: 1200px; margin: 0 auto; padding: 20px;}"
-        "h1 {text-align: center; color: #2196F3; margin-bottom: 30px;}"
-        "h2 {color: #333; margin-bottom: 20px;}"
+// String getStyles() {
+//     String styles = F("* {box-sizing: border-box; margin: 0; padding: 0;}"
+//         "body {font-family: Arial, sans-serif; line-height: 1.6; background: #f4f4f4; color: #333;}"
+//         ".container {max-width: 1200px; margin: 0 auto; padding: 20px;}"
+//         "h1 {text-align: center; color: #2196F3; margin-bottom: 30px;}"
+//         "h2 {color: #333; margin-bottom: 20px;}"
         
-        ".section {background: white; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);}"
+//         ".section {background: white; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);}"
         
-        ".config-table {width: 100%; border-collapse: collapse;}"
-        ".config-table td {padding: 12px; border-bottom: 1px solid #eee;}"
-        ".config-table td:first-child {width: 200px; font-weight: bold;}"
+//         ".config-table {width: 100%; border-collapse: collapse;}"
+//         ".config-table td {padding: 12px; border-bottom: 1px solid #eee;}"
+//         ".config-table td:first-child {width: 200px; font-weight: bold;}"
         
-        "input[type='text'], input[type='password'], input[type='number'] {width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;}"
-        "input[type='checkbox'] {margin-right: 5px;}"
+//         "input[type='text'], input[type='password'], input[type='number'] {width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;}"
+//         "input[type='checkbox'] {margin-right: 5px;}"
         
-        ".status {padding: 5px 10px; border-radius: 4px; font-weight: bold;}"
-        ".success {background: #28a745; color: white;}"
-        ".error {background: #dc3545; color: white;}"
+//         ".status {padding: 5px 10px; border-radius: 4px; font-weight: bold;}"
+//         ".success {background: #28a745; color: white;}"
+//         ".error {background: #dc3545; color: white;}"
         
-        ".buttons-container {display: flex; gap: 10px; justify-content: center;}"
+//         ".buttons-container {display: flex; gap: 10px; justify-content: center;}"
         
-        ".btn {padding: 12px 24px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; transition: background-color 0.3s;}"
-        ".btn-blue {background: #2196F3; color: white;}"
-        ".btn-blue:hover {background: #1976D2;}"
-        ".btn-red {background: #DC3545; color: white;}"
-        ".btn-red:hover {background: #C82333;}"
-        ".btn-green {background: #28A745; color: white; width: 100%;}"
-        ".btn-green:hover {background: #218838;}"
+//         ".btn {padding: 12px 24px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; transition: background-color 0.3s;}"
+//         ".btn-blue {background: #2196F3; color: white;}"
+//         ".btn-blue:hover {background: #1976D2;}"
+//         ".btn-red {background: #DC3545; color: white;}"
+//         ".btn-red:hover {background: #C82333;}"
+//         ".btn-green {background: #28A745; color: white; width: 100%;}"
+//         ".btn-green:hover {background: #218838;}"
         
-        ".days-container {display: flex; flex-wrap: wrap; gap: 10px;}"
-        ".day-checkbox {display: inline-flex; align-items: center; background: #f8f9fa; padding: 5px 10px; border-radius: 4px;}"
+//         ".days-container {display: flex; flex-wrap: wrap; gap: 10px;}"
+//         ".day-checkbox {display: inline-flex; align-items: center; background: #f8f9fa; padding: 5px 10px; border-radius: 4px;}"
         
-        ".footer {text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; color: #666;}"
-        ".footer a {color: #2196F3; text-decoration: none;}"
-        ".footer a:hover {text-decoration: underline;}"
+//         ".footer {text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; color: #666;}"
+//         ".footer a {color: #2196F3; text-decoration: none;}"
+//         ".footer a:hover {text-decoration: underline;}"
         
-        "@media (max-width: 768px) {"
-        "  .container {padding: 10px;}"
-        "  .section {padding: 15px;}"
-        "  .config-table td:first-child {width: 140px;}"
-        "  .buttons-container {flex-direction: column;}"
-        "  .btn {width: 100%;}"
-        "}");
+//         "@media (max-width: 768px) {"
+//         "  .container {padding: 10px;}"
+//         "  .section {padding: 15px;}"
+//         "  .config-table td:first-child {width: 140px;}"
+//         "  .buttons-container {flex-direction: column;}"
+//         "  .btn {width: 100%;}"
+//         "}");
 
-        // Dodaj style dla sekcji aktualizacji
-        styles += F(".update-section {margin-top: 30px;}");
-        styles += F(".update-section h2 {color: #333;}");
-        styles += F(".progress-bar {width: 100%; height: 24px; border: 1px solid #2196F3; border-radius: 4px; overflow: hidden;}");
-        styles += F(".progress {background: #2196F3; height: 100%; width: 0%;}");
-        styles += F(".progress-text {text-align: center; margin-top: 8px;}");
-        styles += F(".update-button {background: #2196F3; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px;}");
-        styles += F("#file {margin: 10px 0;}");
+//         // Dodaj style dla sekcji aktualizacji
+//         styles += F(".update-section {margin-top: 30px;}");
+//         styles += F(".update-section h2 {color: #333;}");
+//         styles += F(".progress-bar {width: 100%; height: 24px; border: 1px solid #2196F3; border-radius: 4px; overflow: hidden;}");
+//         styles += F(".progress {background: #2196F3; height: 100%; width: 0%;}");
+//         styles += F(".progress-text {text-align: center; margin-top: 8px;}");
+//         styles += F(".update-button {background: #2196F3; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px;}");
+//         styles += F("#file {margin: 10px 0;}");
 
-        // Dodaj style dla kalibracji
-        css += F(".calibration-section { margin: 10px 0; padding: 10px; border: 1px solid #ddd; border-radius: 4px; }");
-        css += F(".calib-step { margin: 5px 0; }");
-        css += F(".calib-step input { width: 60px; margin: 0 5px; }");
-        css += F(".calib-status { margin-top: 5px; font-size: 0.9em; color: #666; }");
-        css += F(".btn-small { padding: 2px 8px; margin-left: 5px; }");
+//         // Dodaj style dla kalibracji
+//         css += F(".calibration-section { margin: 10px 0; padding: 10px; border: 1px solid #ddd; border-radius: 4px; }");
+//         css += F(".calib-step { margin: 5px 0; }");
+//         css += F(".calib-step input { width: 60px; margin: 0 5px; }");
+//         css += F(".calib-status { margin-top: 5px; font-size: 0.9em; color: #666; }");
+//         css += F(".btn-small { padding: 2px 8px; margin-left: 5px; }");
     
-    return styles;
-}
+//     return styles;
+// }
 
 // Pobranie stylów CSS
 String getStyles() {
@@ -1789,6 +1789,21 @@ String getStyles() {
         "    justify-content: flex-start;"
         "}"
 
+        // Dodaj style dla sekcji aktualizacji
+        styles += F(".update-section {margin-top: 30px;}");
+        styles += F(".update-section h2 {color: #333;}");
+        styles += F(".progress-bar {width: 100%; height: 24px; border: 1px solid #2196F3; border-radius: 4px; overflow: hidden;}");
+        styles += F(".progress {background: #2196F3; height: 100%; width: 0%;}");
+        styles += F(".progress-text {text-align: center; margin-top: 8px;}");
+        styles += F(".update-button {background: #2196F3; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px;}");
+        styles += F("#file {margin: 10px 0;}");
+
+        // Dodaj style dla kalibracji
+        css += F(".calibration-section { margin: 10px 0; padding: 10px; border: 1px solid #ddd; border-radius: 4px; }");
+        css += F(".calib-step { margin: 5px 0; }");
+        css += F(".calib-step input { width: 60px; margin: 0 5px; }");
+        css += F(".calib-status { margin-top: 5px; font-size: 0.9em; color: #666; }");
+        css += F(".btn-small { padding: 2px 8px; margin-left: 5px; }");
     );
     return styles;
 }
@@ -1839,7 +1854,7 @@ String getScheduleDaysField(uint8_t index) {
         html += F("][days][");
         html += i;
         html += F("]' value='1'");
-        if (pumps[index].scheduleDays & (1 << i)) html += F(" checked");
+        if (pumps[index].schedule_days & (1 << i)) html += F(" checked");
         html += F("> ");
         html += days[i];
         html += F("</label>");
