@@ -1741,13 +1741,6 @@ void setupServiceModeSwitch() {
     serviceSwitch->setIcon("mdi:tools");
 }
 
-void setupServiceModeSwitch() {
-    HASwitch* serviceSwitch = new HASwitch("service_mode", false);
-    serviceSwitch->setName("Tryb serwisowy");
-    serviceSwitch->onCommand(onServiceModeSwitch);
-    serviceSwitch->setIcon("mdi:tools");
-}
-
 void printLogHeader() {
     Serial.println(F("Status pomp:"));
     Serial.println(F("Idx\tStan\tKalibracja\tOstatnie dozowanie"));
