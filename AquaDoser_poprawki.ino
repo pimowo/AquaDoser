@@ -380,15 +380,20 @@ void loadMQTTConfig() {
     Serial.println("Wczytano konfigurację MQTT:");
     Serial.print("Broker: "); Serial.println(mqttConfig.broker);
     Serial.print("Port: "); Serial.println(mqttConfig.port);
+    
+    // Sprawdź czy port jest prawidłowy, jeśli nie - ustaw domyślny
+    if (mqttConfig.port <= 0 || mqttConfig.port > 65535) {
+        mqttConfig.port = 1883;
+    }
 }
 
 // Zapisanie konfiguracji MQTT
 void saveMQTTConfig() {
     EEPROM.put(MQTT_CONFIG_ADDR, mqttConfig);
-    bool success = EEPROM.commit();
-    
-    if (success) {
-        Serial.println("Zapisano konfigurację MQTT");
+    if (EEPROM.commit()) {
+        Serial.println("Zapisano konfigurację MQTT:");
+        Serial.print("Broker: "); Serial.println(mqttConfig.broker);
+        Serial.print("Port: "); Serial.println(mqttConfig.port);
     } else {
         Serial.println("Błąd zapisu konfiguracji MQTT!");
     }
@@ -703,31 +708,28 @@ void firstUpdateHA() {
 
 // Konfiguracja MQTT
 void setupMQTT() {
-    if (strlen(networkConfig.mqtt_server) == 0) {
-        Serial.println(F("Brak konfiguracji MQTT"));
+    if (strlen(mqttConfig.broker) == 0) {
+        Serial.println("Brak skonfigurowanego brokera MQTT");
         return;
     }
 
-    //if (!mqttConfig.enabled) return;
-    
-    mqtt.onConnected([]() {
-        systemStatus.mqtt_connected = true;
-        Serial.println("MQTT Connected");
-    });
-    
-    mqtt.onDisconnected([]() {
-        systemStatus.mqtt_connected = false;
-        Serial.println("MQTT Disconnected");
-    });
+    Serial.println("Konfiguracja MQTT:");
+    Serial.print("Broker: "); Serial.println(mqttConfig.broker);
+    Serial.print("Port: "); Serial.println(mqttConfig.port);
 
-    setupHA();  // Konfiguracja Home Assistant
+    client.setServer(mqttConfig.broker, mqttConfig.port);
     
-    // Konfiguracja MQTT
-    if (mqtt.begin(networkConfig.mqtt_server,
-                   networkConfig.mqtt_port,
-                   networkConfig.mqtt_user,
-                   networkConfig.mqtt_password)) {
-        firstUpdateHA();  // Pierwsza aktualizacja stanu
+    // Jeśli są ustawione dane logowania
+    if (strlen(mqttConfig.username) > 0) {
+        client.setCredentials(mqttConfig.username, mqttConfig.password);
+    }
+
+    // Próba połączenia
+    if (client.connect("AquaDoser")) {
+        Serial.println("Połączono z MQTT");
+        setupHA();  // Konfiguracja Home Assistant
+    } else {
+        Serial.println("Błąd połączenia z MQTT");
     }
 }
 
@@ -930,33 +932,59 @@ void handleConfigSave() {
         return;
     }
 
-    Serial.println("Zapisywanie nowej konfiguracji MQTT:");
+    Serial.println("Otrzymano nową konfigurację MQTT:");
     Serial.print("Broker: "); Serial.println(server.arg("mqtt_broker"));
     Serial.print("Port: "); Serial.println(server.arg("mqtt_port"));
-    Serial.print("Enabled: "); Serial.println(server.hasArg("mqtt_enabled") ? "Tak" : "Nie");
 
-    // Zapisz poprzednie wartości na wypadek błędów
+    // Zapisz poprzednie wartości
     MQTTConfig oldConfig = mqttConfig;
     bool needMqttReconnect = false;
 
-    // Zapisz ustawienia MQTT
-    strlcpy(mqttConfig.broker, server.arg("mqtt_broker").c_str(), sizeof(mqttConfig.broker));
-    mqttConfig.port = server.arg("mqtt_port").toInt();
-    //mqttConfig.enabled = server.hasArg("mqtt_enabled") && server.arg("mqtt_enabled") == "1";
+    // Sprawdź i zapisz broker
+    if (server.hasArg("mqtt_broker")) {
+        String newBroker = server.arg("mqtt_broker");
+        if (strcmp(mqttConfig.broker, newBroker.c_str()) != 0) {
+            strlcpy(mqttConfig.broker, newBroker.c_str(), sizeof(mqttConfig.broker));
+            needMqttReconnect = true;
+        }
+    }
 
-    // Sprawdź czy dane są poprawne
-    if (strlen(mqttConfig.broker) == 0 || mqttConfig.port <= 0) {
-        Serial.println("Błędne dane konfiguracyjne!");
-        mqttConfig = oldConfig;
-        server.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Nieprawidłowe dane\"}");
-        return;
+    // Sprawdź i zapisz port
+    if (server.hasArg("mqtt_port")) {
+        int newPort = server.arg("mqtt_port").toInt();
+        if (newPort > 0 && newPort <= 65535 && newPort != mqttConfig.port) {
+            mqttConfig.port = newPort;
+            needMqttReconnect = true;
+        }
+    }
+
+    // Opcjonalne pola logowania
+    if (server.hasArg("mqtt_username")) {
+        String newUsername = server.arg("mqtt_username");
+        if (strcmp(mqttConfig.username, newUsername.c_str()) != 0) {
+            strlcpy(mqttConfig.username, newUsername.c_str(), sizeof(mqttConfig.username));
+            needMqttReconnect = true;
+        }
+    }
+
+    if (server.hasArg("mqtt_password")) {
+        String newPassword = server.arg("mqtt_password");
+        if (strcmp(mqttConfig.password, newPassword.c_str()) != 0) {
+            strlcpy(mqttConfig.password, newPassword.c_str(), sizeof(mqttConfig.password));
+            needMqttReconnect = true;
+        }
     }
 
     // Zapisz konfigurację
     saveMQTTConfig();
 
-    // Zrestartuj MQTT
-    setupMQTT();
+    // Zrestartuj MQTT jeśli potrzeba
+    if (needMqttReconnect) {
+        if (client.connected()) {
+            client.disconnect();
+        }
+        setupMQTT();
+    }
 
     server.send(200, "application/json", "{\"status\":\"ok\"}");
 }
@@ -1040,26 +1068,6 @@ void playWelcomeEffect() {
             delay(160);
         }
     }
-    
-    // Efekt 3: Pulsowanie wszystkich diod (1.5s)
-    // for(int j = 0; j < 3; j++) {  // Trzy pulsy
-    //     // Rozjaśnianie
-    //     for(int b = 0; b < 255; b += 5) {
-    //         for(int i = 0; i < NUMBER_OF_PUMPS; i++) {
-    //             strip.setPixelColor(i, strip.Color(b, b, b));
-    //         }
-    //         strip.show();
-    //         delay(2);
-    //     }
-    //     // Ściemnianie
-    //     for(int b = 255; b >= 0; b -= 5) {
-    //         for(int i = 0; i < NUMBER_OF_PUMPS; i++) {
-    //             strip.setPixelColor(i, strip.Color(b, b, b));
-    //         }
-    //         strip.show();
-    //         delay(2);
-    //     }
-    // }
 }
 
 // Melodia powitalna
@@ -1165,6 +1173,248 @@ String getUpdatePage() {
 }
 
 // Pobranie strony konfiguracji
+// String getConfigPage() {
+//     String page = F("<!DOCTYPE html><html lang='pl'><head>");
+//     page += F("<meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1'>");
+//     page += F("<title>AquaDoser</title><style>");
+//     page += getStyles();
+//     page += F("</style>");
+    
+//     // Skrypt JavaScript z WebSocket i funkcjami
+//     page += F("<script>");
+//     // Dodanie WebSocket
+//     page += F("let ws = new WebSocket('ws://' + window.location.hostname + ':81/');");
+//     page += F("ws.onmessage = function(event) {");
+//     page += F("    let status = JSON.parse(event.data);");
+//     page += F("    updateStatus(status);");
+//     page += F("};");
+    
+//     // Funkcja aktualizacji statusu
+//     page += F("function updateStatus(status) {");
+//     page += F("    document.getElementById('mqtt-status').className = 'status ' + (status.mqtt_connected ? 'success' : 'error');");
+//     page += F("    document.getElementById('mqtt-status').innerText = status.mqtt_connected ? 'Połączony' : 'Rozłączony';");
+//     page += F("    document.getElementById('wifi-status').className = 'status ' + (status.wifi_connected ? 'success' : 'error');");
+//     page += F("    document.getElementById('wifi-status').innerText = status.wifi_connected ? 'Połączony' : 'Rozłączony';");
+//     page += F("    document.getElementById('uptime').innerText = formatUptime(status.uptime);");
+//     page += F("    document.getElementById('current-time').innerText = status.current_time;");
+//     page += F("}");
+    
+//     // Funkcja formatowania czasu pracy
+//     page += F("function formatUptime(seconds) {");
+//     page += F("    let days = Math.floor(seconds / 86400);");
+//     page += F("    let hours = Math.floor((seconds % 86400) / 3600);");
+//     page += F("    let minutes = Math.floor((seconds % 3600) / 60);");
+//     page += F("    let parts = [];");
+//     page += F("    if(days > 0) parts.push(days + 'd');");
+//     page += F("    if(hours > 0) parts.push(hours + 'h');");
+//     page += F("    parts.push(minutes + 'm');");
+//     page += F("    return parts.join(' ');");
+//     page += F("}");
+
+//     // Funkcja zapisu konfiguracji
+//     page += F("function saveConfiguration() {");
+//     page += F("    let pumpsData = [];");
+//     page += F("    for(let i = 0; i < ");
+//     page += String(NUMBER_OF_PUMPS);
+//     page += F("; i++) {");
+//     page += F("        let pumpData = {");
+//     page += F("            name: document.querySelector(`input[name='pump_name_${i}']`).value,");
+//     page += F("            enabled: document.querySelector(`input[name='pump_enabled_${i}']`).checked,");
+//     page += F("            calibration: parseFloat(document.querySelector(`input[name='pump_calibration_${i}']`).value),");
+//     page += F("            dose: parseFloat(document.querySelector(`input[name='pump_dose_${i}']`).value),");
+//     page += F("            schedule_hour: parseInt(document.querySelector(`input[name='pump_schedule_hour_${i}']`).value),");
+//     page += F("            minute: parseInt(document.querySelector(`input[name='pump_minute_${i}']`).value),");
+//     page += F("            schedule_days: 0");
+//     page += F("        };");
+//     page += F("        // Oblicz dni tygodnia");
+//     page += F("        for(let day = 0; day < 7; day++) {");
+//     page += F("            if(document.querySelector(`input[name='pump_day_${i}_${day}']`).checked) {");
+//     page += F("                pumpData.schedule_days |= (1 << day);");
+//     page += F("            }");
+//     page += F("        }");
+//     page += F("        pumpsData.push(pumpData);");
+//     page += F("    }");
+//     page += F("    let mqttData = {");
+//     page += F("        broker: document.querySelector('input[name=\"mqtt_broker\"]').value,");
+//     page += F("        port: parseInt(document.querySelector('input[name=\"mqtt_port\"]').value),");
+//     page += F("        username: document.querySelector('input[name=\"mqtt_user\"]').value,");
+//     page += F("        password: document.querySelector('input[name=\"mqtt_pass\"]').value");
+//     page += F("    };");
+//     page += F("    let configData = {");
+//     page += F("        pumps: pumpsData,");
+//     page += F("        mqtt: mqttData");
+//     page += F("    };");
+//     page += F("    fetch('/save', {");
+//     page += F("        method: 'POST',");
+//     page += F("        headers: {");
+//     page += F("            'Content-Type': 'application/json'");
+//     page += F("        },");
+//     page += F("        body: JSON.stringify(configData)");
+//     page += F("    })");
+//     page += F("    .then(response => response.json())");
+//     page += F("    .then(data => {");
+//     page += F("        if(data.status === 'success') {");
+//     page += F("            alert('Konfiguracja została zapisana');");
+//     page += F("            window.location.reload();");
+//     page += F("        } else {");
+//     page += F("            alert('Błąd: ' + data.message);");
+//     page += F("        }");
+//     page += F("    })");
+//     page += F("    .catch(error => {");
+//     page += F("        alert('Wystąpił błąd podczas zapisywania konfiguracji');");
+//     page += F("        console.error('Error:', error);");
+//     page += F("    });");
+//     page += F("    return false;");
+//     page += F("}");
+//     page += F("</script></head><body>");
+    
+//     // Strona główna
+//     page += F("<div class='container'>");
+//     page += F("<h1>AquaDoser</h1>");
+
+//     // Rozszerzony status systemu
+//     page += F("<div class='section'>");
+//     page += F("<h2>Status systemu</h2>");
+//     page += F("<table class='config-table'>");
+//     // Status MQTT
+//     page += F("<tr><td>Status MQTT</td><td><span id='mqtt-status' class='status ");
+//     page += (systemStatus.mqtt_connected ? F("success'>Połączony") : F("error'>Rozłączony"));
+//     page += F("</span></td></tr>");
+//     // Status WiFi
+//     page += F("<tr><td>Status WiFi</td><td><span id='wifi-status' class='status ");
+//     page += (WiFi.status() == WL_CONNECTED ? F("success'>Połączony") : F("error'>Rozłączony"));
+//     page += F("</span></td></tr>");
+    
+//     // Czas pracy
+//     page += F("<tr><td>Czas pracy</td><td><span id='uptime'>");
+//     unsigned long uptime = millis() / 1000;
+//     page += String(uptime);
+//     page += F("</span></td></tr>");
+    
+//     // Adres IP
+//     page += F("<tr><td>Adres IP</td><td>");
+//     page += WiFi.localIP().toString();
+//     page += F("</td></tr>");
+    
+//     // Aktualna data i czas
+//     DateTime now = rtc.now();
+//     page += F("<tr><td>Data i czas</td><td><span id='current-time'>");
+//     page += String(now.year()) + "-" + 
+//             (now.month() < 10 ? "0" : "") + String(now.month()) + "-" + 
+//             (now.day() < 10 ? "0" : "") + String(now.day()) + " " +
+//             (now.hour() < 10 ? "0" : "") + String(now.hour()) + ":" +
+//             (now.minute() < 10 ? "0" : "") + String(now.minute());
+//     page += F("</span></td></tr>");
+//     page += F("</table></div>");
+
+//     // Formularz konfiguracji
+//     page += F("<form onsubmit='return saveConfiguration()'>");
+    
+//     // Konfiguracja MQTT
+//     page += F("<div class='section'>");
+//     page += F("<h2>Konfiguracja MQTT</h2>");
+//     page += F("<table class='config-table'>");
+//     page += F("<tr><td>Broker MQTT</td><td><input type='text' name='mqtt_broker' value='");
+//     page += mqttConfig.broker;
+//     page += F("' required></td></tr>");
+//     page += F("<tr><td>Port MQTT</td><td><input type='number' name='mqtt_port' value='");
+//     page += String(mqttConfig.port);
+//     page += F("' required min='1' max='65535'></td></tr>");
+//     page += F("<tr><td>Użytkownik MQTT</td><td><input type='text' name='mqtt_user' value='");
+//     page += mqttConfig.username;
+//     page += F("' required></td></tr>");
+//     page += F("<tr><td>Hasło MQTT</td><td><input type='password' name='mqtt_pass' value='");
+//     page += mqttConfig.password;
+//     page += F("' required></td></tr>");
+//     page += F("</table></div>");
+
+//     // Konfiguracja pomp
+//     for(int i = 0; i < NUMBER_OF_PUMPS; i++) {
+//         page += F("<div class='section'>");
+//         page += F("<h2>Pompa "); 
+//         page += String(i + 1);
+//         page += F("</h2>");
+//         page += F("<table class='config-table'>");
+        
+//         // Nazwa pompy
+//         page += F("<tr><td>Nazwa</td><td><input type='text' name='pump_name_");
+//         page += String(i);
+//         page += F("' value='");
+//         // Zabezpieczenie przed pustą nazwą
+//         page += pumps[i].name[0] ? pumps[i].name : ("Pompa " + String(i + 1));
+//         page += F("' maxlength='19' required></td></tr>");
+
+//         // Status aktywności
+//         page += F("<tr><td>Aktywna</td><td><input type='checkbox' name='pump_enabled_");
+//         page += String(i);
+//         page += F("' ");
+//         page += (pumps[i].enabled ? F("checked") : F(""));
+//         page += F("></td></tr>");
+
+//         // Kalibracja - zabezpieczenie przed wartością 0
+//         page += F("<tr><td>Kalibracja (ml/s)</td><td><input type='number' step='0.01' name='pump_calibration_");
+//         page += String(i);
+//         page += F("' value='");
+//         page += String(pumps[i].calibration > 0 ? pumps[i].calibration : 1.0);
+//         page += F("' min='0.01' required></td></tr>");
+
+//         // Dawka - zabezpieczenie przed wartością ujemną
+//         page += F("<tr><td>Dawka (ml)</td><td><input type='number' step='0.1' name='pump_dose_");
+//         page += String(i);
+//         page += F("' value='");
+//         page += String(pumps[i].dose >= 0 ? pumps[i].dose : 0);
+//         page += F("' min='0' required></td></tr>");
+
+//         // Godzina dozowania - walidacja zakresu
+//         page += F("<tr><td>Godzina dozowania</td><td><input type='number' name='pump_schedule_hour_");
+//         page += String(i);
+//         page += F("' value='");
+//         page += String(pumps[i].schedule_hour < 24 ? pumps[i].schedule_hour : 0);
+//         page += F("' min='0' max='23' required></td></tr>");
+
+//         // Minuta dozowania - walidacja zakresu
+//         page += F("<tr><td>Minuta dozowania</td><td><input type='number' name='pump_minute_");
+//         page += String(i);
+//         page += F("' value='");
+//         page += String(pumps[i].minute < 60 ? pumps[i].minute : 0);
+//         page += F("' min='0' max='59' required></td></tr>");
+
+//         // Dni tygodnia
+//         page += F("<tr><td>Dni dozowania</td><td>");
+//         for(int day = 0; day < 7; day++) {
+//             page += F("<label style='margin-right: 5px;'><input type='checkbox' name='pump_day_");
+//             page += String(i);
+//             page += F("_");
+//             page += String(day);
+//             page += F("' ");
+//             page += ((pumps[i].schedule_days & (1 << day)) ? F("checked") : F(""));
+//             page += F("> ");
+//             page += dayNames[day];
+//             page += F("</label> ");
+//         }
+//         page += F("</td></tr>");
+        
+//         page += F("</table></div>");
+//     }
+
+//     // Przyciski akcji
+//     page += F("<div class='section'>");
+//     page += F("<div class='buttons-container'>");
+//     page += F("<input type='submit' value='Zapisz ustawienia' class='btn btn-blue'>");
+//     page += F("<button type='button' onclick='if(confirm(\"Czy na pewno chcesz zresetować urządzenie?\")) { fetch(\"/reset\"); }' class='btn btn-red'>Reset urządzenia</button>");
+//     page += F("</div></div>");
+    
+//     page += F("</form></div>");
+    
+//     // Dodanie informacji o wersji
+//     page += F("<div class='footer'>");
+//     page += F("AquaDoser v1.0");
+//     page += F("</div>");
+    
+//     page += F("</body></html>");
+//     return page;
+// }
+
 String getConfigPage() {
     String page = F("<!DOCTYPE html><html lang='pl'><head>");
     page += F("<meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1'>");
@@ -1172,16 +1422,16 @@ String getConfigPage() {
     page += getStyles();
     page += F("</style>");
     
-    // Skrypt JavaScript z WebSocket i funkcjami
+    // JavaScript with WebSocket and functions
     page += F("<script>");
-    // Dodanie WebSocket
+    // WebSocket setup
     page += F("let ws = new WebSocket('ws://' + window.location.hostname + ':81/');");
     page += F("ws.onmessage = function(event) {");
     page += F("    let status = JSON.parse(event.data);");
     page += F("    updateStatus(status);");
     page += F("};");
     
-    // Funkcja aktualizacji statusu
+    // Status update function
     page += F("function updateStatus(status) {");
     page += F("    document.getElementById('mqtt-status').className = 'status ' + (status.mqtt_connected ? 'success' : 'error');");
     page += F("    document.getElementById('mqtt-status').innerText = status.mqtt_connected ? 'Połączony' : 'Rozłączony';");
@@ -1191,7 +1441,7 @@ String getConfigPage() {
     page += F("    document.getElementById('current-time').innerText = status.current_time;");
     page += F("}");
     
-    // Funkcja formatowania czasu pracy
+    // Uptime formatting function
     page += F("function formatUptime(seconds) {");
     page += F("    let days = Math.floor(seconds / 86400);");
     page += F("    let hours = Math.floor((seconds % 86400) / 3600);");
@@ -1203,22 +1453,28 @@ String getConfigPage() {
     page += F("    return parts.join(' ');");
     page += F("}");
 
-    // Funkcja zapisu konfiguracji
+    // Configuration save function with improved error handling
     page += F("function saveConfiguration() {");
+    page += F("    const form = document.getElementById('configForm');");
+    page += F("    if (!form.checkValidity()) {");
+    page += F("        alert('Proszę wypełnić wszystkie wymagane pola poprawnie.');");
+    page += F("        return false;");
+    page += F("    }");
+    
     page += F("    let pumpsData = [];");
     page += F("    for(let i = 0; i < ");
     page += String(NUMBER_OF_PUMPS);
     page += F("; i++) {");
     page += F("        let pumpData = {");
-    page += F("            name: document.querySelector(`input[name='pump_name_${i}']`).value,");
+    page += F("            name: document.querySelector(`input[name='pump_name_${i}']`).value.trim() || `Pompa ${i + 1}`,");
     page += F("            enabled: document.querySelector(`input[name='pump_enabled_${i}']`).checked,");
-    page += F("            calibration: parseFloat(document.querySelector(`input[name='pump_calibration_${i}']`).value),");
-    page += F("            dose: parseFloat(document.querySelector(`input[name='pump_dose_${i}']`).value),");
-    page += F("            schedule_hour: parseInt(document.querySelector(`input[name='pump_schedule_hour_${i}']`).value),");
-    page += F("            minute: parseInt(document.querySelector(`input[name='pump_minute_${i}']`).value),");
+    page += F("            calibration: Math.max(0.01, parseFloat(document.querySelector(`input[name='pump_calibration_${i}']`).value)),");
+    page += F("            dose: Math.max(0, parseFloat(document.querySelector(`input[name='pump_dose_${i}']`).value)),");
+    page += F("            schedule_hour: Math.min(23, Math.max(0, parseInt(document.querySelector(`input[name='pump_schedule_hour_${i}']`).value))),");
+    page += F("            minute: Math.min(59, Math.max(0, parseInt(document.querySelector(`input[name='pump_minute_${i}']`).value))),");
     page += F("            schedule_days: 0");
     page += F("        };");
-    page += F("        // Oblicz dni tygodnia");
+    page += F("        // Obliczanie dni tygodnia");
     page += F("        for(let day = 0; day < 7; day++) {");
     page += F("            if(document.querySelector(`input[name='pump_day_${i}_${day}']`).checked) {");
     page += F("                pumpData.schedule_days |= (1 << day);");
@@ -1226,16 +1482,19 @@ String getConfigPage() {
     page += F("        }");
     page += F("        pumpsData.push(pumpData);");
     page += F("    }");
+
     page += F("    let mqttData = {");
-    page += F("        broker: document.querySelector('input[name=\"mqtt_broker\"]').value,");
+    page += F("        broker: document.querySelector('input[name=\"mqtt_broker\"]').value.trim(),");
     page += F("        port: parseInt(document.querySelector('input[name=\"mqtt_port\"]').value),");
-    page += F("        username: document.querySelector('input[name=\"mqtt_user\"]').value,");
+    page += F("        username: document.querySelector('input[name=\"mqtt_user\"]').value.trim(),");
     page += F("        password: document.querySelector('input[name=\"mqtt_pass\"]').value");
     page += F("    };");
+
     page += F("    let configData = {");
     page += F("        pumps: pumpsData,");
     page += F("        mqtt: mqttData");
     page += F("    };");
+
     page += F("    fetch('/save', {");
     page += F("        method: 'POST',");
     page += F("        headers: {");
@@ -1243,17 +1502,20 @@ String getConfigPage() {
     page += F("        },");
     page += F("        body: JSON.stringify(configData)");
     page += F("    })");
-    page += F("    .then(response => response.json())");
+    page += F("    .then(response => {");
+    page += F("        if (!response.ok) throw new Error('Network response was not ok');");
+    page += F("        return response.json();");
+    page += F("    })");
     page += F("    .then(data => {");
     page += F("        if(data.status === 'success') {");
-    page += F("            alert('Konfiguracja została zapisana');");
+    page += F("            alert('Konfiguracja została zapisana pomyślnie');");
     page += F("            window.location.reload();");
     page += F("        } else {");
-    page += F("            alert('Błąd: ' + data.message);");
+    page += F("            throw new Error(data.message || 'Nieznany błąd');");
     page += F("        }");
     page += F("    })");
     page += F("    .catch(error => {");
-    page += F("        alert('Wystąpił błąd podczas zapisywania konfiguracji');");
+    page += F("        alert('Błąd podczas zapisywania konfiguracji: ' + error.message);");
     page += F("        console.error('Error:', error);");
     page += F("    });");
     page += F("    return false;");
@@ -1264,14 +1526,16 @@ String getConfigPage() {
     page += F("<div class='container'>");
     page += F("<h1>AquaDoser</h1>");
 
-    // Rozszerzony status systemu
+    // Status systemu
     page += F("<div class='section'>");
     page += F("<h2>Status systemu</h2>");
     page += F("<table class='config-table'>");
+    
     // Status MQTT
     page += F("<tr><td>Status MQTT</td><td><span id='mqtt-status' class='status ");
     page += (systemStatus.mqtt_connected ? F("success'>Połączony") : F("error'>Rozłączony"));
     page += F("</span></td></tr>");
+    
     // Status WiFi
     page += F("<tr><td>Status WiFi</td><td><span id='wifi-status' class='status ");
     page += (WiFi.status() == WL_CONNECTED ? F("success'>Połączony") : F("error'>Rozłączony"));
@@ -1299,8 +1563,8 @@ String getConfigPage() {
     page += F("</span></td></tr>");
     page += F("</table></div>");
 
-    // Formularz konfiguracji
-    page += F("<form onsubmit='return saveConfiguration()'>");
+    // Formularz konfiguracji z id
+    page += F("<form id='configForm' onsubmit='return saveConfiguration()'>");
     
     // Konfiguracja MQTT
     page += F("<div class='section'>");
@@ -1332,7 +1596,6 @@ String getConfigPage() {
         page += F("<tr><td>Nazwa</td><td><input type='text' name='pump_name_");
         page += String(i);
         page += F("' value='");
-        // Zabezpieczenie przed pustą nazwą
         page += pumps[i].name[0] ? pumps[i].name : ("Pompa " + String(i + 1));
         page += F("' maxlength='19' required></td></tr>");
 
@@ -1343,28 +1606,28 @@ String getConfigPage() {
         page += (pumps[i].enabled ? F("checked") : F(""));
         page += F("></td></tr>");
 
-        // Kalibracja - zabezpieczenie przed wartością 0
+        // Kalibracja
         page += F("<tr><td>Kalibracja (ml/s)</td><td><input type='number' step='0.01' name='pump_calibration_");
         page += String(i);
         page += F("' value='");
         page += String(pumps[i].calibration > 0 ? pumps[i].calibration : 1.0);
         page += F("' min='0.01' required></td></tr>");
 
-        // Dawka - zabezpieczenie przed wartością ujemną
+        // Dawka
         page += F("<tr><td>Dawka (ml)</td><td><input type='number' step='0.1' name='pump_dose_");
         page += String(i);
         page += F("' value='");
         page += String(pumps[i].dose >= 0 ? pumps[i].dose : 0);
         page += F("' min='0' required></td></tr>");
 
-        // Godzina dozowania - walidacja zakresu
+        // Godzina dozowania
         page += F("<tr><td>Godzina dozowania</td><td><input type='number' name='pump_schedule_hour_");
         page += String(i);
         page += F("' value='");
         page += String(pumps[i].schedule_hour < 24 ? pumps[i].schedule_hour : 0);
         page += F("' min='0' max='23' required></td></tr>");
 
-        // Minuta dozowania - walidacja zakresu
+        // Minuta dozowania
         page += F("<tr><td>Minuta dozowania</td><td><input type='number' name='pump_minute_");
         page += String(i);
         page += F("' value='");
@@ -1385,7 +1648,6 @@ String getConfigPage() {
             page += F("</label> ");
         }
         page += F("</td></tr>");
-        
         page += F("</table></div>");
     }
 
@@ -1396,17 +1658,16 @@ String getConfigPage() {
     page += F("<button type='button' onclick='if(confirm(\"Czy na pewno chcesz zresetować urządzenie?\")) { fetch(\"/reset\"); }' class='btn btn-red'>Reset urządzenia</button>");
     page += F("</div></div>");
     
-    page += F("</form></div>");
-    
-    // Dodanie informacji o wersji
+    page += F("</form>");
+
+    // Stopka z wersją
     page += F("<div class='footer'>");
     page += F("AquaDoser v1.0");
     page += F("</div>");
     
-    page += F("</body></html>");
+    page += F("</div></body></html>");
     return page;
 }
-
 // Pobranie stylów CSS
 String getStyles() {
     String styles = F(
