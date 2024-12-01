@@ -937,66 +937,42 @@ void handleSave() {
 
 // Obsługa zapisu konfiguracji
 void handleConfigSave() {
-    if (server.method() != HTTP_POST) {
-        server.send(405, "text/plain", "Method Not Allowed");
-        return;
-    }
-
-    Serial.println("Otrzymano nową konfigurację MQTT:");
-    Serial.print("Broker: "); Serial.println(server.arg("mqtt_broker"));
-    Serial.print("Port: "); Serial.println(server.arg("mqtt_port"));
-
-    // Zapisz poprzednie wartości
-    MQTTConfig oldConfig = mqttConfig;
-    bool needMqttReconnect = false;
-
-    // Sprawdź i zapisz broker
     if (server.hasArg("mqtt_broker")) {
-        String newBroker = server.arg("mqtt_broker");
-        if (strcmp(mqttConfig.broker, newBroker.c_str()) != 0) {
-            strlcpy(mqttConfig.broker, newBroker.c_str(), sizeof(mqttConfig.broker));
-            needMqttReconnect = true;
+        String broker = server.arg("mqtt_broker");
+        broker.trim(); // usuń białe znaki z początku i końca
+        
+        if (broker.length() > 0) {
+            strncpy(mqttConfig.broker, broker.c_str(), sizeof(mqttConfig.broker) - 1);
+            mqttConfig.broker[sizeof(mqttConfig.broker) - 1] = '\0'; // upewnij się że string jest zakończony
         }
     }
-
-    // Sprawdź i zapisz port
+    
     if (server.hasArg("mqtt_port")) {
-        int newPort = server.arg("mqtt_port").toInt();
-        if (newPort > 0 && newPort <= 65535 && newPort != mqttConfig.port) {
-            mqttConfig.port = newPort;
-            needMqttReconnect = true;
+        String portStr = server.arg("mqtt_port");
+        int port = portStr.toInt();
+        if (port > 0 && port <= 65535) {
+            mqttConfig.port = port;
         }
     }
-
-    // Opcjonalne pola logowania
-    if (server.hasArg("mqtt_username")) {
-        String newUsername = server.arg("mqtt_username");
-        if (strcmp(mqttConfig.username, newUsername.c_str()) != 0) {
-            strlcpy(mqttConfig.username, newUsername.c_str(), sizeof(mqttConfig.username));
-            needMqttReconnect = true;
-        }
-    }
-
-    if (server.hasArg("mqtt_password")) {
-        String newPassword = server.arg("mqtt_password");
-        if (strcmp(mqttConfig.password, newPassword.c_str()) != 0) {
-            strlcpy(mqttConfig.password, newPassword.c_str(), sizeof(mqttConfig.password));
-            needMqttReconnect = true;
-        }
-    }
-
+    
     // Zapisz konfigurację
     saveMQTTConfig();
-
-    // Zrestartuj MQTT jeśli potrzeba
-    if (needMqttReconnect) {
-        if (mqtt.isConnected()) {
-            mqtt.disconnect();
-        }
-        setupMQTT();
+    
+    // Wyświetl potwierdzenie
+    String response = F("Zapisano konfigurację MQTT:\n");
+    response += F("Broker: "); 
+    response += mqttConfig.broker;
+    response += F("\nPort: ");
+    response += String(mqttConfig.port);
+    
+    Serial.println(response);
+    server.send(200, "text/plain", response);
+    
+    // Zrestartuj połączenie MQTT
+    if (client.connected()) {
+        client.disconnect();
     }
-
-    server.send(200, "application/json", "{\"status\":\"ok\"}");
+    setupMQTT();
 }
 
 // Obsługa zdarzeń WebSocket
