@@ -1403,6 +1403,19 @@ String getConfigPage() {
     
     page += F("</form>");
 
+    // Sekcja aktualizacji firmware
+    page += F("<div class='update-section'>");
+    page += F("<h2>Aktualizacja firmware</h2>");
+    page += F("<form method='POST' action='/update' enctype='multipart/form-data' id='upload_form'>");
+    page += F("<input type='file' name='update' id='file' accept='.bin'>");
+    page += F("<input type='submit' value='Aktualizuj firmware' class='update-button'>");
+    page += F("</form>");
+    page += F("<div id='prg' style='display: none'>");
+    page += F("<div class='progress-bar'><div class='progress' id='progress'></div></div>");
+    page += F("<div class='progress-text' id='progress-text'>0%</div>");
+    page += F("</div>");
+    page += F("</div>");
+    
     // Stopka z wersją i linkiem do GitHub
     page += F("<div class='footer'>");
     page += F("<a href='https://github.com/pimowo/AquaDoser' target='_blank'>GitHub</a>");
@@ -1551,18 +1564,6 @@ String getStyles() {
         "    vertical-align: middle;"
         "}"
 
-        // ".btn {"
-        // "    padding: 12px 24px;"
-        // "    border: none;"
-        // "    border-radius: 4px;"
-        // "    cursor: pointer;"
-        // "    font-size: 14px;"
-        // "    width: calc(50% - 10px);"
-        // "    display: inline-block;"
-        // "    margin: 5px;"
-        // "    text-align: center;"
-        // "}"
-
         ".btn {"
         "    padding: 12px 24px;"
         "    border: none;"
@@ -1576,11 +1577,6 @@ String getStyles() {
         "    transition: background-color 0.3s;" // dodajemy efekt hover
         "}"
 
-        // ".btn-blue { "
-        // "    background-color: #2196F3;"
-        // "    color: white; "
-        // "}"
-
         ".btn-blue { "
         "    background-color: #2196F3;"  // jasnoniebieski
         "    color: white; "
@@ -1589,11 +1585,6 @@ String getStyles() {
         ".btn-blue:hover { "  // dodajemy efekt hover
         "    background-color: #1976D2;" 
         "}"
-
-        // ".btn-red { "
-        // "    background-color: #F44336;"
-        // "    color: white; "
-        // "}"
 
         ".btn-red { "
         "    background-color: #DC3545;"  // zmieniamy na kolor z HydroSense
