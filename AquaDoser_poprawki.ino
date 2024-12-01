@@ -40,6 +40,9 @@ class HASensor;
  * DEFINICJE STAŁYCH
  ***************************************/
 
+// Zmienna przechowująca wersję oprogramowania
+const char* SOFTWARE_VERSION = "26.11.24";  // Definiowanie wersji oprogramowania
+
 // --- Piny GPIO
 const int NUMBER_OF_PUMPS = 8;    // Liczba pomp
 const int BUZZER_PIN = 13;        // Buzzer
@@ -1458,8 +1461,11 @@ String getConfigPage() {
         page += F("' value='");
         page += String(pumps[i].minute < 60 ? pumps[i].minute : 0);
         page += F("' min='0' max='59' required></td></tr>");
-// Dni tygodnia - kontynuacja konfiguracji pomp
-        page += F("<tr><td>Dni dozowania</td><td class='days-container'>");
+        
+        // Dni tygodnia - kontynuacja konfiguracji pomp
+        //page += F("<tr><td>Dni dozowania</td><td class='days-container'>");
+        page += F("</table>"); // zamknięcie głównej tabeli
+        page += F("<div class='dosing-days'><h3>Dni dozowania</h3><div class='days-container'>");
         const char* dayNames[] = {"Pon", "Wt", "Śr", "Czw", "Pt", "Sob", "Nd"};
         for(int day = 0; day < 7; day++) {
             page += F("<label class='day-checkbox'><input type='checkbox' name='pump_day_");
@@ -1474,6 +1480,8 @@ String getConfigPage() {
         }
         page += F("</td></tr>");
         page += F("</table></div>");
+        page += F("</div></div>");
+        page += F("</div>"); // zamknięcie section
     }
 
     // Przycisk zapisz - teraz w kolorze zielonym
@@ -1750,6 +1758,24 @@ String getStyles() {
         ".footer a:hover { "
         "    background-color: #444; "
         "}"
+
+        ".dosing-days {"
+        "    margin-top: 20px;"
+        "}"
+        
+        ".dosing-days h3 {"
+        "    margin: 0 0 10px 0;"
+        "    font-size: 1em;"
+        "    font-weight: normal;"
+        "}"
+
+        ".days-container {"
+        "    display: flex;"
+        "    flex-wrap: wrap;"
+        "    gap: 10px;"
+        "    justify-content: flex-start;"
+        "}"
+
     );
     return styles;
 }
