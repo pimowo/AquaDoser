@@ -726,28 +726,19 @@ void firstUpdateHA() {
 
 // Konfiguracja MQTT
 void setupMQTT() {
-    if (strlen(mqttConfig.broker) == 0) {
-        Serial.println("Brak skonfigurowanego brokera MQTT");
-        return;
-    }
-
-    Serial.println("Konfiguracja MQTT:");
-    Serial.print("Broker: "); Serial.println(mqttConfig.broker);
-    Serial.print("Port: "); Serial.println(mqttConfig.port);
-
-    client.setServer(mqttConfig.broker, mqttConfig.port);
+    // Ustawienie unikalnego ID
+    byte mac[6];
+    WiFi.macAddress(mac);
+    device.setUniqueId(mac, sizeof(mac));
+    device.setName("AquaDoser");
     
-    // Jeśli są ustawione dane logowania
-    if (strlen(mqttConfig.username) > 0) {
-        client.setCredentials(mqttConfig.username, mqttConfig.password);
-    }
-
-    // Próba połączenia
-    if (client.connect("AquaDoser")) {
-        Serial.println("Połączono z MQTT");
-        setupHA();  // Konfiguracja Home Assistant
+    // Rozpoczęcie połączenia MQTT
+    bool result = mqtt.begin(mqttConfig.broker, mqttConfig.username, mqttConfig.password);
+    
+    if (result) {
+        Serial.println(F("MQTT connected"));
     } else {
-        Serial.println("Błąd połączenia z MQTT");
+        Serial.println(F("MQTT connection failed"));
     }
 }
 
@@ -999,8 +990,8 @@ void handleConfigSave() {
 
     // Zrestartuj MQTT jeśli potrzeba
     if (needMqttReconnect) {
-        if (client.connected()) {
-            client.disconnect();
+        if (mqtt.isConnected()) {
+            mqtt.disconnect();
         }
         setupMQTT();
     }
@@ -1802,6 +1793,61 @@ String getStyles() {
     return styles;
 }
 
+String getPumpInputField(uint8_t index, const char* name, const char* label, const String& value, const char* type) {
+    String html = F("<div class='field'><label for='");
+    html += name;
+    html += index;
+    html += F("'>");
+    html += label;
+    html += F("</label><input type='");
+    html += type;
+    html += F("' id='");
+    html += name;
+    html += index;
+    html += F("' name='pump[");
+    html += index;
+    html += F("][");
+    html += name;
+    html += F("]' value='");
+    html += value;
+    html += F("'></div>");
+    return html;
+}
+
+String getPumpCheckbox(uint8_t index, const char* name, const char* label, bool checked) {
+    String html = F("<div class='field'><label><input type='checkbox' id='");
+    html += name;
+    html += index;
+    html += F("' name='pump[");
+    html += index;
+    html += F("][");
+    html += name;
+    html += F("]' value='1'");
+    if (checked) html += F(" checked");
+    html += F("> ");
+    html += label;
+    html += F("</label></div>");
+    return html;
+}
+
+String getScheduleDaysField(uint8_t index) {
+    String html = F("<div class='field'><label>Dni dozowania:</label><div class='days'>");
+    const char* days[] = {"Pn", "Wt", "Śr", "Cz", "Pt", "So", "Nd"};
+    for (int i = 0; i < 7; i++) {
+        html += F("<label><input type='checkbox' name='pump[");
+        html += index;
+        html += F("][days][");
+        html += i;
+        html += F("]' value='1'");
+        if (pumps[index].scheduleDays & (1 << i)) html += F(" checked");
+        html += F("> ");
+        html += days[i];
+        html += F("</label>");
+    }
+    html += F("</div></div>");
+    return html;
+}
+
 String getCalibrationSection() {
     String html = F("<div class='section'>");
     html += F("<h2>Kalibracja pomp</h2>");
@@ -1945,6 +1991,7 @@ String getPumpConfigSection(uint8_t index) {
 }
 
 String getScripts() {
+    String js = F("");
     String js = existingScripts; // twoje obecne skrypty
 
     js += F("function startCalib(pumpIndex) {");
