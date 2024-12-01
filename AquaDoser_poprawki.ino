@@ -41,7 +41,7 @@ class HASensor;
  ***************************************/
 
 // Zmienna przechowująca wersję oprogramowania
-const char* SOFTWARE_VERSION = "26.11.24";  // Definiowanie wersji oprogramowania
+const char* VERSION = "1.12.24";  // Definiowanie wersji oprogramowania
 
 // --- Piny GPIO
 const int NUMBER_OF_PUMPS = 8;    // Liczba pomp
@@ -523,7 +523,7 @@ void stopPump(uint8_t pumpIndex) {
 void stopAllPumps() {
     for (uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
         pumpRunning[i] = false;
-        pcf8574.write(i, HIGH);
+        pcf8574.digitalWrite(i, HIGH);
     }
 }
 
@@ -2042,7 +2042,7 @@ void startCalibration(uint8_t pumpIndex, int seconds) {
     
     // Uruchom pompę
     pumpRunning[pumpIndex] = true;
-    pcf8574.write(pumpIndex, LOW);
+    pcf8574.digitalWrite(pumpIndex, LOW);
     
     // Ustaw fioletowy kolor LED
     setLEDColor(pumpIndex, COLOR_RAINBOW_6);
@@ -2079,7 +2079,7 @@ void checkCalibration() {
             if (elapsedTime >= pumpStates[i].calibrationDuration) {
                 // Zatrzymaj pompę
                 pumpRunning[i] = false;
-                pcf8574.write(i, HIGH);
+                pcf8574.digitalWrite(i, HIGH);
                 pumpStates[i].calibrationCompleted = true;
                 
                 // Ustaw LED na pulsujący fioletowy
