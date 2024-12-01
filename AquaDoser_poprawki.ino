@@ -31,8 +31,8 @@ class HASensor;
 #include <NTPClient.h>          // Klient NTP
 
 #define SYSTEM_CONFIG_ADDR 0
-#define NETWORK_CONFIG_ADDR 100
-#define MQTT_CONFIG_ADDR 200
+#define MQTT_CONFIG_ADDR 100
+#define NETWORK_CONFIG_ADDR 200
 #define PUMPS_CONFIG_ADDR 300
 #define DEBOUNCE_TIME 50
 
@@ -125,7 +125,12 @@ struct MQTTConfig {
     int port;
     char username[32];
     char password[32];
-    bool enabled;
+    
+    MQTTConfig() : port(1883) {
+        memset(broker, 0, sizeof(broker));
+        memset(username, 0, sizeof(username));
+        memset(password, 0, sizeof(password));
+    }
 };
 
 // --- Konfiguracja sieci
@@ -372,20 +377,17 @@ bool savePumpsConfig() {
 void loadMQTTConfig() {
     EEPROM.get(MQTT_CONFIG_ADDR, mqttConfig);
     
-    // Sprawdzenie czy konfiguracja jest prawidłowa
-    if (strlen(mqttConfig.broker) > 0) {
-        Serial.println("Wczytano konfigurację MQTT:");
-        Serial.print("Broker: "); Serial.println(mqttConfig.broker);
-        Serial.print("Port: "); Serial.println(mqttConfig.port);
-    } else {
-        Serial.println("Brak zapisanej konfiguracji MQTT");
-    }
+    Serial.println("Wczytano konfigurację MQTT:");
+    Serial.print("Broker: "); Serial.println(mqttConfig.broker);
+    Serial.print("Port: "); Serial.println(mqttConfig.port);
 }
 
 // Zapisanie konfiguracji MQTT
 void saveMQTTConfig() {
     EEPROM.put(MQTT_CONFIG_ADDR, mqttConfig);
-    if (EEPROM.commit()) {
+    bool success = EEPROM.commit();
+    
+    if (success) {
         Serial.println("Zapisano konfigurację MQTT");
     } else {
         Serial.println("Błąd zapisu konfiguracji MQTT!");
@@ -427,7 +429,7 @@ void resetFactorySettings() {
     
     // Domyślna konfiguracja MQTT
     mqttConfig.port = 1883;
-    mqttConfig.enabled = false;
+    //mqttConfig.enabled = false;
     mqttConfig.broker[0] = '\0';
     mqttConfig.username[0] = '\0';
     mqttConfig.password[0] = '\0';
@@ -706,7 +708,7 @@ void setupMQTT() {
         return;
     }
 
-    if (!mqttConfig.enabled) return;
+    //if (!mqttConfig.enabled) return;
     
     mqtt.onConnected([]() {
         systemStatus.mqtt_connected = true;
@@ -732,7 +734,8 @@ void setupMQTT() {
 // Konfiguracja serwera WWW
 void setupWebServer() {
     server.on("/", HTTP_GET, handleRoot);
-    server.on("/save", HTTP_POST, handleSave);
+    //server.on("/save", HTTP_POST, handleSave);
+    server.on("/save", HTTP_POST, handleConfigSave);
     server.on("/update", HTTP_GET, []() {
         server.sendHeader("Connection", "close");
         server.send(200, "text/html", getUpdatePage());
@@ -922,24 +925,39 @@ void handleSave() {
 
 // Obsługa zapisu konfiguracji
 void handleConfigSave() {
-    if (server.hasArg("mqtt_broker")) {
-        String broker = server.arg("mqtt_broker");
-        String port = server.arg("mqtt_port");
-        
-        // Czyszczenie poprzedniej konfiguracji
-        memset(&mqttConfig, 0, sizeof(MQTTConfig));
-        
-        // Kopiowanie nowych wartości
-        strncpy(mqttConfig.broker, broker.c_str(), sizeof(mqttConfig.broker) - 1);
-        mqttConfig.port = port.toInt();
-        
-        // Zapisanie konfiguracji
-        saveMQTTConfig();
-        
-        // Restart połączenia MQTT
-        setupMQTT();
+    if (server.method() != HTTP_POST) {
+        server.send(405, "text/plain", "Method Not Allowed");
+        return;
     }
-    
+
+    Serial.println("Zapisywanie nowej konfiguracji MQTT:");
+    Serial.print("Broker: "); Serial.println(server.arg("mqtt_broker"));
+    Serial.print("Port: "); Serial.println(server.arg("mqtt_port"));
+    Serial.print("Enabled: "); Serial.println(server.hasArg("mqtt_enabled") ? "Tak" : "Nie");
+
+    // Zapisz poprzednie wartości na wypadek błędów
+    MQTTConfig oldConfig = mqttConfig;
+    bool needMqttReconnect = false;
+
+    // Zapisz ustawienia MQTT
+    strlcpy(mqttConfig.broker, server.arg("mqtt_broker").c_str(), sizeof(mqttConfig.broker));
+    mqttConfig.port = server.arg("mqtt_port").toInt();
+    mqttConfig.enabled = server.hasArg("mqtt_enabled") && server.arg("mqtt_enabled") == "1";
+
+    // Sprawdź czy dane są poprawne
+    if (strlen(mqttConfig.broker) == 0 || mqttConfig.port <= 0) {
+        Serial.println("Błędne dane konfiguracyjne!");
+        mqttConfig = oldConfig;
+        server.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Nieprawidłowe dane\"}");
+        return;
+    }
+
+    // Zapisz konfigurację
+    saveMQTTConfig();
+
+    // Zrestartuj MQTT
+    setupMQTT();
+
     server.send(200, "application/json", "{\"status\":\"ok\"}");
 }
 
@@ -1800,7 +1818,7 @@ void setup() {
     
     // 2. Inicjalizacja pamięci i konfiguracji
     EEPROM.begin(512);
-    loadMQTTConfig(); 
+    //loadMQTTConfig(); 
     initStorage();
     loadConfiguration();
     
