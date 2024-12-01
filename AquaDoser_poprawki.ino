@@ -1595,7 +1595,7 @@ String getStyles() {
     return styles;
 }
 
-String getPumpInputField(uint8_t index, const char* name, const char* label, const String& value, const char* type) {
+String getPumpInputField(uint8_t index, const char* name, const char* label, const String& value, const char* type, const char* attributes = "") {
     String html = F("<div class='field'><label for='");
     html += name;
     html += index;
@@ -1612,6 +1612,10 @@ String getPumpInputField(uint8_t index, const char* name, const char* label, con
     html += name;
     html += F("]' value='");
     html += value;
+    if (attributes && strlen(attributes) > 0) {
+        html += F("' ");
+        html += attributes;
+    }
     html += F("'></div>");
     return html;
 }
@@ -1747,89 +1751,96 @@ String getCalibrationSection() {
 }
 
 String getPumpConfigSection(uint8_t index) {
-    String html = F("<div class='pump-config'>");
-    html += F("<h3>Pompa "); html += (index + 1); html += F("</h3>");
+    String html = F("<div class='section pump-config'>");
     
-    // Nazwa pompy
+    // Nagłówek sekcji pompy
+    html += F("<h3>Pompa "); 
+    html += (index + 1); 
+    html += F("</h3>");
+    
+    // Podstawowa konfiguracja
+    html += F("<div class='config-table'>");
     html += getPumpInputField(index, "name", "Nazwa", pumps[index].name, "text");
-    
-    // Włącznik pompy
     html += getPumpCheckbox(index, "enabled", "Aktywna", pumps[index].enabled);
+    html += F("</div>");
     
     // Sekcja kalibracji
     html += F("<div class='calibration-section'>");
-    html += F("<label>Kalibracja: <span id='calibration"); 
-    html += index; html += F("'>"); 
+    html += F("<h4>Kalibracja</h4>");
+    html += F("<div class='current-calibration'>");
+    html += F("<span>Aktualna wartość: </span>");
+    html += F("<span id='calibration"); 
+    html += index;
+    html += F("'>");
     html += String(pumps[index].calibration, 1);
-    html += F("</span> ml/s</label>");
+    html += F("</span>");
+    html += F("<span> ml/s</span>");
+    html += F("</div>");
     
-    // Pola kalibracji
-    html += F("<div class='calib-step' id='step1_"); html += index; html += F("'>");
-    html += F("<label>Czas kalibracji: <input type='number' id='calibTime");
-    html += index; html += F("' min='1' max='60' value='10'> s </label>");
-    html += F("<button onclick='startCalib("); html += index; 
-    html += F(")' class='btn-small'>Kalibruj</button></div>");
+    // Krok 1 kalibracji
+    html += F("<div class='calib-step' id='step1_");
+    html += index;
+    html += F("'>");
+    html += F("<label>Czas kalibracji:");
+    html += F("<input type='number' id='calibTime");
+    html += index;
+    html += F("' min='1' max='60' value='10' class='calib-input'> sekund</label>");
+    html += F("<button onclick='startCalib(");
+    html += index;
+    html += F(")' class='btn btn-blue btn-small'>Start</button>");
+    html += F("</div>");
     
-    // Pole do wprowadzenia zmierzonej objętości (początkowo ukryte)
-    html += F("<div class='calib-step' id='step2_"); html += index; 
+    // Krok 2 kalibracji (ukryty początkowo)
+    html += F("<div class='calib-step' id='step2_");
+    html += index;
     html += F("' style='display:none'>");
-    html += F("<label>Zmierzona objętość: <input type='number' id='measuredVol");
-    html += index; html += F("' min='0' step='0.1' value='0.0'> ml </label>");
-    html += F("<button onclick='finishCalib("); html += index;
-    html += F(")' class='btn-small'>Zapisz</button></div>");
+    html += F("<label>Zmierzona objętość:");
+    html += F("<input type='number' id='measuredVol");
+    html += index;
+    html += F("' min='0' step='0.1' value='0.0' class='calib-input'> ml</label>");
+    html += F("<button onclick='finishCalib(");
+    html += index;
+    html += F(")' class='btn btn-green btn-small'>Zapisz</button>");
+    html += F("</div>");
     
     // Status kalibracji
-    html += F("<div id='result"); html += index; html += F("' class='calib-status'></div>");
+    html += F("<div id='result");
+    html += index;
+    html += F("' class='calib-status'></div>");
     html += F("</div>");
     
-    // Pozostałe pola
-    html += getPumpInputField(index, "dose", "Dawka (ml)", String(pumps[index].dose), "number", "step='0.1'");
-    html += getPumpInputField(index, "hour", "Godzina dozowania", String(pumps[index].hour), "number", "min='0' max='23'");
-    html += getPumpInputField(index, "minute", "Minuta dozowania", String(pumps[index].minute), "number", "min='0' max='59'");
+    // Ustawienia dozowania
+    html += F("<div class='dosing-settings'>");
+    html += F("<h4>Ustawienia dozowania</h4>");
+    html += getPumpInputField(index, "dose", "Dawka", String(pumps[index].dose), "number", "step='0.1' min='0'");
+    html += getPumpInputField(index, "hour", "Godzina", String(pumps[index].hour), "number", "min='0' max='23'");
+    html += getPumpInputField(index, "minute", "Minuta", String(pumps[index].minute), "number", "min='0' max='59'");
+    html += F("</div>");
+    
+    // Harmonogram dni
+    html += F("<div class='schedule-section'>");
+    html += F("<h4>Harmonogram</h4>");
     html += getScheduleDaysField(index);
-    
     html += F("</div>");
+    
+    html += F("</div>"); // Zamknięcie pump-config
     return html;
 }
 
 String getScripts() {
     String js = F("");
-    String js = existingScripts; // twoje obecne skrypty
-
-    js += F("function startCalib(pumpIndex) {");
-    js += F("    var time = document.getElementById('calibTime' + pumpIndex).value;");
-    js += F("    if (!time || time < 1 || time > 60) {");
-    js += F("        alert('Wprowadź prawidłowy czas (1-60 sekund)');");
-    js += F("        return;");
-    js += F("    }");
-    js += F("    document.getElementById('result' + pumpIndex).innerHTML = ");
-    js += F("        'Kalibracja w toku... Proszę czekać ' + time + ' sekund';");
-    js += F("    fetch('/calibrate?start=1&pump=' + pumpIndex + '&time=' + time)");
-    js += F("        .then(response => {");
-    js += F("            document.getElementById('step1_' + pumpIndex).style.display = 'none';");
-    js += F("            setTimeout(() => {");
-    js += F("                document.getElementById('step2_' + pumpIndex).style.display = 'block';");
-    js += F("                document.getElementById('result' + pumpIndex).innerHTML = ");
-    js += F("                    'Pompa zatrzymana. Podaj zmierzoną objętość.';");
-    js += F("            }, time * 1000);");
-    js += F("        });");
+    
+    // Podstawowe funkcje
+    js += F("function updatePumpStatus(index, status) {");
+    js += F("    document.getElementById('pump-status-' + index).innerHTML = status;");
     js += F("}");
     
-    js += F("function finishCalib(pumpIndex) {");
-    js += F("    var volume = document.getElementById('measuredVol' + pumpIndex).value;");
-    js += F("    if (!volume || volume <= 0) {");
-    js += F("        alert('Wprowadź zmierzoną objętość');");
-    js += F("        return;");
-    js += F("    }");
-    js += F("    fetch('/calibrate?finish=1&pump=' + pumpIndex + '&volume=' + volume)");
-    js += F("        .then(response => response.json())");
-    js += F("        .then(data => {");
-    js += F("            document.getElementById('calibration' + pumpIndex).textContent = ");
-    js += F("                data.flowRate.toFixed(1);");
-    js += F("            document.getElementById('result' + pumpIndex).innerHTML = ");
-    js += F("                'Kalibracja zapisana!';");
-    js += F("            document.getElementById('step1_' + pumpIndex).style.display = 'block';");
-    js += F("            document.getElementById('step2_' + pumpIndex).style.display = 'none';");
+    // Funkcje kalibracji
+    js += F("function startCalibration(index) {");
+    js += F("    fetch('/calibrate?pump=' + index)");
+    js += F("        .then(response => response.text())");
+    js += F("        .then(status => {");
+    js += F("            document.getElementById('calib-status-' + index).innerHTML = status;");
     js += F("        });");
     js += F("}");
 
