@@ -172,8 +172,12 @@ struct LEDState {
 
 // --- Obiekty sprzętowe
 RTC_DS3231 rtc;                // Zegar RTC
-PCF8574 pcf(PCF8574_ADDRESS);  // Ekspander I/O
+PCF8574 pcf8574(PCF8574_ADDRESS);  // Ekspander I/O
 Adafruit_NeoPixel strip(NUMBER_OF_PUMPS, LED_PIN, NEO_GRB + NEO_KHZ800); // LED
+
+ESP8266HTTPUpdateServer httpUpdateServer;
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, "pool.ntp.org", 3600);
 
 // --- Obiekty sieciowe
 WiFiClient client;
@@ -677,7 +681,7 @@ void firstUpdateHA() {
     // Aktualizacja stanu wszystkich pomp
     for (uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
         pumpSwitches[i]->setState(pumps[i].enabled);
-        pumpCalibrations[i]->setValue(pumps[i].calibration);
+        pumpCalibrations[i]->setState(pumps[i].calibration);
         if (pumpStates[i].sensor) {
             pumpStates[i].sensor->setValue(pumpStates[i].isActive ? "active" : "inactive");
         }
@@ -1651,6 +1655,109 @@ void onServiceModeSwitch(bool state, HASwitch* sender) {
     }
     toggleServiceMode();
     updateServiceModeLEDs();
+}
+
+// ========== FUNKCJE LED ==========
+uint32_t interpolateColor(uint32_t color1, uint32_t color2, float ratio) {
+    uint8_t r1 = (color1 >> 16) & 0xFF;
+    uint8_t g1 = (color1 >> 8) & 0xFF;
+    uint8_t b1 = color1 & 0xFF;
+    
+    uint8_t r2 = (color2 >> 16) & 0xFF;
+    uint8_t g2 = (color2 >> 8) & 0xFF;
+    uint8_t b2 = color2 & 0xFF;
+    
+    uint8_t r = r1 + ((r2 - r1) * ratio);
+    uint8_t g = g1 + ((g2 - g1) * ratio);
+    uint8_t b = b1 + ((b2 - b1) * ratio);
+    
+    return (r << 16) | (g << 8) | b;
+}
+
+void colorToRGB(uint32_t color, uint8_t &r, uint8_t &g, uint8_t &b) {
+    r = (color >> 16) & 0xFF;
+    g = (color >> 8) & 0xFF;
+    b = color & 0xFF;
+}
+
+void setLEDColor(uint8_t index, uint32_t color, bool immediate = false) {
+    if (index >= NUMBER_OF_PUMPS) return;
+    
+    LEDState &state = ledStates[index];
+    if (immediate) {
+        state.currentColor = color;
+        state.targetColor = color;
+    } else {
+        state.targetColor = color;
+    }
+}
+
+// ========== FUNKCJE POMOCNICZE ==========
+void saveConfig() {
+    saveNetworkConfig();
+    saveMQTTConfig();
+    savePumpsConfig();
+    saveConfiguration();
+}
+
+DateTime calculateNextDosing(uint8_t pumpIndex) {
+    if (pumpIndex >= NUMBER_OF_PUMPS) return DateTime();
+    
+    DateTime now = rtc.now();
+    DateTime nextRun = DateTime(
+        now.year(),
+        now.month(),
+        now.day(),
+        pumps[pumpIndex].hour,
+        pumps[pumpIndex].minute,
+        0
+    );
+    
+    if (nextRun < now) {
+        nextRun = nextRun + TimeSpan(1, 0, 0, 0);
+    }
+    
+    return nextRun;
+}
+
+void printLogHeader() {
+    Serial.println(F("Status pomp:"));
+    Serial.println(F("Idx\tStan\tKalibracja\tOstatnie dozowanie"));
+}
+
+void printPumpStatus(uint8_t index) {
+    Serial.print(index);
+    Serial.print(F("\t"));
+    Serial.print(pumps[index].enabled ? F("Wł") : F("Wył"));
+    Serial.print(F("\t"));
+    Serial.print(pumps[index].calibration);
+    Serial.print(F(" ml/min\t"));
+    
+    if (pumps[index].lastDosing > 0) {
+        DateTime lastDose(pumps[index].lastDosing);
+        char dateStr[20];
+        sprintf(dateStr, "%02d:%02d %02d/%02d", 
+                lastDose.hour(), lastDose.minute(),
+                lastDose.day(), lastDose.month());
+        Serial.print(dateStr);
+    } else {
+        Serial.print(F("Nigdy"));
+    }
+    Serial.println();
+}
+
+void initHomeAssistant() {
+    device.setName("AquaDoser");
+    device.setModel("AD ESP8266");
+    device.setManufacturer("PMW");
+    device.setSoftwareVersion("1.0.0");
+    
+    // Inicjalizacja encji HA
+    for (uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
+        setupPumpEntities(i);
+    }
+    
+    setupServiceModeSwitch();
 }
 
 /***************************************
