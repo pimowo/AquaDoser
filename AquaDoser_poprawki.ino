@@ -942,7 +942,7 @@ void handleConfigSave() {
     // Zapisz ustawienia MQTT
     strlcpy(mqttConfig.broker, server.arg("mqtt_broker").c_str(), sizeof(mqttConfig.broker));
     mqttConfig.port = server.arg("mqtt_port").toInt();
-    mqttConfig.enabled = server.hasArg("mqtt_enabled") && server.arg("mqtt_enabled") == "1";
+    //mqttConfig.enabled = server.hasArg("mqtt_enabled") && server.arg("mqtt_enabled") == "1";
 
     // Sprawdź czy dane są poprawne
     if (strlen(mqttConfig.broker) == 0 || mqttConfig.port <= 0) {
