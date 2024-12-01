@@ -1432,12 +1432,20 @@ String getConfigPage() {
     page += F("};");
     
     // Status update function
+    // page += F("function updateStatus(status) {");
+    // page += F("    document.getElementById('mqtt-status').className = 'status ' + (status.mqtt_connected ? 'success' : 'error');");
+    // page += F("    document.getElementById('mqtt-status').innerText = status.mqtt_connected ? 'Połączony' : 'Rozłączony';");
+    // page += F("    document.getElementById('wifi-status').className = 'status ' + (status.wifi_connected ? 'success' : 'error');");
+    // page += F("    document.getElementById('wifi-status').innerText = status.wifi_connected ? 'Połączony' : 'Rozłączony';");
+    // page += F("    document.getElementById('uptime').innerText = formatUptime(status.uptime);");
+    // page += F("    document.getElementById('current-time').innerText = status.current_time;");
+    // page += F("}");
+
     page += F("function updateStatus(status) {");
     page += F("    document.getElementById('mqtt-status').className = 'status ' + (status.mqtt_connected ? 'success' : 'error');");
     page += F("    document.getElementById('mqtt-status').innerText = status.mqtt_connected ? 'Połączony' : 'Rozłączony';");
     page += F("    document.getElementById('wifi-status').className = 'status ' + (status.wifi_connected ? 'success' : 'error');");
     page += F("    document.getElementById('wifi-status').innerText = status.wifi_connected ? 'Połączony' : 'Rozłączony';");
-    page += F("    document.getElementById('uptime').innerText = formatUptime(status.uptime);");
     page += F("    document.getElementById('current-time').innerText = status.current_time;");
     page += F("}");
     
@@ -1541,25 +1549,26 @@ String getConfigPage() {
     page += (WiFi.status() == WL_CONNECTED ? F("success'>Połączony") : F("error'>Rozłączony"));
     page += F("</span></td></tr>");
     
-    // Czas pracy
-    page += F("<tr><td>Czas pracy</td><td><span id='uptime'>");
-    unsigned long uptime = millis() / 1000;
-    page += String(uptime);
-    page += F("</span></td></tr>");
+    // // Czas pracy
+    // page += F("<tr><td>Czas pracy</td><td><span id='uptime'>");
+    // unsigned long uptime = millis() / 1000;
+    // page += String(uptime);
+    // page += F("</span></td></tr>");
     
-    // Adres IP
-    page += F("<tr><td>Adres IP</td><td>");
-    page += WiFi.localIP().toString();
-    page += F("</td></tr>");
+    // // Adres IP
+    // page += F("<tr><td>Adres IP</td><td>");
+    // page += WiFi.localIP().toString();
+    // page += F("</td></tr>");
     
     // Aktualna data i czas
     DateTime now = rtc.now();
     page += F("<tr><td>Data i czas</td><td><span id='current-time'>");
-    page += String(now.year()) + "-" + 
-            (now.month() < 10 ? "0" : "") + String(now.month()) + "-" + 
-            (now.day() < 10 ? "0" : "") + String(now.day()) + " " +
-            (now.hour() < 10 ? "0" : "") + String(now.hour()) + ":" +
-            (now.minute() < 10 ? "0" : "") + String(now.minute());
+    // Format: HH:MM DD/MM/YYYY
+    page += (now.hour() < 10 ? "0" : "") + String(now.hour()) + ":" +
+            (now.minute() < 10 ? "0" : "") + String(now.minute()) + " " +
+            (now.day() < 10 ? "0" : "") + String(now.day()) + "/" +
+            (now.month() < 10 ? "0" : "") + String(now.month()) + "/" +
+            String(now.year());
     page += F("</span></td></tr>");
     page += F("</table></div>");
 
@@ -1662,7 +1671,7 @@ String getConfigPage() {
 
     // Stopka z wersją
     page += F("<div class='footer'>");
-    page += F("AquaDoser v1.0");
+    page += F("<a href='https://github.com/pimowo/AquaDoser' target='_blank' class='github-button'>GitHub</a>");
     page += F("</div>");
     
     page += F("</div></body></html>");
@@ -1813,6 +1822,25 @@ String getStyles() {
         "    .config-table td:last-child { width: 50%; }"
         "    .btn { width: 100%; margin: 5px 0; }"
         "    .buttons-container { flex-direction: column; }"
+        "}"
+
+        // Stopka
+        ".footer { "
+        "    text-align: center; "
+        "    padding: 20px 0; "
+        "}"
+        
+        ".footer a { "
+        "    display: inline-block; "
+        "    padding: 10px 20px; "
+        "    background-color: #333; "
+        "    color: #fff; "
+        "    text-decoration: none; "
+        "    border-radius: 4px; "
+        "}"
+        
+        ".footer a:hover { "
+        "    background-color: #444; "
         "}"
     );
     return styles;
