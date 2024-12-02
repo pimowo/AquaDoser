@@ -313,7 +313,6 @@ void playConfirmationSound() {
 
 // ** FUNKCJE ALARMÓW I STEROWANIA POMPĄ **
 
-// Aktualizuj stan pompy
 // Inicjalizacja PCF8574
 void setupPCF8574() {
     Wire.begin();  // Inicjalizacja I2C (SDA - D2, SCL - D1 dla ESP8266)
@@ -342,6 +341,23 @@ void turnOnPump(uint8_t pumpIndex) {
     } else {
         Serial.printf("Błąd włączania pompy %d\n", pumpIndex + 1);
     }
+}
+
+// Dozowanie określonej ilości
+void dosePump(uint8_t pumpIndex) {
+    if (!config.pumps[pumpIndex].enabled) return;
+    
+    float doseTime = (config.pumps[pumpIndex].dosage / config.pumps[pumpIndex].calibration) * 60000; // czas w ms
+    
+    turnOnPump(pumpIndex);
+    delay(doseTime);
+    turnOffPump(pumpIndex);
+    
+    status.pumps[pumpIndex].lastDose = millis();
+    status.pumps[pumpIndex].totalDosed += config.pumps[pumpIndex].dosage;
+    
+    // Aktualizacja MQTT
+    updateHAState(pumpIndex);
 }
 
 // Wyłączenie pompy
@@ -582,6 +598,14 @@ void onSoundSwitchCommand(bool state, HASwitch* sender) {
     }
     
     DEBUG_PRINTF("Zmieniono stan dźwięku na: ", state ? "WŁĄCZONY" : "WYŁĄCZONY");
+}
+
+void onPumpCommand(bool state, HASwitch* sender, int pumpIndex) {
+    if (state) {
+        dosePump(pumpIndex);
+    } else {
+        turnOffPump(pumpIndex);
+    }
 }
 
 // Obsługuje komendę przełącznika trybu serwisowego
