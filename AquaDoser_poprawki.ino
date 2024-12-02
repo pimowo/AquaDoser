@@ -939,11 +939,11 @@ void handleSave() {
 void handleConfigSave() {
     if (server.hasArg("mqtt_broker")) {
         String broker = server.arg("mqtt_broker");
-        broker.trim(); // usuń białe znaki z początku i końca
+        broker.trim();
         
         if (broker.length() > 0) {
             strncpy(mqttConfig.broker, broker.c_str(), sizeof(mqttConfig.broker) - 1);
-            mqttConfig.broker[sizeof(mqttConfig.broker) - 1] = '\0'; // upewnij się że string jest zakończony
+            mqttConfig.broker[sizeof(mqttConfig.broker) - 1] = '\0';
         }
     }
     
@@ -958,19 +958,20 @@ void handleConfigSave() {
     // Zapisz konfigurację
     saveMQTTConfig();
     
-    // Wyświetl potwierdzenie
-    String response = F("Zapisano konfigurację MQTT:\n");
-    response += F("Broker: "); 
-    response += mqttConfig.broker;
-    response += F("\nPort: ");
-    response += String(mqttConfig.port);
+    // Przygotuj odpowiedź w formacie JSON
+    String jsonResponse = "{\"status\":\"success\",\"message\":\"";
+    jsonResponse += "Zapisano konfigurację MQTT:\\nBroker: ";
+    jsonResponse += mqttConfig.broker;
+    jsonResponse += "\\nPort: ";
+    jsonResponse += String(mqttConfig.port);
+    jsonResponse += "\"}";
     
-    Serial.println(response);
-    server.send(200, "text/plain", response);
+    Serial.println(jsonResponse);
+    server.send(200, "application/json", jsonResponse);
     
     // Zrestartuj połączenie MQTT
-    if (client.connected()) {
-        client.disconnect();
+    if (mqtt.isConnected()) {
+        mqtt.disconnect();
     }
     setupMQTT();
 }
@@ -1818,6 +1819,31 @@ String getScripts() {
     js += F("        .then(status => {");
     js += F("            document.getElementById('calib-status-' + index).innerHTML = status;");
     js += F("        });");
+    js += F("}");
+
+    // Dodaj funkcje obsługi formularza MQTT
+    js += F("function saveMQTTConfig() {");
+    js += F("    const broker = document.getElementById('mqtt_broker').value;");
+    js += F("    const port = document.getElementById('mqtt_port').value;");
+    js += F("    const data = new FormData();");
+    js += F("    data.append('mqtt_broker', broker);");
+    js += F("    data.append('mqtt_port', port);");
+    js += F("    fetch('/save_config', {");
+    js += F("        method: 'POST',");
+    js += F("        body: data");
+    js += F("    })");
+    js += F("    .then(response => response.json())");
+    js += F("    .then(data => {");
+    js += F("        if (data.status === 'success') {");
+    js += F("            alert(data.message);");
+    js += F("        } else {");
+    js += F("            alert('Błąd podczas zapisywania konfiguracji: ' + data.message);");
+    js += F("        }");
+    js += F("    })");
+    js += F("    .catch(error => {");
+    js += F("        alert('Błąd podczas zapisywania konfiguracji: ' + error);");
+    js += F("    });");
+    js += F("    return false;");
     js += F("}");
 
     return js;
