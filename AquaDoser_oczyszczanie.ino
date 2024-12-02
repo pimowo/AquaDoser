@@ -103,12 +103,11 @@ ButtonState buttonState;  // Instancja struktury ButtonState
 // Struktura do przechowywania różnych znaczników czasowych
 struct Timers {
     unsigned long lastMQTTRetry;    // Znacznik czasu ostatniej próby połączenia MQTT
-    unsigned long lastMeasurement;  // Znacznik czasu ostatniego pomiaru
     unsigned long lastOTACheck;     // Znacznik czasu ostatniego sprawdzenia OTA (Over-The-Air)
     unsigned long lastMQTTLoop;     // Znacznik czasu ostatniego cyklu pętli MQTT
     
     // Konstruktor inicjalizujący wszystkie znaczniki czasowe na 0
-    Timers() : lastMQTTRetry(0), lastMeasurement(0), lastOTACheck(0), lastMQTTLoop(0) {}
+    Timers() : lastMQTTRetry(0), lastOTACheck(0), lastMQTTLoop(0) {}
 };
 
 static Timers timers;  // Instancja struktury Timers
@@ -314,64 +313,6 @@ void playConfirmationSound() {
 
 // ** FUNKCJE ALARMÓW I STEROWANIA POMPĄ **
 
-// Sprawdź warunki alarmowe
-void checkAlarmConditions() {
-    unsigned long currentTime = millis();
-
-    // Sprawdź czy minęła minuta od ostatniego alarmu
-    if (currentTime - status.lastSoundAlert >= 60000) { // 60000ms = 1 minuta
-        // Sprawdź czy dźwięk jest włączony i czy występuje alarm pompy lub tryb serwisowy
-        if (config.soundEnabled && (status.pumpSafetyLock || status.isServiceMode)) {
-            playShortWarningSound();
-            status.lastSoundAlert = currentTime;
-            
-            // Debug info
-            DEBUG_PRINT(F("Alarm dźwiękowy - przyczyna:"));
-            if (status.pumpSafetyLock) DEBUG_PRINT(F("- Alarm pompy"));
-            if (status.isServiceMode) DEBUG_PRINT(F("- Tryb serwisowy"));
-        }
-    }
-}
-
-// Aktualizuj stany alarmów na podstawie bieżącej odległości
-void updateAlarmStates(float currentDistance) {
-    // --- Obsługa alarmu krytycznie niskiego poziomu wody ---
-    // Włącz alarm jeśli:
-    // - odległość jest większa lub równa max (zbiornik pusty)
-    // - alarm nie jest jeszcze aktywny
-    if (currentDistance >= config.tank_empty && !status.waterAlarmActive) {
-        status.waterAlarmActive = true;
-        sensorAlarm.setValue("ON");               
-        DEBUG_PRINT("Brak wody ON");
-    } 
-    // Wyłącz alarm jeśli:
-    // - odległość spadła poniżej progu wyłączenia (z histerezą)
-    // - alarm jest aktywny
-    else if (currentDistance < (config.tank_empty - HYSTERESIS) && status.waterAlarmActive) {
-        status.waterAlarmActive = false;
-        sensorAlarm.setValue("OFF");
-        DEBUG_PRINT("Brak wody OFF");
-    }
-
-    // --- Obsługa ostrzeżenia o rezerwie wody ---
-    // Włącz ostrzeżenie o rezerwie jeśli:
-    // - odległość osiągnęła próg rezerwy
-    // - ostrzeżenie nie jest jeszcze aktywne
-    if (currentDistance >= config.reserve_level && !status.waterReserveActive) {
-        status.waterReserveActive = true;
-        sensorReserve.setValue("ON");
-        DEBUG_PRINT("Rezerwa ON");
-    } 
-    // Wyłącz ostrzeżenie o rezerwie jeśli:
-    // - odległość spadła poniżej progu rezerwy (z histerezą)
-    // - ostrzeżenie jest aktywne
-    else if (currentDistance < (config.reserve_level - HYSTERESIS) && status.waterReserveActive) {
-        status.waterReserveActive = false;
-        sensorReserve.setValue("OFF");
-        DEBUG_PRINT("Rezerwa OFF");
-    }
-}
-
 // Aktualizuj stan pompy
 // Inicjalizacja PCF8574
 void setupPCF8574() {
@@ -418,17 +359,6 @@ void turnOffPump(uint8_t pumpIndex) {
 void stopAllPumps() {
     for(int i = 0; i < 8; i++) {
         turnOffPump(i);
-    }
-}
-
-// Obsługa komend alarmu pompy
-void onPumpAlarmCommand(bool state, HASwitch* sender) {
-    // Reset blokady bezpieczeństwa pompy następuje tylko gdy przełącznik 
-    // zostanie ustawiony na false (wyłączony)
-    if (!state) {
-        playConfirmationSound();  // Sygnał potwierdzenia zmiany trybu
-        status.pumpSafetyLock = false;  // Wyłącz blokadę bezpieczeństwa pompy
-        switchPumpAlarm.setState(false);  // Aktualizuj stan przełącznika w HA na OFF        
     }
 }
 
@@ -491,41 +421,28 @@ bool connectMQTT() {
 // Konfiguracja MQTT z Home Assistant
 void setupHA() {
     // Konfiguracja urządzenia dla Home Assistant
-    device.setName("HydroSense");  // Nazwa urządzenia
-    device.setModel("HS ESP8266");  // Model urządzenia
+    device.setName("AquaDoser");  // Nazwa urządzenia
+    device.setModel("AD ESP8266");  // Model urządzenia
     device.setManufacturer("PMW");  // Producent
     device.setSoftwareVersion(SOFTWARE_VERSION);  // Wersja oprogramowania
 
-    // Konfiguracja sensorów pomiarowych w HA
-    sensorDistance.setName("Pomiar odległości");
-    sensorDistance.setIcon("mdi:ruler");          
-    sensorDistance.setUnitOfMeasurement("mm");    
-    
-    sensorLevel.setName("Poziom wody");
-    sensorLevel.setIcon("mdi:cup-water");      
-    sensorLevel.setUnitOfMeasurement("%");     
-    
-    sensorVolume.setName("Objętość wody");
-    sensorVolume.setIcon("mdi:cup-water");     
-    sensorVolume.setUnitOfMeasurement("L");    
-
-    sensorPumpWorkTime.setName("Czas pracy pompy");
-    sensorPumpWorkTime.setIcon("mdi:timer-outline");     
-    sensorPumpWorkTime.setUnitOfMeasurement("s");
-    
-    // Konfiguracja sensorów statusu w HA
-    sensorPump.setName("Status pompy");
-    sensorPump.setIcon("mdi:water-pump");      
-    
-    sensorWater.setName("Czujnik wody");
-    sensorWater.setIcon("mdi:electric-switch");
-    
-    // Konfiguracja sensorów alarmowych w HA
-    sensorAlarm.setName("Brak wody");
-    sensorAlarm.setIcon("mdi:alarm-light");    
-
-    sensorReserve.setName("Rezerwa wody");
-    sensorReserve.setIcon("mdi:alarm-light-outline");   
+    for (int i = 0; i < 8; i++) {
+        char entityName[32];
+        sprintf(entityName, "Pump %d", i + 1);
+        
+        // Utworzenie przełącznika dla każdej pompy
+        HASwitch* pump = new HASwitch(entityName);
+        pump->setName(entityName);
+        pump->setIcon("mdi:water-pump");
+        
+        // Licznik całkowitej ilości dozowanej
+        char sensorName[32];
+        sprintf(sensorName, "Pump %d Total", i + 1);
+        HASensor* total = new HASensor(sensorName);
+        total->setName(sensorName);
+        total->setIcon("mdi:beaker");
+        total->setUnitOfMeasurement("ml");
+    } 
     
     // Konfiguracja przełączników w HA
     switchService.setName("Serwis");
@@ -540,10 +457,6 @@ void setupHA() {
     switchSound.setIcon("mdi:volume-high");        // Ikona głośnika
     switchSound.onCommand(onSoundSwitchCommand);   // Funkcja obsługi zmiany stanu
     switchSound.setState(status.soundEnabled);      // Stan początkowy
-    
-    switchPumpAlarm.setName("Alarm pompy");
-    switchPumpAlarm.setIcon("mdi:alert");               // Ikona alarmu
-    switchPumpAlarm.onCommand(onPumpAlarmCommand);      // Funkcja obsługi zmiany stanu
 }
 
 // ** FUNKCJE ZWIĄZANE Z PINAMI **
