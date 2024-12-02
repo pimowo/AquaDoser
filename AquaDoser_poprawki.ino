@@ -1366,7 +1366,8 @@ String getConfigPage() {
             String(now.year());
     page += F("</span></td></tr>");
     page += F("</table></div>");
-// Przyciski systemowe po sekcji statusu
+
+    // Przyciski systemowe po sekcji statusu
     page += F("<div class='section'>");
     page += F("<div class='buttons-container'>");
     page += F("<button type='button' onclick='if(confirm(\"Czy na pewno chcesz zrestartować urządzenie?\")) { fetch(\"/reboot\"); }' class='btn btn-blue'>Restart urządzenia</button>");
@@ -1377,23 +1378,22 @@ String getConfigPage() {
     // Formularz konfiguracji
     page += F("<form id='configForm' onsubmit='return saveConfiguration()'>");
     
-    // Konfiguracja MQTT
-    page += F("<div class='section'>");
-    page += F("<h2>Konfiguracja MQTT</h2>");
-    page += F("<table class='config-table'>");
-    page += F("<tr><td>Broker MQTT</td><td><input type='text' name='mqtt_broker' value='");
-    page += mqttConfig.broker;
-    page += F("' required></td></tr>");
-    page += F("<tr><td>Port MQTT</td><td><input type='number' name='mqtt_port' value='");
-    page += String(mqttConfig.port);
-    page += F("' required min='1' max='65535'></td></tr>");
-    page += F("<tr><td>Użytkownik MQTT</td><td><input type='text' name='mqtt_user' value='");
-    page += mqttConfig.username;
-    page += F("' required></td></tr>");
-    page += F("<tr><td>Hasło MQTT</td><td><input type='password' name='mqtt_pass' value='");
-    page += mqttConfig.password;
-    page += F("' required></td></tr>");
-    page += F("</table></div>");
+    // Sekcja MQTT
+    html += F("<div class='section'>");
+    html += F("<h2>Konfiguracja MQTT</h2>");
+    html += F("<form onsubmit='return saveMQTTConfig();'>");
+    html += F("<div class='field'>");
+    html += F("<label for='mqtt_broker'>Broker MQTT:</label>");
+    html += F("<input type='text' id='mqtt_broker' name='mqtt_broker' value='");
+    html += mqttConfig.broker;
+    html += F("'></div>");
+    html += F("<div class='field'>");
+    html += F("<label for='mqtt_port'>Port MQTT:</label>");
+    html += F("<input type='number' id='mqtt_port' name='mqtt_port' value='");
+    html += String(mqttConfig.port);
+    html += F("'></div>");
+    html += F("<button type='submit' class='btn btn-primary'>Zapisz konfigurację MQTT</button>");
+    html += F("</form></div>");
 
     // Konfiguracja pomp
     for(int i = 0; i < NUMBER_OF_PUMPS; i++) {
@@ -1500,77 +1500,7 @@ String getConfigPage() {
 }
 
 // Funkcja getStyles() - style CSS
-String getStyles() {
-    String styles = F("");
-    
-    // Podstawowe style
-    styles += F("* { box-sizing: border-box; margin: 0; padding: 0; }");
-    styles += F("body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #1a1a1a; color: #ffffff; }");
-    
-    // Kontenery
-    styles += F(".container { max-width: 800px; margin: 0 auto; padding: 0 15px; }");
-    styles += F(".buttons-container { display: flex; justify-content: space-between; margin: -5px; }");
-    styles += F(".section { background-color: #2a2a2a; padding: 20px; margin-bottom: 20px; border-radius: 8px; width: 100%; box-sizing: border-box; }");
-    
-    // Nagłówki
-    styles += F("h1 { color: #ffffff; text-align: center; margin-bottom: 30px; font-size: 2.5em; background-color: #2d2d2d; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }");
-    styles += F("h2 { color: #2196F3; margin-top: 0; font-size: 1.5em; }");
-    
-    // Tabela konfiguracji
-    styles += F(".config-table { width: 100%; border-collapse: collapse; table-layout: fixed; }");
-    styles += F(".config-table td { padding: 8px; border-bottom: 1px solid #3d3d3d; }");
-    styles += F(".config-table td:first-child { width: 65%; }");
-    styles += F(".config-table td:last-child { width: 35%; }");
-    
-    // Formularze
-    styles += F("input[type='text'], input[type='password'], input[type='number'] { width: 100%; padding: 8px; border: 1px solid #3d3d3d; border-radius: 4px; background-color: #1a1a1a; color: #ffffff; box-sizing: border-box; text-align: left; }");
-    styles += F("input[type='checkbox'] { width: 20px; height: 20px; margin: 0; vertical-align: middle; }");
-    
-    // Przyciski
-    styles += F(".btn { padding: 12px 24px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; width: calc(50% - 10px); display: inline-block; margin: 5px; text-align: center; transition: background-color 0.3s; }");
-    styles += F(".btn-blue { background-color: #2196F3; color: white; }");
-    styles += F(".btn-blue:hover { background-color: #1976D2; }");
-    styles += F(".btn-red { background-color: #DC3545; color: white; }");
-    styles += F(".btn-red:hover { background-color: #C82333; }");
-    styles += F(".btn-green { background-color: #28A745; color: white; width: 100% !important; }");
-    styles += F(".btn-green:hover { background-color: #218838; }");
-    
-    // Statusy i komunikaty
-    styles += F(".status { padding: 4px 8px; border-radius: 4px; display: inline-block; }");
-    styles += F(".success { color: #4CAF50; }");
-    styles += F(".error { color: #F44336; }");
-    styles += F(".message { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); padding: 15px 30px; border-radius: 5px; color: white; opacity: 0; transition: opacity 0.3s ease-in-out; z-index: 1000; }");
-    
-    // Sekcja dni dozowania
-    styles += F(".dosing-days { margin-top: 20px; }");
-    styles += F(".dosing-days h3 { margin: 0 0 10px 0; font-size: 1em; font-weight: normal; }");
-    styles += F(".days-container { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-start; }");
-    
-    // Sekcja aktualizacji
-    styles += F(".update-section { margin-top: 30px; }");
-    styles += F(".progress-bar { width: 100%; height: 24px; border: 1px solid #2196F3; border-radius: 4px; overflow: hidden; }");
-    styles += F(".progress { background: #2196F3; height: 100%; width: 0%; }");
-    styles += F(".progress-text { text-align: center; margin-top: 8px; }");
-    styles += F(".update-button { background: #2196F3; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px; }");
-    styles += F("#file { margin: 10px 0; }");
-    
-    // Sekcja kalibracji
-    styles += F(".calibration-section { margin: 10px 0; padding: 10px; border: 1px solid #3d3d3d; border-radius: 4px; }");
-    styles += F(".calib-step { margin: 5px 0; }");
-    styles += F(".calib-step input { width: 60px; margin: 0 5px; }");
-    styles += F(".calib-status { margin-top: 5px; font-size: 0.9em; color: #666; }");
-    styles += F(".btn-small { padding: 2px 8px; margin-left: 5px; }");
-    
-    // Stopka
-    styles += F(".footer { text-align: center; padding: 20px 0; }");
-    styles += F(".footer a { display: inline-block; padding: 10px 20px; background-color: #333; color: #fff; text-decoration: none; border-radius: 4px; }");
-    styles += F(".footer a:hover { background-color: #444; }");
-    
-    // Media Queries
-    styles += F("@media (max-width: 600px) { body { padding: 10px; } .container { padding: 0; } .section { padding: 15px; margin-bottom: 15px; } .config-table td:first-child { width: 50%; } .config-table td:last-child { width: 50%; } .btn { width: 100%; margin: 5px 0; } .buttons-container { flex-direction: column; } }");
-    
-    return styles;
-}
+
 
 String getPumpInputField(uint8_t index, const char* name, const char* label, const String& value, const char* type, const char* attributes = "") {
     String html = F("<div class='field'><label for='");
