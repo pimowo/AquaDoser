@@ -132,10 +132,10 @@ struct PumpState {
 
 // --- Konfiguracja MQTT
 struct MQTTConfig {
-    char broker[64];
-    int port;
-    char username[32];
-    char password[32];
+    char broker[64];       // IP lub adres brokera
+    uint16_t port;         // Port MQTT
+    char username[32];     // Nazwa użytkownika MQTT
+    char password[32];     // Hasło MQTT
     
     MQTTConfig() : port(1883) {
         memset(broker, 0, sizeof(broker));
@@ -726,19 +726,14 @@ void firstUpdateHA() {
 
 // Konfiguracja MQTT
 void setupMQTT() {
-    // Ustawienie unikalnego ID
-    byte mac[6];
-    WiFi.macAddress(mac);
-    device.setUniqueId(mac, sizeof(mac));
-    device.setName("AquaDoser");
-    
-    // Rozpoczęcie połączenia MQTT
-    bool result = mqtt.begin(mqttConfig.broker, mqttConfig.username, mqttConfig.password);
-    
-    if (result) {
-        Serial.println(F("MQTT connected"));
-    } else {
-        Serial.println(F("MQTT connection failed"));
+    if (strlen(mqttConfig.broker) > 0) {
+        client.setServer(mqttConfig.broker, mqttConfig.port);
+        
+        if (strlen(mqttConfig.username) > 0) {
+            client.connect("AquaDoser", mqttConfig.username, mqttConfig.password);
+        } else {
+            client.connect("AquaDoser");
+        }
     }
 }
 
@@ -940,7 +935,6 @@ void handleConfigSave() {
     if (server.hasArg("mqtt_broker")) {
         String broker = server.arg("mqtt_broker");
         broker.trim();
-        
         if (broker.length() > 0) {
             strncpy(mqttConfig.broker, broker.c_str(), sizeof(mqttConfig.broker) - 1);
             mqttConfig.broker[sizeof(mqttConfig.broker) - 1] = '\0';
@@ -955,21 +949,33 @@ void handleConfigSave() {
         }
     }
     
-    // Zapisz konfigurację
+    if (server.hasArg("mqtt_username")) {
+        String username = server.arg("mqtt_username");
+        username.trim();
+        strncpy(mqttConfig.username, username.c_str(), sizeof(mqttConfig.username) - 1);
+        mqttConfig.username[sizeof(mqttConfig.username) - 1] = '\0';
+    }
+    
+    if (server.hasArg("mqtt_password")) {
+        String password = server.arg("mqtt_password");
+        password.trim();
+        strncpy(mqttConfig.password, password.c_str(), sizeof(mqttConfig.password) - 1);
+        mqttConfig.password[sizeof(mqttConfig.password) - 1] = '\0';
+    }
+    
     saveMQTTConfig();
     
-    // Przygotuj odpowiedź w formacie JSON
     String jsonResponse = "{\"status\":\"success\",\"message\":\"";
     jsonResponse += "Zapisano konfigurację MQTT:\\nBroker: ";
     jsonResponse += mqttConfig.broker;
     jsonResponse += "\\nPort: ";
     jsonResponse += String(mqttConfig.port);
+    jsonResponse += "\\nUżytkownik: ";
+    jsonResponse += mqttConfig.username;
     jsonResponse += "\"}";
     
-    Serial.println(jsonResponse);
     server.send(200, "application/json", jsonResponse);
     
-    // Zrestartuj połączenie MQTT
     if (mqtt.isConnected()) {
         mqtt.disconnect();
     }
@@ -1382,16 +1388,35 @@ String getConfigPage() {
     html += F("<div class='section'>");
     html += F("<h2>Konfiguracja MQTT</h2>");
     html += F("<form onsubmit='return saveMQTTConfig();'>");
+    
+    // Broker
     html += F("<div class='field'>");
-    html += F("<label for='mqtt_broker'>Broker MQTT:</label>");
+    html += F("<label for='mqtt_broker'>Adres IP brokera MQTT:</label>");
     html += F("<input type='text' id='mqtt_broker' name='mqtt_broker' value='");
     html += mqttConfig.broker;
-    html += F("'></div>");
+    html += F("' placeholder='np. 192.168.1.100'></div>");
+    
+    // Port
     html += F("<div class='field'>");
     html += F("<label for='mqtt_port'>Port MQTT:</label>");
     html += F("<input type='number' id='mqtt_port' name='mqtt_port' value='");
     html += String(mqttConfig.port);
+    html += F("' placeholder='1883'></div>");
+    
+    // Username
+    html += F("<div class='field'>");
+    html += F("<label for='mqtt_username'>Nazwa użytkownika MQTT:</label>");
+    html += F("<input type='text' id='mqtt_username' name='mqtt_username' value='");
+    html += mqttConfig.username;
     html += F("'></div>");
+    
+    // Password
+    html += F("<div class='field'>");
+    html += F("<label for='mqtt_password'>Hasło MQTT:</label>");
+    html += F("<input type='password' id='mqtt_password' name='mqtt_password' value='");
+    html += mqttConfig.password;
+    html += F("'></div>");
+    
     html += F("<button type='submit' class='btn btn-primary'>Zapisz konfigurację MQTT</button>");
     html += F("</form></div>");
 
@@ -1752,28 +1777,21 @@ String getScripts() {
     js += F("}");
 
     // Dodaj funkcje obsługi formularza MQTT
-    js += F("function saveMQTTConfig() {");
-    js += F("    const broker = document.getElementById('mqtt_broker').value;");
-    js += F("    const port = document.getElementById('mqtt_port').value;");
-    js += F("    const data = new FormData();");
-    js += F("    data.append('mqtt_broker', broker);");
-    js += F("    data.append('mqtt_port', port);");
-    js += F("    fetch('/save_config', {");
-    js += F("        method: 'POST',");
-    js += F("        body: data");
-    js += F("    })");
-    js += F("    .then(response => response.json())");
-    js += F("    .then(data => {");
-    js += F("        if (data.status === 'success') {");
-    js += F("            alert(data.message);");
-    js += F("        } else {");
-    js += F("            alert('Błąd podczas zapisywania konfiguracji: ' + data.message);");
-    js += F("        }");
-    js += F("    })");
-    js += F("    .catch(error => {");
-    js += F("        alert('Błąd podczas zapisywania konfiguracji: ' + error);");
-    js += F("    });");
-    js += F("    return false;");
+    js += F("function saveMQTTConfig(){");
+    js += F("var b=document.getElementById('mqtt_broker').value;");
+    js += F("var p=document.getElementById('mqtt_port').value;");
+    js += F("var u=document.getElementById('mqtt_username').value;");
+    js += F("var pw=document.getElementById('mqtt_password').value;");
+    js += F("var d=new FormData();");
+    js += F("d.append('mqtt_broker',b);");
+    js += F("d.append('mqtt_port',p);");
+    js += F("d.append('mqtt_username',u);");
+    js += F("d.append('mqtt_password',pw);");
+    js += F("fetch('/save_config',{method:'POST',body:d})");
+    js += F(".then(r=>r.json())");
+    js += F(".then(d=>{alert(d.message);})");
+    js += F(".catch(e=>{alert('Błąd: '+e);});");
+    js += F("return false;}");
     js += F("}");
 
     return js;
