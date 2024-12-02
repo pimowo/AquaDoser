@@ -727,8 +727,11 @@ void firstUpdateHA() {
 // Konfiguracja MQTT
 void setupMQTT() {
     if (strlen(mqttConfig.broker) > 0) {
-        // Inicjalizacja połączenia MQTT
-        mqtt.begin(mqttConfig.broker, mqttConfig.username, mqttConfig.password, mqttConfig.port);
+        // Prawidłowa kolejność: broker, port, username, password
+        mqtt.begin(mqttConfig.broker, 
+                  mqttConfig.port,    // port jako drugi parametr
+                  mqttConfig.username, 
+                  mqttConfig.password);
         
         // Konfiguracja urządzenia
         device.setName("AquaDoser");
@@ -1404,37 +1407,38 @@ String getConfigPage() {
     page += F("<form id='configForm' onsubmit='return saveConfiguration()'>");
     
     // Sekcja konfiguracji MQTT
-    page += F("<div class='panel'>");
-    page += F("<div class='panel-header'>Konfiguracja MQTT</div>");
-    page += F("<div class='panel-body'>");
-    page += F("<form onsubmit='return saveMQTTConfig(this)'>");
-    
-    page += F("<div class='form-group'>");
-    page += F("<label>Broker MQTT:</label>");
-    page += F("<input type='text' name='mqtt_broker' value='");
-    page += mqttConfig.broker;
-    page += F("'></div>");
-    
-    page += F("<div class='form-group'>");
-    page += F("<label>Port MQTT:</label>");
-    page += F("<input type='number' name='mqtt_port' value='");
-    page += String(mqttConfig.port);
-    page += F("'></div>");
-    
-    page += F("<div class='form-group'>");
-    page += F("<label>Użytkownik MQTT:</label>");
-    page += F("<input type='text' name='mqtt_username' value='");
-    page += mqttConfig.username;
-    page += F("'></div>");
-    
-    page += F("<div class='form-group'>");
-    page += F("<label>Hasło MQTT:</label>");
-    page += F("<input type='password' name='mqtt_password' value='");
-    page += mqttConfig.password;
-    page += F("'></div>");
-    
-    page += F("<button type='submit' class='btn'>Zapisz MQTT</button>");
-    page += F("</form></div></div>");
+// W funkcji getConfigPage(), w miejscu gdzie dodajesz formularz MQTT:
+page += F("<div class='panel'>");
+page += F("<div class='panel-header'>Konfiguracja MQTT</div>");
+page += F("<div class='panel-body'>");
+page += F("<form id='mqttForm' method='post'>");  // Dodaj id do formularza
+
+page += F("<div class='form-group'>");
+page += F("<label>Broker MQTT:</label>");
+page += F("<input type='text' name='mqtt_broker' value='");
+page += mqttConfig.broker;
+page += F("'></div>");
+
+page += F("<div class='form-group'>");
+page += F("<label>Port MQTT:</label>");
+page += F("<input type='number' name='mqtt_port' value='");
+page += String(mqttConfig.port);
+page += F("'></div>");
+
+page += F("<div class='form-group'>");
+page += F("<label>Użytkownik MQTT:</label>");
+page += F("<input type='text' name='mqtt_username' value='");
+page += mqttConfig.username;
+page += F("'></div>");
+
+page += F("<div class='form-group'>");
+page += F("<label>Hasło MQTT:</label>");
+page += F("<input type='password' name='mqtt_password' value='");
+page += mqttConfig.password;
+page += F("'></div>");
+
+page += F("<button type='submit' class='btn'>Zapisz MQTT</button>");
+page += F("</form></div></div>");
 
     // Konfiguracja pomp
     for(int i = 0; i < NUMBER_OF_PUMPS; i++) {
@@ -1793,28 +1797,21 @@ String getScripts() {
     js += F("}");
 
     // Dodaj funkcje obsługi formularza MQTT
-    js += F("function saveMQTTConfig() {");
-    js += F("  const broker = document.getElementById('mqtt_broker').value;");
-    js += F("  const port = document.getElementById('mqtt_port').value;");
-    js += F("  const username = document.getElementById('mqtt_username').value;");
-    js += F("  const password = document.getElementById('mqtt_password').value;");
-    js += F("  const formData = new FormData();");
-    js += F("  formData.append('mqtt_broker', broker);");
-    js += F("  formData.append('mqtt_port', port);");
-    js += F("  formData.append('mqtt_username', username);");
-    js += F("  formData.append('mqtt_password', password);");
-    js += F("  fetch('/saveMQTTConfig', {");
-    js += F("    method: 'POST',");
-    js += F("    body: formData");
-    js += F("  })");
-    js += F("  .then(response => response.json())");
-    js += F("  .then(data => {");
-    js += F("    alert(data.message);");
-    js += F("    if(data.status === 'success') location.reload();");
-    js += F("  })");
-    js += F("  .catch(error => alert('Błąd: ' + error));");
-    js += F("  return false;");
-    js += F("}");
+    js += F("document.getElementById('mqttForm').onsubmit = function(e) {");
+    js += F("    e.preventDefault();");
+    js += F("    var formData = new FormData(this);");
+    js += F("    fetch('/saveMQTTConfig', {");
+    js += F("        method: 'POST',");
+    js += F("        body: formData");
+    js += F("    })");
+    js += F("    .then(function(response) { return response.json(); })");
+    js += F("    .then(function(data) {");
+    js += F("        alert(data.message);");
+    js += F("        if(data.status === 'success') window.location.reload();");
+    js += F("    })");
+    js += F("    .catch(function(error) { alert('Błąd: ' + error); });");
+    js += F("    return false;");
+    js += F("};");
 
     return js;
 }
