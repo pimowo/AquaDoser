@@ -132,10 +132,10 @@ struct PumpState {
 
 // --- Konfiguracja MQTT
 struct MQTTConfig {
-    char broker[64];       // IP lub adres brokera
-    uint16_t port;         // Port MQTT
-    char username[32];     // Nazwa użytkownika MQTT
-    char password[32];     // Hasło MQTT
+    char broker[64];
+    uint16_t port;
+    char username[32];
+    char password[32];
     
     MQTTConfig() : port(1883) {
         memset(broker, 0, sizeof(broker));
@@ -727,14 +727,13 @@ void firstUpdateHA() {
 // Konfiguracja MQTT
 void setupMQTT() {
     if (strlen(mqttConfig.broker) > 0) {
-        // Ustaw konfigurację MQTT
+        // Inicjalizacja połączenia MQTT
         mqtt.begin(mqttConfig.broker, mqttConfig.username, mqttConfig.password, mqttConfig.port);
         
-        // Skonfiguruj urządzenie
+        // Konfiguracja urządzenia
         device.setName("AquaDoser");
         device.setSoftwareVersion("1.0.0");
         
-        // Rozpocznij połączenie MQTT
         mqtt.loop();
     }
 }
@@ -1177,6 +1176,24 @@ String formatDateTime(const DateTime& dt) {
     return String(buffer);
 }
 
+function saveMQTTConfig(form) {
+    const formData = new FormData(form);
+    formData.append('mqtt_save', '1');
+    
+    fetch('/config', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.text())
+    .then(text => {
+        alert(text);
+        location.reload();
+    })
+    .catch(error => alert('Błąd: ' + error));
+    
+    return false;
+}
+
 // Pobranie statusu w formacie JSON
 String getSystemStatusJSON() {
     StaticJsonDocument<512> doc;
@@ -1386,41 +1403,38 @@ String getConfigPage() {
     // Formularz konfiguracji
     page += F("<form id='configForm' onsubmit='return saveConfiguration()'>");
     
-    // Sekcja MQTT
-    html += F("<div class='section'>");
-    html += F("<h2>Konfiguracja MQTT</h2>");
-    html += F("<form onsubmit='return saveMQTTConfig();'>");
+    // Sekcja konfiguracji MQTT
+    page += F("<div class='panel'>");
+    page += F("<div class='panel-header'>Konfiguracja MQTT</div>");
+    page += F("<div class='panel-body'>");
+    page += F("<form onsubmit='return saveMQTTConfig(this)'>");
     
-    // Broker
-    html += F("<div class='field'>");
-    html += F("<label for='mqtt_broker'>Adres IP brokera MQTT:</label>");
-    html += F("<input type='text' id='mqtt_broker' name='mqtt_broker' value='");
-    html += mqttConfig.broker;
-    html += F("' placeholder='np. 192.168.1.100'></div>");
+    page += F("<div class='form-group'>");
+    page += F("<label>Broker MQTT:</label>");
+    page += F("<input type='text' name='mqtt_broker' value='");
+    page += mqttConfig.broker;
+    page += F("'></div>");
     
-    // Port
-    html += F("<div class='field'>");
-    html += F("<label for='mqtt_port'>Port MQTT:</label>");
-    html += F("<input type='number' id='mqtt_port' name='mqtt_port' value='");
-    html += String(mqttConfig.port);
-    html += F("' placeholder='1883'></div>");
+    page += F("<div class='form-group'>");
+    page += F("<label>Port MQTT:</label>");
+    page += F("<input type='number' name='mqtt_port' value='");
+    page += String(mqttConfig.port);
+    page += F("'></div>");
     
-    // Username
-    html += F("<div class='field'>");
-    html += F("<label for='mqtt_username'>Nazwa użytkownika MQTT:</label>");
-    html += F("<input type='text' id='mqtt_username' name='mqtt_username' value='");
-    html += mqttConfig.username;
-    html += F("'></div>");
+    page += F("<div class='form-group'>");
+    page += F("<label>Użytkownik MQTT:</label>");
+    page += F("<input type='text' name='mqtt_username' value='");
+    page += mqttConfig.username;
+    page += F("'></div>");
     
-    // Password
-    html += F("<div class='field'>");
-    html += F("<label for='mqtt_password'>Hasło MQTT:</label>");
-    html += F("<input type='password' id='mqtt_password' name='mqtt_password' value='");
-    html += mqttConfig.password;
-    html += F("'></div>");
+    page += F("<div class='form-group'>");
+    page += F("<label>Hasło MQTT:</label>");
+    page += F("<input type='password' name='mqtt_password' value='");
+    page += mqttConfig.password;
+    page += F("'></div>");
     
-    html += F("<button type='submit' class='btn btn-primary'>Zapisz konfigurację MQTT</button>");
-    html += F("</form></div>");
+    page += F("<button type='submit' class='btn'>Zapisz MQTT</button>");
+    page += F("</form></div></div>");
 
     // Konfiguracja pomp
     for(int i = 0; i < NUMBER_OF_PUMPS; i++) {
@@ -1779,21 +1793,27 @@ String getScripts() {
     js += F("}");
 
     // Dodaj funkcje obsługi formularza MQTT
-    js += F("function saveMQTTConfig(){");
-    js += F("var b=document.getElementById('mqtt_broker').value;");
-    js += F("var p=document.getElementById('mqtt_port').value;");
-    js += F("var u=document.getElementById('mqtt_username').value;");
-    js += F("var pw=document.getElementById('mqtt_password').value;");
-    js += F("var d=new FormData();");
-    js += F("d.append('mqtt_broker',b);");
-    js += F("d.append('mqtt_port',p);");
-    js += F("d.append('mqtt_username',u);");
-    js += F("d.append('mqtt_password',pw);");
-    js += F("fetch('/save_config',{method:'POST',body:d})");
-    js += F(".then(r=>r.json())");
-    js += F(".then(d=>{alert(d.message);})");
-    js += F(".catch(e=>{alert('Błąd: '+e);});");
-    js += F("return false;}");
+    js += F("function saveMQTTConfig() {");
+    js += F("  const broker = document.getElementById('mqtt_broker').value;");
+    js += F("  const port = document.getElementById('mqtt_port').value;");
+    js += F("  const username = document.getElementById('mqtt_username').value;");
+    js += F("  const password = document.getElementById('mqtt_password').value;");
+    js += F("  const formData = new FormData();");
+    js += F("  formData.append('mqtt_broker', broker);");
+    js += F("  formData.append('mqtt_port', port);");
+    js += F("  formData.append('mqtt_username', username);");
+    js += F("  formData.append('mqtt_password', password);");
+    js += F("  fetch('/saveMQTTConfig', {");
+    js += F("    method: 'POST',");
+    js += F("    body: formData");
+    js += F("  })");
+    js += F("  .then(response => response.json())");
+    js += F("  .then(data => {");
+    js += F("    alert(data.message);");
+    js += F("    if(data.status === 'success') location.reload();");
+    js += F("  })");
+    js += F("  .catch(error => alert('Błąd: ' + error));");
+    js += F("  return false;");
     js += F("}");
 
     return js;
@@ -2055,6 +2075,49 @@ void initHomeAssistant() {
     setupServiceModeSwitch();
 }
 
+void handleMQTTConfig() {
+    if (server.hasArg("mqtt_broker")) {
+        String broker = server.arg("mqtt_broker");
+        broker.trim();
+        if (broker.length() > 0) {
+            strncpy(mqttConfig.broker, broker.c_str(), sizeof(mqttConfig.broker) - 1);
+            mqttConfig.broker[sizeof(mqttConfig.broker) - 1] = '\0';
+        }
+    }
+    
+    if (server.hasArg("mqtt_port")) {
+        String portStr = server.arg("mqtt_port");
+        int port = portStr.toInt();
+        if (port > 0 && port <= 65535) {
+            mqttConfig.port = port;
+        }
+    }
+    
+    if (server.hasArg("mqtt_username")) {
+        String username = server.arg("mqtt_username");
+        username.trim();
+        strncpy(mqttConfig.username, username.c_str(), sizeof(mqttConfig.username) - 1);
+        mqttConfig.username[sizeof(mqttConfig.username) - 1] = '\0';
+    }
+    
+    if (server.hasArg("mqtt_password")) {
+        String password = server.arg("mqtt_password");
+        password.trim();
+        strncpy(mqttConfig.password, password.c_str(), sizeof(mqttConfig.password) - 1);
+        mqttConfig.password[sizeof(mqttConfig.password) - 1] = '\0';
+    }
+    
+    saveMQTTConfig();
+    
+    if (mqtt.isConnected()) {
+        mqtt.disconnect();
+    }
+    setupMQTT();
+    
+    String response = "{\"status\":\"success\",\"message\":\"Konfiguracja MQTT została zapisana\"}";
+    server.send(200, "application/json", response);
+}
+
 /***************************************
  * IMPLEMENTACJE FUNKCJI - INICJALIZACJA
  ***************************************/
@@ -2117,6 +2180,8 @@ void setup() {
         ESP.restart();
     });
     server.on("/calibrate", handleCalibration);
+        server.on("/saveMQTTConfig", HTTP_POST, handleMQTTConfig);
+
     
     // 6. Synchronizacja czasu
     syncRTC();
