@@ -37,7 +37,7 @@ const unsigned long MILLIS_OVERFLOW_THRESHOLD = 4294967295U - 60000; // ~49.7 dn
 // ** KONFIGURACJA SYSTEMU **
 
 // Makra debugowania
-#define DEBUG 0  // 0 wyłącza debug, 1 włącza debug
+#define DEBUG 1  // 0 wyłącza debug, 1 włącza debug
 
 #if DEBUG
     #define DEBUG_PRINT(x) Serial.println(x)
@@ -1200,20 +1200,30 @@ void handleRoot() {
 
 // Waliduje wartości konfiguracji wprowadzone przez użytkownika
 bool validateConfigValues() {
-    if (server.arg("tank_full").toInt() >= server.arg("tank_empty").toInt() ||      // Sprawdź, czy poziom pełnego zbiornika jest większy lub równy poziomowi pustego zbiornika
-        server.arg("reserve_level").toInt() >= server.arg("tank_empty").toInt() ||  // Sprawdź, czy poziom rezerwy jest większy lub równy poziomowi pustego zbiornika
-        server.arg("tank_diameter").toInt() <= 0 ||                                 // Sprawdź, czy średnica zbiornika jest większa od 0
-        server.arg("pump_delay").toInt() < 0 ||                                     // Sprawdź, czy opóźnienie pompy jest większe lub równe 0
-        server.arg("pump_work_time").toInt() <= 0) {                                // Sprawdź, czy czas pracy pompy jest większy od 0
-        return false;
+    if (webServer.arg("hostname").length() >= sizeof(config.hostname)) return false;
+    if (webServer.arg("mqtt_host").length() >= sizeof(config.mqttHost)) return false;
+    if (webServer.arg("mqtt_user").length() >= sizeof(config.mqttUser)) return false;
+    if (webServer.arg("mqtt_pass").length() >= sizeof(config.mqttPass)) return false;
+    
+    // Walidacja ustawień pomp
+    for (int i = 0; i < 8; i++) {
+        float dose = webServer.arg("p" + String(i) + "_dose").toFloat();
+        if (dose < 0 || dose > 1000) return false;  // Maksymalna dawka 1L
+        
+        String timeStr = webServer.arg("p" + String(i) + "_time");
+        int hour = timeStr.substring(0, 2).toInt();
+        int minute = timeStr.substring(3, 5).toInt();
+        
+        if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return false;
     }
+    
     return true;
 }
 
 // Obsługa zapisania konfiguracji po jej wprowadzeniu przez użytkownika
 void handleSave() {
-    if (server.method() != HTTP_POST) {
-        server.send(405, "text/plain", "Method Not Allowed");
+    if (webServer.method() != HTTP_POST) {
+        webServer.send(405, "text/plain", "Method Not Allowed");
         return;
     }
 
@@ -1222,40 +1232,59 @@ void handleSave() {
     bool needMqttReconnect = false;
 
     // Zapisz poprzednie wartości MQTT do porównania
-    String oldServer = config.mqtt_server;
-    int oldPort = config.mqtt_port;
-    String oldUser = config.mqtt_user;
-    String oldPassword = config.mqtt_password;
+    String oldHost = config.mqttHost;
+    int oldPort = config.mqttPort;
+    String oldUser = config.mqttUser;
+    String oldPass = config.mqttPass;
 
-    // Zapisz ustawienia MQTT
-    strlcpy(config.mqtt_server, server.arg("mqtt_server").c_str(), sizeof(config.mqtt_server));
-    config.mqtt_port = server.arg("mqtt_port").toInt();
-    strlcpy(config.mqtt_user, server.arg("mqtt_user").c_str(), sizeof(config.mqtt_user));
-    strlcpy(config.mqtt_password, server.arg("mqtt_password").c_str(), sizeof(config.mqtt_password));
+    // Zapisz podstawowe ustawienia
+    if (webServer.hasArg("hostname")) {
+        strlcpy(config.hostname, webServer.arg("hostname").c_str(), sizeof(config.hostname));
+    }
+    if (webServer.hasArg("mqtt_host")) {
+        strlcpy(config.mqttHost, webServer.arg("mqtt_host").c_str(), sizeof(config.mqttHost));
+    }
+    if (webServer.hasArg("mqtt_port")) {
+        config.mqttPort = webServer.arg("mqtt_port").toInt();
+    }
+    if (webServer.hasArg("mqtt_user")) {
+        strlcpy(config.mqttUser, webServer.arg("mqtt_user").c_str(), sizeof(config.mqttUser));
+    }
+    if (webServer.hasArg("mqtt_pass")) {
+        strlcpy(config.mqttPass, webServer.arg("mqtt_pass").c_str(), sizeof(config.mqttPass));
+    }
+    config.soundEnabled = webServer.hasArg("sound_enabled");
 
-    // Zapisz ustawienia zbiornika
-    config.tank_full = server.arg("tank_full").toInt();
-    config.tank_empty = server.arg("tank_empty").toInt();
-    config.reserve_level = server.arg("reserve_level").toInt();
-    config.tank_diameter = server.arg("tank_diameter").toInt();
-
-    // Zapisz ustawienia pompy
-    config.pump_delay = server.arg("pump_delay").toInt();
-    config.pump_work_time = server.arg("pump_work_time").toInt();
+    // Zapisz konfigurację pomp
+    for (int i = 0; i < 8; i++) {
+        String pumpPrefix = "p" + String(i);
+        config.pumps[i].enabled = webServer.hasArg(pumpPrefix + "_enabled");
+        
+        if (webServer.hasArg(pumpPrefix + "_dose")) {
+            config.pumps[i].dosage = webServer.arg(pumpPrefix + "_dose").toFloat();
+        }
+        
+        if (webServer.hasArg(pumpPrefix + "_time")) {
+            String timeStr = webServer.arg(pumpPrefix + "_time");
+            if (timeStr.length() >= 5) { // Format HH:MM
+                config.pumps[i].hour = timeStr.substring(0, 2).toInt();
+                config.pumps[i].minute = timeStr.substring(3, 5).toInt();
+            }
+        }
+    }
 
     // Sprawdź poprawność wartości
     if (!validateConfigValues()) {
         config = oldConfig; // Przywróć poprzednie wartości
-        //webSocket.broadcastTXT("save:error:Nieprawidłowe wartości! Sprawdź wprowadzone dane.");
-        server.send(204); // Nie przekierowuj strony
+        webServer.send(400, "text/plain", "Invalid configuration values! Please check your input.");
         return;
     }
 
     // Sprawdź czy dane MQTT się zmieniły
-    if (oldServer != config.mqtt_server ||
-        oldPort != config.mqtt_port ||
-        oldUser != config.mqtt_user ||
-        oldPassword != config.mqtt_password) {
+    if (oldHost != config.mqttHost ||
+        oldPort != config.mqttPort ||
+        oldUser != config.mqttUser ||
+        oldPass != config.mqttPass) {
         needMqttReconnect = true;
     }
 
@@ -1270,9 +1299,13 @@ void handleSave() {
         connectMQTT();
     }
 
-    // Wyślij informację o sukcesie przez WebSocket
-    //webSocket.broadcastTXT("save:success:Zapisano ustawienia!");
-    server.send(204); // Nie przekierowuj strony
+    // Potwierdź zapisanie i zagraj dźwięk potwierdzenia jeśli włączony
+    if (config.soundEnabled) {
+        playConfirmationSound();
+    }
+
+    webServer.sendHeader("Location", "/");
+    webServer.send(303);
 }
 
 // Obsługa aktualizacji oprogramowania przez HTTP
