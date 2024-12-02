@@ -52,65 +52,73 @@ const char* SOFTWARE_VERSION = "2.12.24";  // Definiowanie wersji oprogramowania
 
 // Struktury konfiguracyjne i statusowe
 
-// Konfiguracja
-struct Config {
-    char hostname[32];   // nazwa urządzenia w sieci
-    char mqttHost[64];   // adres serwera MQTT
-    int mqttPort;        // port MQTT
-    char mqttUser[32];   // nazwa użytkownika MQTT
-    char mqttPass[32];   // hasło MQTT
-    bool soundEnabled;   // włączenie/wyłączenie dźwięków
-    
-    // konfiguracja dla każdej pompy
-    struct {
-        bool enabled;    // czy pompa jest aktywna
-        float dosage;    // dawka w ml
-        float calibration;  // kalibracja (ml/min)
-        uint8_t hour;    // godzina dawkowania
-        uint8_t minute;  // minuta dawkowania
-    } pumps[8];
-    
-    char checksum;      // suma kontrolna konfiguracji
+// Struktura dla pojedynczej pompy
+struct PumpConfig {
+    bool enabled;                // czy pompa jest włączona w harmonogramie
+    uint8_t dosage_ml;          // dawka w ml
+    uint8_t hour;               // godzina dozowania
+    uint8_t minute;             // minuta dozowania
+    bool workdays_only;         // czy dozować tylko w dni robocze
 };
 
-Config config;  // Globalna instancja struktury konfiguracyjnej
+// Konfiguracja
+// Główna struktura konfiguracji
+struct Config {
+    char hostname[32];          // nazwa urządzenia w sieci
+    char mqttHost[64];         // adres serwera MQTT
+    int mqttPort;              // port MQTT
+    char mqttUser[32];         // nazwa użytkownika MQTT
+    char mqttPassword[32];     // hasło MQTT
+    bool soundEnabled;         // czy dźwięki są włączone
+    PumpConfig pumps[NUMBER_OF_PUMPS];  // konfiguracja dla każdej pompy
+    uint8_t configVersion;     // wersja konfiguracji (dla EEPROM)
+    char checksum;             // suma kontrolna konfiguracji
+};
 
 // Struktura do przechowywania różnych stanów i parametrów systemu
 struct Status {
-    bool mqttConnected;      // status połączenia MQTT
-    bool serviceMode;        // tryb serwisowy
-    
-    struct {
-        bool isRunning;      // czy pompa aktualnie pracuje
-        unsigned long lastDose;    // czas ostatniego dozowania
-        float totalDosed;    // całkowita ilość podana w ml
-    } pumps[8];
+    bool mqttConnected;        // status połączenia z MQTT
+    bool pumpActive[NUMBER_OF_PUMPS];  // aktualny stan pomp (włączona/wyłączona)
+    bool serviceMode;          // czy urządzenie jest w trybie serwisowym
+    unsigned long lastDose[NUMBER_OF_PUMPS];  // timestamp ostatniego dozowania
+    float totalDosed[NUMBER_OF_PUMPS];  // całkowita ilość dozowana (ml)
+    bool networkConnected;     // status połączenia z siecią
+    uint8_t errorCode;        // kod błędu (0 = brak błędu)
 };
 
-Status status;  // Instancja struktury Status
-
-// Struktura dla obsługi przycisku
+// Stan przycisku
 struct ButtonState {
-    bool lastState;                   // Poprzedni stan przycisku
-    bool isInitialized = false; 
-    bool isLongPressHandled = false;  // Flaga obsłużonego długiego naciśnięcia
-    unsigned long pressedTime = 0;    // Czas wciśnięcia przycisku
-    unsigned long releasedTime = 0;   // Czas puszczenia przycisku
+    bool isPressed;           // czy przycisk jest obecnie wciśnięty
+    unsigned long pressTime;  // czas początku wciśnięcia
+    bool wasLongPress;       // czy ostatnie wciśnięcie było długie
+    uint8_t clickCount;      // licznik szybkich kliknięć
+    unsigned long lastClickTime; // czas ostatniego kliknięcia
 };
 
-ButtonState buttonState;  // Instancja struktury ButtonState
-
-// Struktura do przechowywania różnych znaczników czasowych
+// Timery dla różnych operacji
 struct Timers {
-    unsigned long lastMQTTRetry;    // Znacznik czasu ostatniej próby połączenia MQTT
-    unsigned long lastOTACheck;     // Znacznik czasu ostatniego sprawdzenia OTA (Over-The-Air)
-    unsigned long lastMQTTLoop;     // Znacznik czasu ostatniego cyklu pętli MQTT
+    unsigned long lastMQTTRetry;     // ostatnia próba połączenia MQTT
+    unsigned long lastOTACheck;      // ostatnie sprawdzenie aktualizacji
+    unsigned long lastMQTTLoop;      // ostatnia pętla MQTT
+    unsigned long lastPumpCheck;     // ostatnie sprawdzenie harmonogramu
+    unsigned long lastStateUpdate;   // ostatnia aktualizacja stanu do HA
+    unsigned long lastButtonCheck;   // ostatnie sprawdzenie przycisku
     
-    // Konstruktor inicjalizujący wszystkie znaczniki czasowe na 0
-    Timers() : lastMQTTRetry(0), lastOTACheck(0), lastMQTTLoop(0) {}
+    // Konstruktor inicjalizujący wszystkie timery na 0
+    Timers() : 
+        lastMQTTRetry(0), 
+        lastOTACheck(0), 
+        lastMQTTLoop(0),
+        lastPumpCheck(0),
+        lastStateUpdate(0),
+        lastButtonCheck(0) {}
 };
 
-static Timers timers;  // Instancja struktury Timers
+// Globalne instancje struktur
+Config config;
+Status status;
+ButtonState buttonState;
+Timers timers;
 
 // ** FILTROWANIE I POMIARY **
 
