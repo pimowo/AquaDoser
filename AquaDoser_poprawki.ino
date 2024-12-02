@@ -727,13 +727,15 @@ void firstUpdateHA() {
 // Konfiguracja MQTT
 void setupMQTT() {
     if (strlen(mqttConfig.broker) > 0) {
-        client.setServer(mqttConfig.broker, mqttConfig.port);
+        // Ustaw konfigurację MQTT
+        mqtt.begin(mqttConfig.broker, mqttConfig.username, mqttConfig.password, mqttConfig.port);
         
-        if (strlen(mqttConfig.username) > 0) {
-            client.connect("AquaDoser", mqttConfig.username, mqttConfig.password);
-        } else {
-            client.connect("AquaDoser");
-        }
+        // Skonfiguruj urządzenie
+        device.setName("AquaDoser");
+        device.setSoftwareVersion("1.0.0");
+        
+        // Rozpocznij połączenie MQTT
+        mqtt.loop();
     }
 }
 
