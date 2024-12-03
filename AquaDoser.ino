@@ -1330,8 +1330,8 @@ void updatePumpState(uint8_t pumpIndex, bool state) {
         pumpSwitches[pumpIndex]->setState(state, true); // force update
         
         // Aktualizacja sensora statusu
-        String statusText = "Pompa " + String(pumpIndex + 1) + 
-                          (state ? " włączona" : " wyłączona");
+        String statusText = "Pompa_" + String(pumpIndex + 1) + 
+                          (state ? "ON" : "OFF");
         sensorPump.setValue(statusText.c_str());
         
         mqtt.loop(); // Wymuszenie aktualizacji
