@@ -1,1814 +1,1419 @@
-/*
-AquaDoser - dozowanie nawozów
-HydroSense - dolewanie wody
-LumaSense - oświetlenie
-ClimaCore - sterowanie temperaturą/CO2
-GasSense - monitoring butli CO2
-*/
+// ** BIBLIOTEKI **
 
-// --- Biblioteki
+#include <Arduino.h>                  // Podstawowa biblioteka Arduino zawierająca funkcje rdzenia
+#include <ArduinoHA.h>                // Biblioteka do integracji z Home Assistant przez protokół MQTT
+#include <ArduinoOTA.h>               // Biblioteka do aktualizacji oprogramowania przez sieć WiFi
+#include <ESP8266WiFi.h>              // Biblioteka WiFi dedykowana dla układu ESP8266
+#include <EEPROM.h>                   // Biblioteka do dostępu do pamięci nieulotnej EEPROM
+#include <WiFiManager.h>              // Biblioteka do zarządzania połączeniami WiFi
+#include <ESP8266WebServer.h>         // Biblioteka do obsługi serwera HTTP na ESP8266
+#include <WebSocketsServer.h>         // Biblioteka do obsługi serwera WebSockets na ESP8266
+#include <ESP8266HTTPUpdateServer.h>  // Biblioteka do aktualizacji oprogramowania przez HTTP
 
-// Podstawowe biblioteki systemowe
-#include <Arduino.h>     // Podstawowa biblioteka Arduino - zawiera główne funkcje i definicje dla platformy Arduino
-#include <ArduinoHA.h>   // Integracja z Home Assistant poprzez MQTT - umożliwia komunikację z systemem automatyki domowej
-#include <ArduinoOTA.h>  // Over The Air - umożliwia bezprzewodową aktualizację oprogramowania przez WiFi
+#include <Wire.h>
+#include <PCF8574.h>
 
-// Biblioteki do obsługi WiFi i komunikacji sieciowej
-#include <ESP8266WiFi.h>              // Obsługa WiFi dla układu ESP8266
-#include <WiFiManager.h>              // Zarządzanie konfiguracją WiFi - portal konfiguracyjny do łatwego podłączenia do sieci
-#include <ESP8266WebServer.h>         // Serwer HTTP dla ESP8266 - umożliwia hostowanie strony konfiguracyjnej
-#include <WebSocketsServer.h>         // Obsługa WebSocket - do komunikacji w czasie rzeczywistym
-#include <ESP8266HTTPUpdateServer.h>  // Serwer aktualizacji HTTP - umożliwia aktualizację firmware przez przeglądarkę
+// ** DEFINICJE PINÓW **
 
-// Biblioteki do obsługi pamięci i plików
-#include <EEPROM.h>    // Dostęp do pamięci EEPROM - przechowywanie konfiguracji
-
-// Biblioteki do komunikacji z urządzeniami I2C
-#include <Wire.h>     // Obsługa magistrali I2C
-#include <RTClib.h>   // Obsługa zegara czasu rzeczywistego (RTC)
-#include <PCF8574.h>  // Sterownik ekspandera I/O I2C PCF8574
-
-// Biblioteki do obsługi JSON i LED
-#include <ArduinoJson.h>        // Parsowanie i generowanie danych w formacie JSON
-#include <Adafruit_NeoPixel.h>  // Sterowanie diodami LED WS2812B (NeoPixel)
-
-// Biblioteki do synchronizacji czasu
-#include <NTPClient.h>  // Klient NTP - synchronizacja czasu z serwerami czasu
-#include <WiFiUDP.h>    // Obsługa protokołu UDP - wymagana dla NTP
-
-// Deklaracja wyprzedzająca
-class HASensor;
-
-// Stałe
+// Przypisanie pinów do urządzeń
 const int NUMBER_OF_PUMPS = 8;
 const int BUZZER_PIN = 13;    // GPIO 13
 const int LED_PIN = 12;    // GPIO 12
-const int BUTTON_PIN = 14;    // GPIO 14
+const int PRZYCISK_PIN = 14;    // GPIO 14
 const int SDA_PIN = 4;        // GPIO 4
 const int SCL_PIN = 5;        // GPIO 5
-const int PCF8574_ADDRESS = 0x20;
+const int PCF8574_ADDRESS = 0x20;  // Adres I2C: 0x20
 
-#define PULSE_MAX_BRIGHTNESS 255
-#define PULSE_MIN_BRIGHTNESS 50
+// ** USTAWIENIA CZASOWE **
 
-// Definicje kolorów
-#define COLOR_RAINBOW_1 strip.Color(255, 0, 0)      // Czerwony
-#define COLOR_RAINBOW_2 strip.Color(255, 127, 0)    // Pomarańczowy
-#define COLOR_RAINBOW_3 strip.Color(255, 255, 0)    // Żółty
-#define COLOR_RAINBOW_4 strip.Color(0, 255, 0)      // Zielony
-#define COLOR_RAINBOW_5 strip.Color(0, 0, 255)      // Niebieski
-#define COLOR_RAINBOW_6 strip.Color(139, 0, 255)    // Fioletowy
-
-#define MQTT_SERVER_LENGTH 40
-#define MQTT_USER_LENGTH 20
-#define MQTT_PASSWORD_LENGTH 20
-
-#define LOG_INTERVAL 60000           // 1 minuta
-#define SYSTEM_CHECK_INTERVAL 5000   // 5 sekund
-#define WEBSOCKET_UPDATE_INTERVAL 1000 // 1 sekunda
-#define RTC_SYNC_INTERVAL 86400000UL // 24 godziny
-
-// Definicje struktur
-struct PumpState {
-    bool isActive;
-    unsigned long lastDoseTime;
-    HASensor* sensor;
-    
-    PumpState() : isActive(false), lastDoseTime(0), sensor(nullptr) {}
-};
-
-struct MQTTConfig {
-    char broker[64];
-    int port;
-    char username[32];
-    char password[32];
-    bool enabled;
-};
-
-struct PumpConfig {
-    char name[20];
-    bool enabled;
-    float calibration;
-    float dose;
-    uint8_t schedule_hour;
-    uint8_t minute;
-    uint8_t schedule_days;
-    time_t lastDosing;
-    bool isRunning;
-};
-
-struct NetworkConfig {
-    char hostname[32];
-    char ssid[32];
-    char password[32];
-    char mqtt_server[64];
-    int mqtt_port;
-    char mqtt_user[32];
-    char mqtt_password[32];
-    bool dhcp;    // Dodane pole dhcp
-};
-
-struct SystemConfig {
-    bool soundEnabled;
-};
-
-struct SystemStatus {
-    bool mqtt_connected;
-    bool wifi_connected;
-    unsigned long uptime;
-};
-
-struct SystemInfo {
-    unsigned long uptime;
-    bool mqtt_connected;
-};
-
-struct LEDState {
-    uint32_t currentColor;
-    uint32_t targetColor;
-    unsigned long lastUpdateTime;
-    bool immediate;
-    uint8_t brightness;
-    bool pulsing;
-    int8_t pulseDirection;
-    
-    LEDState() : currentColor(0), targetColor(0), lastUpdateTime(0), 
-                 immediate(false), brightness(255), pulsing(false), 
-                 pulseDirection(1) {}
-};
-
-// Adresy EEPROM
-const int PUMPS_CONFIG_ADDR = 0;
-const int MQTT_CONFIG_ADDR = PUMPS_CONFIG_ADDR + (sizeof(PumpConfig) * NUMBER_OF_PUMPS);
-const int NETWORK_CONFIG_ADDR = MQTT_CONFIG_ADDR + sizeof(MQTTConfig);
-const int SYSTEM_CONFIG_ADDR = NETWORK_CONFIG_ADDR + sizeof(NetworkConfig);
-const int SYSTEM_STATUS_ADDR = SYSTEM_CONFIG_ADDR + sizeof(SystemConfig);
-
-// Globalne obiekty
-WiFiClient client;
-HADevice device("aquadoser");
-HAMqtt mqtt(client, device);
-PCF8574 pcf(PCF8574_ADDRESS);
-ESP8266WebServer server(80);
-WebSocketsServer webSocket(81);
-Adafruit_NeoPixel strip(NUMBER_OF_PUMPS, LED_PIN, NEO_GRB + NEO_KHZ800);
-
-// Globalne zmienne stanu
-PumpConfig pumps[NUMBER_OF_PUMPS];
-PumpState pumpStates[NUMBER_OF_PUMPS];
-NetworkConfig networkConfig;
-SystemConfig systemConfig;
-SystemStatus systemStatus;
-MQTTConfig mqttConfig;
-LEDState ledStates[NUMBER_OF_PUMPS];
-
-// Zmienne globalne do obsługi czasu
-DateTime now;
-uint8_t currentDay;
-uint8_t currentHour;
-uint8_t currentMinute;
-bool hasActivePumps = false;
-
-// --- Zmienne dla obsługi przycisku
-unsigned long lastButtonPress = 0;
-bool lastButtonState = HIGH;
-
-// --- Interwały czasowe
+// Konfiguracja timeoutów i interwałów
+const unsigned long WATCHDOG_TIMEOUT = 8000;       // Timeout dla watchdoga
+const unsigned long LONG_PRESS_TIME = 1000;        // Czas długiego naciśnięcia przycisku
 const unsigned long MQTT_LOOP_INTERVAL = 100;      // Obsługa MQTT co 100ms
 const unsigned long OTA_CHECK_INTERVAL = 1000;     // Sprawdzanie OTA co 1s
-const unsigned long PUMP_CHECK_INTERVAL = 1000;    // Sprawdzanie pomp co 1s
-const unsigned long BUTTON_DEBOUNCE_TIME = 50;     // Czas debounce przycisku (ms)
-const unsigned long WIFI_RECONNECT_DELAY = 5000;   // Opóźnienie ponownego połączenia WiFi
-const unsigned long MQTT_RECONNECT_DELAY = 5000;   // Opóźnienie ponownego połączenia MQTT
-
-// Zmienne MQTT
-bool mqttEnabled = false;
-char mqttServer[MQTT_SERVER_LENGTH] = "";
-uint16_t mqttPort = 1883;
-char mqttUser[MQTT_USER_LENGTH] = "";
-char mqttPassword[MQTT_PASSWORD_LENGTH] = "";
-bool shouldRestart = false;
-unsigned long restartTime = 0;
-unsigned long lastStatusPrint = 0;
-const unsigned long STATUS_PRINT_INTERVAL = 60000; // Wyświetlaj status co 1 minutę
-//const unsigned long LOG_INTERVAL = 60000; // 60 sekund między wyświetlaniem statusu
-unsigned long lastLogTime = 0;
-bool firstRun = true;
-const char* dayNames[] = {"Pn", "Wt", "Śr", "Cz", "Pt", "Sb", "Nd"};
-
-#define DEBOUNCE_TIME 50   // Czas debounce w ms
-
-// --- Kolory LED
-#define COLOR_OFF 0xFF0000      // Czerwony (pompa wyłączona)
-#define COLOR_ON 0x00FF00       // Zielony (pompa włączona)
-#define COLOR_WORKING 0x0000FF  // Niebieski (pompa pracuje)
-#define COLOR_SERVICE 0xFFFF00  // Żółty (tryb serwisowy)
-
-#define DEBUG_SERIAL(x)
-RTC_DS3231 rtc;
-
-ESP8266HTTPUpdateServer httpUpdateServer;
-
-WiFiUDP ntpUDP;
-NTPClient timeClient(ntpUDP, "pool.ntp.org");
-
-// --- Globalne obiekty
-WiFiClient wifiClient;
-HADevice haDevice("AquaDoser");
-//HAMqtt mqtt(wifiClient, haDevice);
-//RTC_DS3231 rtc;
-PCF8574 pcf8574(0x20);
-
-// --- Globalne zmienne stanu
-bool serviceMode = false;
-bool pumpRunning[NUMBER_OF_PUMPS] = {false};
-unsigned long doseStartTime[NUMBER_OF_PUMPS] = {0};
-
-// Dodaj stałe dla timeoutów i interwałów jak w HydroSense
-const unsigned long MQTT_RETRY_INTERVAL = 10000;   
+const unsigned long MQTT_RETRY_INTERVAL = 10000;   // Próba połączenia MQTT co 10s
 const unsigned long MILLIS_OVERFLOW_THRESHOLD = 4294967295U - 60000; // ~49.7 dni
 
-unsigned long lastMQTTLoop = 0;
-unsigned long lastMeasurement = 0;
-unsigned long lastOTACheck = 0;
+// ** KONFIGURACJA SYSTEMU **
 
-// --- Stałe czasowe
-#define DOSE_CHECK_INTERVAL 1000    // Sprawdzanie dozowania co 1 sekundę
-#define MIN_DOSE_TIME 100          // Minimalny czas dozowania (ms)
-#define MAX_DOSE_TIME 60000        // Maksymalny czas dozowania (60 sekund)
+// Makra debugowania
+#define DEBUG 1  // 0 wyłącza debug, 1 włącza debug
 
-// --- Zmienne dla obsługi pomp
-unsigned long lastDoseCheck = 0;
-bool pumpInitialized = false;
-// --- Stałe dla animacji LED
-#define LED_UPDATE_INTERVAL 50    // Aktualizacja LED co 50ms
-#define FADE_STEPS 20            // Liczba kroków w animacji fade
+#if DEBUG
+    #define DEBUG_PRINT(x) Serial.println(x)
+    #define DEBUG_PRINTF(format, ...) Serial.printf(format, __VA_ARGS__)
+#else
+    #define DEBUG_PRINT(x)
+    #define DEBUG_PRINTF(format, ...)
+#endif
 
-unsigned long lastLedUpdate = 0;
-// --- Stałe dla Home Assistant
-#define HA_UPDATE_INTERVAL 30000  // Aktualizacja HA co 30 sekund
-unsigned long lastHaUpdate = 0;
+// Zmienna przechowująca wersję oprogramowania
+const char* SOFTWARE_VERSION = "2.12.24";  // Definiowanie wersji oprogramowania
 
-// --- Deklaracje encji Home Assistant
-HASwitch* pumpSwitches[NUMBER_OF_PUMPS];
-HANumber* pumpCalibrations[NUMBER_OF_PUMPS];
-HASwitch* serviceModeSwitch;
+// Struktury konfiguracyjne i statusowe
 
-SystemInfo sysInfo = {0, false};
+// Struktura dla pojedynczej pompy
+struct PumpConfig {
+    bool enabled;                // czy pompa jest włączona w harmonogramie
+    uint8_t dosage_ml;          // dawka w ml
+    uint8_t hour;               // godzina dozowania
+    uint8_t minute;             // minuta dozowania
+    bool workdays_only;         // czy dozować tylko w dni robocze
+};
 
-void initStorage() {
-    systemConfig.soundEnabled = true;  // wartość domyślna
-}
+// Konfiguracja
+// Główna struktura konfiguracji
+struct Config {
+    char hostname[32];          // nazwa urządzenia w sieci
+    char mqttHost[64];         // adres serwera MQTT
+    int mqttPort;              // port MQTT
+    char mqttUser[32];         // nazwa użytkownika MQTT
+    char mqttPassword[32];     // hasło MQTT
+    bool soundEnabled;         // czy dźwięki są włączone
+    PumpConfig pumps[NUMBER_OF_PUMPS];  // konfiguracja dla każdej pompy
+    uint8_t configVersion;     // wersja konfiguracji (dla EEPROM)
+    char checksum;             // suma kontrolna konfiguracji
+};
 
-// --- Konfiguracja MQTT dla Home Assistant
-void setupMQTT() {
-    if (strlen(networkConfig.mqtt_server) == 0) {
-        Serial.println(F("Brak konfiguracji MQTT"));
-        return;
-    }
+// Struktura do przechowywania różnych stanów i parametrów systemu
+struct Status {
+    bool mqttConnected;        // status połączenia z MQTT
+    bool pumpActive[NUMBER_OF_PUMPS];  // aktualny stan pomp (włączona/wyłączona)
+    bool serviceMode;          // czy urządzenie jest w trybie serwisowym
+    unsigned long lastDose[NUMBER_OF_PUMPS];  // timestamp ostatniego dozowania
+    float totalDosed[NUMBER_OF_PUMPS];  // całkowita ilość dozowana (ml)
+    bool networkConnected;     // status połączenia z siecią
+    uint8_t errorCode;        // kod błędu (0 = brak błędu)
+};
 
-    if (!mqttConfig.enabled) return;
+// Stan przycisku
+struct ButtonState {
+    bool isPressed;           // czy przycisk jest obecnie wciśnięty
+    unsigned long pressTime;  // czas początku wciśnięcia
+    bool wasLongPress;       // czy ostatnie wciśnięcie było długie
+    uint8_t clickCount;      // licznik szybkich kliknięć
+    unsigned long lastClickTime; // czas ostatniego kliknięcia
+};
+
+// Timery dla różnych operacji
+struct Timers {
+    unsigned long lastMQTTRetry;     // ostatnia próba połączenia MQTT
+    unsigned long lastOTACheck;      // ostatnie sprawdzenie aktualizacji
+    unsigned long lastMQTTLoop;      // ostatnia pętla MQTT
+    unsigned long lastPumpCheck;     // ostatnie sprawdzenie harmonogramu
+    unsigned long lastStateUpdate;   // ostatnia aktualizacja stanu do HA
+    unsigned long lastButtonCheck;   // ostatnie sprawdzenie przycisku
     
-    mqtt.onConnected([]() {
-        systemStatus.mqtt_connected = true;
-        Serial.println("MQTT Connected");
-    });
-    
-    mqtt.onDisconnected([]() {
-        systemStatus.mqtt_connected = false;
-        Serial.println("MQTT Disconnected");
-    });
+    // Konstruktor inicjalizujący wszystkie timery na 0
+    Timers() : 
+        lastMQTTRetry(0), 
+        lastOTACheck(0), 
+        lastMQTTLoop(0),
+        lastPumpCheck(0),
+        lastStateUpdate(0),
+        lastButtonCheck(0) {}
+};
 
-    // Konfiguracja urządzenia HA
-    byte mac[6];
-    WiFi.macAddress(mac);
-    device.setUniqueId(mac, sizeof(mac));
-    device.setName("AquaDoser");
-    device.setSoftwareVersion("1.0.0");
-    
-    // Konfiguracja MQTT
-    mqtt.begin(
-        networkConfig.mqtt_server,
-        networkConfig.mqtt_port,
-        networkConfig.mqtt_user,
-        networkConfig.mqtt_password
-    );
-}
+// Globalne instancje struktur
+Config config;
+Status status;
+ButtonState buttonState;
+Timers timers;
 
-bool hasIntervalPassed(unsigned long current, unsigned long previous, unsigned long interval) {
-    return (current - previous >= interval);
-}
+// ** FILTROWANIE I POMIARY **
 
-// Funkcja formatująca czas
-String formatDateTime(const DateTime& dt) {
-    char buffer[20];
-    snprintf(buffer, sizeof(buffer), "%04d-%02d-%02d %02d:%02d:%02d",
-             dt.year(), dt.month(), dt.day(),
-             dt.hour(), dt.minute(), dt.second());
-    return String(buffer);
-}
+// Parametry czujnika ultradźwiękowego i obliczeń
+const int HYSTERESIS = 10;  // Histereza przy zmianach poziomu (mm)
+const int SENSOR_MIN_RANGE = 20;    // Minimalny zakres czujnika (mm)
+const int SENSOR_MAX_RANGE = 1020;  // Maksymalny zakres czujnika (mm)
+const float EMA_ALPHA = 0.2f;       // Współczynnik wygładzania dla średniej wykładniczej (0-1)
+const int SENSOR_AVG_SAMPLES = 3;   // Liczba próbek do uśrednienia pomiaru
 
-// Funkcja wyświetlająca nagłówek logu
-void printLogHeader() {
-    Serial.println(F("\n========================================"));
-    Serial.print(F("Status update at: "));
-    Serial.println(formatDateTime(rtc.now()));
-    Serial.println(F("----------------------------------------"));
-}
+float lastFilteredDistance = 0;     // Dla filtra EMA (Exponential Moving Average)
+float lastReportedDistance = 0;     // Ostatnia zgłoszona wartość odległości
+unsigned long lastMeasurement = 0;  // Ostatni czas pomiaru
+float currentDistance = 0;          // Bieżąca odległość od powierzchni wody (mm)
+float volume = 0;                   // Objętość wody w akwarium (l)
+unsigned long pumpStartTime = 0;    // Czas rozpoczęcia pracy pompy
+float waterLevelBeforePump = 0;     // Poziom wody przed uruchomieniem pompy
 
-// Funkcja wyświetlająca status pojedynczej pompy
-void printPumpStatus(uint8_t pumpIndex) {
-    if (!pumps[pumpIndex].enabled) {
-        return; // Nie wyświetlaj statusu wyłączonych pomp
-    }
+// ** INSTANCJE URZĄDZEŃ I USŁUG **
 
-    Serial.print(F("Pump "));
-    Serial.print(pumpIndex + 1);
-    Serial.print(F(": "));
+// Wi-Fi, MQTT i Home Assistant
+WiFiClient client;              // Klient połączenia WiFi
+HADevice device("HydroSense");  // Definicja urządzenia dla Home Assistant
+HAMqtt mqtt(client, device);    // Klient MQTT dla Home Assistant
 
-    if (pumps[pumpIndex].isRunning) {
-        Serial.println(F("Pompa pracuje"));
-    } else {
-        Serial.print(F("Standby - Next dose: "));
-        DateTime nextDose = calculateNextDosing(pumpIndex);
-        Serial.print(formatDateTime(nextDose));
-        
-        if (pumps[pumpIndex].lastDosing > 0) {
-            Serial.print(F(" (Last: "));
-            time_t lastDose = pumps[pumpIndex].lastDosing;
-            DateTime lastDoseTime(lastDose);
-            Serial.print(formatDateTime(lastDoseTime));
-            Serial.print(F(")"));
-        }
-        Serial.println();
-    }
-}
+// Serwer HTTP i WebSockets
+ESP8266WebServer server(80);     // Tworzenie instancji serwera HTTP na porcie 80
+WebSocketsServer webSocket(81);  // Tworzenie instancji serwera WebSockets na porcie 81
 
-void printPumpStatus(int pumpIndex) {
-    if (!pumps[pumpIndex].enabled) {
-        Serial.print(F("Pump "));
-        Serial.print(pumpIndex + 1);
-        Serial.println(F(": Disabled"));
-        return;
-    }
+// Czujniki i przełączniki dla Home Assistant
 
-    String status = "Pump " + String(pumpIndex + 1) + ": ";
-    
-    if (pumps[pumpIndex].isRunning) {
-        status += "Active (Dosing)";
-    } else {
-        if (pumps[pumpIndex].lastDosing > 0) {
-            time_t lastDose = pumps[pumpIndex].lastDosing;
-            struct tm* timeinfo = localtime(&lastDose);
-            char timeStr[20];
-            strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M", timeinfo);
-            status += "Inactive (Last: " + String(timeStr) + ")";
-        } else {
-            status += "Inactive (No previous runs)";
-        }
+// Sensory pomiarowe
+HASensor sensorDistance("water_level");         // Odległość od lustra wody (w mm)
+HASensor sensorLevel("water_level_percent");    // Poziom wody w zbiorniku (w procentach)
+HASensor sensorVolume("water_volume");          // Objętość wody (w litrach)
+HASensor sensorPumpWorkTime("pump_work_time");  // Czas pracy pompy
 
-        // Dodaj informację o następnym zaplanowanym dozowaniu
-        if (pumps[pumpIndex].enabled) {
-            DateTime nextDose = calculateNextDosing(pumpIndex);
-            status += " - Next: ";
-            status += String(nextDose.year()) + "-";
-            status += (nextDose.month() < 10 ? "0" : "") + String(nextDose.month()) + "-";
-            status += (nextDose.day() < 10 ? "0" : "") + String(nextDose.day()) + " ";
-            status += (nextDose.hour() < 10 ? "0" : "") + String(nextDose.hour()) + ":";
-            status += (nextDose.minute() < 10 ? "0" : "") + String(nextDose.minute());
-        }
-    }
+// Sensory statusu
+HASensor sensorPump("pump");    // Praca pompy (ON/OFF)
+HASensor sensorWater("water");  // Czujnik poziomu w akwarium (ON=niski/OFF=ok)
 
-    Serial.println(status);
-}
+// Sensory alarmowe
+HASensor sensorAlarm("water_alarm");      // Brak wody w zbiorniku dolewki
+HASensor sensorReserve("water_reserve");  // Rezerwa w zbiorniku dolewki
 
-// Dodaj obsługę dźwięku jak w HydroSense
-void playShortWarningSound() {
-    if (!systemConfig.soundEnabled) return;
-    tone(BUZZER_PIN, 2000, 100);
-}
+// Przełączniki
+HASwitch switchPumpAlarm("pump_alarm");  // Resetowania blokady pompy
+HASwitch switchService("service_mode");  // Tryb serwisowy
+HASwitch switchSound("sound_switch");    // Dźwięki systemu
 
-void playConfirmationSound() {
-    if (!systemConfig.soundEnabled) return;
-    tone(BUZZER_PIN, 1000, 50);
+// ** FUNKCJE I METODY SYSTEMOWE **
+
+// Reset do ustawień fabrycznych
+void factoryReset() {    
+    WiFi.disconnect(true);  // true = kasuj zapisane ustawienia
+    WiFi.mode(WIFI_OFF);   
     delay(100);
-    tone(BUZZER_PIN, 2000, 50);
-}
-
-void welcomeMelody() {
-    if (!systemConfig.soundEnabled) return;
-    tone(BUZZER_PIN, 1000, 100);
-    delay(150);
-    tone(BUZZER_PIN, 1500, 100);
-    delay(150);
-    tone(BUZZER_PIN, 2000, 100);
-}
-
-void playWelcomeEffect() {
-    // Efekt 1: Przebiegające światło (1s)
-    for(int j = 0; j < 2; j++) {  // Dwa przebiegi
-        for(int i = 0; i < NUMBER_OF_PUMPS; i++) {
-            strip.setPixelColor(i, COLOR_RAINBOW_1);
-            if(i > 0) strip.setPixelColor(i-1, COLOR_OFF);
-            strip.show();
-            delay(100);
-        }
-        strip.setPixelColor(NUMBER_OF_PUMPS-1, COLOR_OFF);
-        strip.show();
-    }
     
-    // Efekt 2: Tęczowa fala (1s)
-    for(int j = 0; j < 2; j++) {  // Dwa przebiegi
-        uint32_t colors[] = {COLOR_RAINBOW_1, COLOR_RAINBOW_2, COLOR_RAINBOW_3, 
-                           COLOR_RAINBOW_4, COLOR_RAINBOW_5, COLOR_RAINBOW_6};
-        for(int c = 0; c < 6; c++) {
-            for(int i = 0; i < NUMBER_OF_PUMPS; i++) {
-                strip.setPixelColor(i, colors[(i + c) % 6]);
-            }
-            strip.show();
-            delay(160);
-        }
-    }
+    WiFiManager wm;
+    wm.resetSettings();
+    ESP.eraseConfig();
     
-    // Efekt 3: Pulsowanie wszystkich diod (1.5s)
-    for(int j = 0; j < 3; j++) {  // Trzy pulsy
-        // Rozjaśnianie
-        for(int b = 0; b < 255; b += 5) {
-            for(int i = 0; i < NUMBER_OF_PUMPS; i++) {
-                strip.setPixelColor(i, strip.Color(b, b, b));
-            }
-            strip.show();
-            delay(2);
-        }
-        // Ściemnianie
-        for(int b = 255; b >= 0; b -= 5) {
-            for(int i = 0; i < NUMBER_OF_PUMPS; i++) {
-                strip.setPixelColor(i, strip.Color(b, b, b));
-            }
-            strip.show();
-            delay(2);
-        }
-    }
-}
-
-// Dodaj walidację konfiguracji
-bool validateConfigValues() {
-    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-        if (pumps[i].calibration <= 0 || pumps[i].calibration > 10)
-            return false;
-        if (pumps[i].dose < 0 || pumps[i].dose > 1000)
-            return false;
-    }
-    return true;
-}
-
-void handleWebSocketMessage(uint8_t num, uint8_t * payload, size_t length) {
-    String message = String((char*)payload);
-    StaticJsonDocument<200> doc;
-    DeserializationError error = deserializeJson(doc, message);
+    setDefaultConfig();
+    saveConfig();
     
-    if (error) {
-        Serial.println("Failed to parse WebSocket message");
-        return;
-    }
-    
-    const char* type = doc["type"];
-    if (strcmp(type, "getPumpStatus") == 0) {
-        String status = getSystemStatusJSON();
-        webSocket.sendTXT(num, status);
-    }
+    delay(100);
+    ESP.reset();
 }
 
-// Pojedyncza definicja webSocketEvent
-void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
-    switch(type) {
-        case WStype_DISCONNECTED:
-            Serial.printf("[WebSocket] Client #%u Disconnected\n", num);
-            break;
-        case WStype_CONNECTED:
-            {
-                Serial.printf("[WebSocket] Client #%u Connected\n", num);
-                String json = getSystemStatusJSON();
-                webSocket.sendTXT(num, json);
-            }
-            break;
-        case WStype_TEXT:
-            handleWebSocketMessage(num, payload, length);
-            break;
-    }
+// Reset urządzenia
+void rebootDevice() {
+    ESP.restart();
 }
 
-String getSystemStatusJSON() {
-    StaticJsonDocument<512> doc;
-    
-    doc["mqtt_connected"] = mqtt.isConnected(); // Użyj faktycznego stanu połączenia
-    doc["wifi_connected"] = WiFi.status() == WL_CONNECTED;
-    doc["uptime"] = millis() / 1000; // Czas w sekundach
-    
-    String output;
-    serializeJson(doc, output);
-    return output;
-}
-
-void updateSystemStatus() {
-    systemStatus.uptime = millis() / 1000;
-    systemStatus.wifi_connected = WiFi.status() == WL_CONNECTED;
-    systemStatus.mqtt_connected = mqtt.isConnected();
-}
-
+// Przepełnienie licznika millis()
 void handleMillisOverflow() {
-    static unsigned long lastMillis = 0;
     unsigned long currentMillis = millis();
     
-    if (currentMillis < lastMillis) {
-        // Przepełnienie - zresetuj timery
-        lastMQTTLoop = 0;
+    // Sprawdź przepełnienie dla wszystkich timerów
+    if (currentMillis < status.pumpStartTime) status.pumpStartTime = 0;
+    if (currentMillis < status.pumpDelayStartTime) status.pumpDelayStartTime = 0;
+    if (currentMillis < status.lastSoundAlert) status.lastSoundAlert = 0;
+    if (currentMillis < status.lastSuccessfulMeasurement) status.lastSuccessfulMeasurement = 0;
+    if (currentMillis < lastMeasurement) lastMeasurement = 0;
+    
+    // Jeśli zbliża się przepełnienie, zresetuj wszystkie timery
+    if (currentMillis > MILLIS_OVERFLOW_THRESHOLD) {
+        status.pumpStartTime = 0;
+        status.pumpDelayStartTime = 0;
+        status.lastSoundAlert = 0;
+        status.lastSuccessfulMeasurement = 0;
         lastMeasurement = 0;
-        lastOTACheck = 0;
+        
+        DEBUG_PRINT(F("Reset timerów - zbliża się przepełnienie millis()"));
     }
-    
-    lastMillis = currentMillis;
 }
 
-// Funkcje specyficzne dla różnych typów konfiguracji
-void saveMQTTConfig() {
-    mqttConfig.broker[sizeof(mqttConfig.broker) - 1] = '\0';
-    mqttConfig.username[sizeof(mqttConfig.username) - 1] = '\0';
-    mqttConfig.password[sizeof(mqttConfig.password) - 1] = '\0';
-    EEPROM.put(MQTT_CONFIG_ADDR, mqttConfig);
+// Ustawienia domyślne konfiguracji
+void setDefaultConfig() {
+    // Ustawienia domyślne konfiguracji
+    strcpy(config.hostname, "AquaDoser");
+    strcpy(config.mqttHost, "mqtt.example.com");
+    config.mqttPort = 1883;
+    strcpy(config.mqttUser, "user");
+    strcpy(config.mqttPassword, "password");
+    config.soundEnabled = true;
+
+    // Domyślna konfiguracja pomp
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        config.pumps[i].enabled = false;  // Pompy wyłączone domyślnie
+        config.pumps[i].dosage_ml = 10;   // Domyślna dawka 10ml
+        config.pumps[i].hour = 8;         // Domyślna godzina dozowania 8:00
+        config.pumps[i].minute = 0;       // Minuta 0
+        config.pumps[i].workdays_only = true; // Tylko dni robocze
+    }
+
+    // Wersja konfiguracji
+    config.configVersion = 1;
+    // Oblicz sumę kontrolną dla domyślnej konfiguracji
+    config.checksum = calculateChecksum(config);
+}
+
+// Ładowanie konfiguracji z pamięci EEPROM
+bool loadConfig() {
+    EEPROM.begin(sizeof(Config));
+    EEPROM.get(0, config);
+
+    // Sprawdź sumę kontrolną
+    if (config.checksum != calculateChecksum(config)) {
+        // Jeśli suma kontrolna się nie zgadza, ustaw domyślną konfigurację
+        setDefaultConfig();
+        return false;
+    }
+    return true;
+}
+
+// Zapis aktualnej konfiguracji do pamięci EEPROM
+void saveConfig() {
+    config.checksum = calculateChecksum(config);
+    EEPROM.put(0, config);
     EEPROM.commit();
 }
 
-// --- Ładowanie konfiguracji pomp
-bool loadPumpsConfig() {
-    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-        EEPROM.get(PUMPS_CONFIG_ADDR + (i * sizeof(PumpConfig)), pumps[i]);
+// Oblicz sumę kontrolną dla danej konfiguracji
+char calculateChecksum(const Config& cfg) {
+    char sum = 0;
+    const char* ptr = (const char*)&cfg;
+    for (size_t i = 0; i < sizeof(Config) - 1; i++) {
+        sum ^= *ptr++;
     }
-    return true;
+    return sum;
 }
 
-// --- Zapisywanie konfiguracji pomp
-bool savePumpsConfig() {
-    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-        EEPROM.put(PUMPS_CONFIG_ADDR + (i * sizeof(PumpConfig)), pumps[i]);
+// ** FUNKCJE DŹWIĘKOWE **
+
+// Odtwórz krótki dźwięk ostrzegawczy
+void playShortWarningSound() {
+    if (config.soundEnabled) {
+        tone(BUZZER_PIN, 2000, 100); // Krótkie piknięcie (2000Hz, 100ms)
     }
-    return EEPROM.commit();
 }
 
-// --- Ładowanie konfiguracji sieciowej
-bool loadNetworkConfig() {
-    EEPROM.get(NETWORK_CONFIG_ADDR, networkConfig);
-    return true;
+// Odtwórz dźwięk potwierdzenia
+void playConfirmationSound() {
+    if (config.soundEnabled) {
+        tone(BUZZER_PIN, 2000, 200); // Dłuższe piknięcie (2000Hz, 200ms)
+    }
 }
 
-// --- Zapisywanie konfiguracji sieciowej
-bool saveNetworkConfig() {
-    EEPROM.put(NETWORK_CONFIG_ADDR, networkConfig);
-    return EEPROM.commit();
-}
+// ** FUNKCJE ALARMÓW I STEROWANIA POMPĄ **
 
-// --- Ogólna funkcja ładowania konfiguracji
-void loadConfiguration() {
-    loadMQTTConfig();
-    loadPumpsConfig();
-    loadNetworkConfig();
-    EEPROM.get(SYSTEM_CONFIG_ADDR, systemConfig);
+// Inicjalizacja PCF8574
+void setupPCF8574() {
+    Wire.begin();  // Inicjalizacja I2C (SDA - D2, SCL - D1 dla ESP8266)
     
-    if (!validateConfigValues()) {
-        resetFactorySettings();
-    }
-}
-
-String getUpdatePage() {
-    String page = F("<!DOCTYPE html><html><head><title>AquaDoser Update</title></head><body>");
-    page += F("<h1>AquaDoser - Aktualizacja</h1>");
-    page += F("<form method='POST' action='/update' enctype='multipart/form-data'>");
-    page += F("<input type='file' name='update'>");
-    page += F("<input type='submit' value='Aktualizuj'>");
-    page += F("</form>");
-    page += F("</body></html>");
-    return page;
-}
-
-void handleRoot() {
-    server.send(200, "text/html", getConfigPage());
-}
-
-void handleSave() {
-    if (server.method() != HTTP_POST) {
-        server.send(405, "text/plain", "Method Not Allowed");
-        return;
-    }
-
-    if (server.hasArg("plain")) {
-        String json = server.arg("plain");
-        DynamicJsonDocument doc(2048);
-        DeserializationError error = deserializeJson(doc, json);
+    if (pcf8574.begin()) {
+        Serial.println("PCF8574 zainicjowany");
         
-        if (!error) {
-            bool configChanged = false;
-            
-            // Obsługa konfiguracji MQTT
-            if (doc.containsKey("mqtt")) {
-                JsonObject mqtt = doc["mqtt"];
-                if (mqtt.containsKey("broker")) {
-                    strlcpy(mqttConfig.broker, mqtt["broker"] | "", sizeof(mqttConfig.broker));
-                    configChanged = true;
-                }
-                if (mqtt.containsKey("port")) {
-                    mqttConfig.port = mqtt["port"] | 1883;
-                    configChanged = true;
-                }
-                if (mqtt.containsKey("username")) {
-                    strlcpy(mqttConfig.username, mqtt["username"] | "", sizeof(mqttConfig.username));
-                    configChanged = true;
-                }
-                if (mqtt.containsKey("password")) {
-                    strlcpy(mqttConfig.password, mqtt["password"] | "", sizeof(mqttConfig.password));
-                    configChanged = true;
-                }
-            }
-
-            // Obsługa konfiguracji pomp
-            if (doc.containsKey("pumps")) {
-                JsonArray pumpsArray = doc["pumps"];
-                for (uint8_t i = 0; i < NUMBER_OF_PUMPS && i < pumpsArray.size(); i++) {
-                    JsonObject pump = pumpsArray[i];
-                    
-                    if (pump.containsKey("name")) {
-                        strlcpy(pumps[i].name, pump["name"] | "", sizeof(pumps[i].name));
-                        configChanged = true;
-                    }
-                    if (pump.containsKey("enabled")) {
-                        pumps[i].enabled = pump["enabled"] | false;
-                        configChanged = true;
-                    }
-                    if (pump.containsKey("calibration")) {
-                        pumps[i].calibration = pump["calibration"] | 1.0f;
-                        configChanged = true;
-                    }
-                    if (pump.containsKey("dose")) {
-                        pumps[i].dose = pump["dose"] | 0.0f;
-                        configChanged = true;
-                    }
-                    if (pump.containsKey("schedule_hour")) {
-                        pumps[i].schedule_hour = pump["schedule_hour"] | 0;
-                        configChanged = true;
-                    }
-                    if (pump.containsKey("minute")) {
-                        pumps[i].minute = pump["minute"] | 0;
-                        configChanged = true;
-                    }
-                    if (pump.containsKey("schedule_days")) {
-                        pumps[i].schedule_days = pump["schedule_days"] | 0;
-                        configChanged = true;
-                    }
-                }
-            }
-
-            if (configChanged) {
-                saveConfig();
-                
-                DynamicJsonDocument response(256);
-                response["status"] = "success";
-                response["message"] = "Configuration saved";
-                String responseJson;
-                serializeJson(response, responseJson);
-                server.send(200, "application/json", responseJson);
-            }
-        } else {
-            server.send(400, "text/plain", "Invalid JSON");
+        // Wyłącz wszystkie pompy na starcie
+        for(int i = 0; i < 8; i++) {
+            pcf8574.write(i, HIGH);  // HIGH = pompa wyłączona
+            status.pumps[i].isRunning = false;
+            status.pumps[i].lastDose = 0;
+            status.pumps[i].totalDosed = 0;
         }
     } else {
-        server.send(400, "text/plain", "No data");
-    }
-}
-
-// --- Ogólna funkcja zapisywania konfiguracji
-void saveConfiguration() {
-    saveMQTTConfig();
-    savePumpsConfig();
-    saveNetworkConfig();
-    EEPROM.put(SYSTEM_CONFIG_ADDR, systemConfig);
-    EEPROM.commit();
-}
-
-// --- Inicjalizacja PCF8574 i pomp
-bool initializePumps() {
-    if (!pcf8574.begin()) {
         Serial.println("Błąd inicjalizacji PCF8574!");
-        return false;
-    }
-
-    // Ustaw wszystkie piny jako wyjścia i wyłącz pompy
-    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-        pcf8574.digitalWrite(i, LOW);  // Nie potrzeba pinMode
-    }
-
-    pumpInitialized = true;
-    return true;
-}
-
-void loadMQTTConfig() {
-    EEPROM.get(MQTT_CONFIG_ADDR, mqttConfig);
-    if (!validateMQTTConfig()) {
-        mqttConfig.port = 1883;
-        mqttConfig.enabled = false;
-        mqttConfig.broker[0] = '\0';
-        mqttConfig.username[0] = '\0';
-        mqttConfig.password[0] = '\0';
-        saveMQTTConfig();
     }
 }
 
-// --- Rozpoczęcie dozowania dla pompy
-void startPump(uint8_t pumpIndex) {
-    if (!pumpInitialized || pumpIndex >= NUMBER_OF_PUMPS || pumpRunning[pumpIndex]) {
-        return;
-    }
-
-    // Oblicz czas dozowania na podstawie kalibracji i dawki
-    float dosingTime = (pumps[pumpIndex].dose / pumps[pumpIndex].calibration) * 1000; // konwersja na ms
+// Włączenie pompy
+void turnOnPump(uint8_t pumpIndex) {
+    if (pumpIndex >= 8) return;
     
-    // Sprawdź czy czas dozowania mieści się w limitach
-    if (dosingTime < MIN_DOSE_TIME || dosingTime > MAX_DOSE_TIME) {
-        Serial.printf("Błąd: Nieprawidłowy czas dozowania dla pompy %d: %.1f ms\n", pumpIndex + 1, dosingTime);
-        return;
-    }
-
-    // Włącz pompę
-    pcf8574.digitalWrite(pumpIndex, HIGH);
-    pumpRunning[pumpIndex] = true;
-    doseStartTime[pumpIndex] = millis();
-    
-    // Aktualizuj stan LED
-    strip.setPixelColor(pumpIndex, COLOR_WORKING);
-    strip.show();
-    
-    Serial.printf("Pompa %d rozpoczęła dozowanie. Zaplanowany czas: %.1f ms\n", 
-                 pumpIndex + 1, dosingTime);
-}
-
-// --- Zatrzymanie dozowania dla pompy
-void stopPump(uint8_t pumpIndex) {
-    if (!pumpInitialized || pumpIndex >= NUMBER_OF_PUMPS || !pumpRunning[pumpIndex]) {
-        return;
-    }
-
-    // Wyłącz pompę
-    pcf8574.digitalWrite(pumpIndex, LOW);
-    pumpRunning[pumpIndex] = false;
-    
-    // Oblicz faktyczny czas dozowania
-    unsigned long actualDoseTime = millis() - doseStartTime[pumpIndex];
-    
-    // Aktualizuj stan LED
-    strip.setPixelColor(pumpIndex, pumps[pumpIndex].enabled ? COLOR_ON : COLOR_OFF);
-    strip.show();
-    
-    Serial.printf("Pompa %d zakończyła dozowanie. Rzeczywisty czas: %lu ms\n", 
-                 pumpIndex + 1, actualDoseTime);
-}
-
-// --- Sprawdzenie czy pompa powinna rozpocząć dozowanie
-bool shouldStartDosing(uint8_t pumpIndex) {
-    if (!pumps[pumpIndex].enabled) {
-        return false;
-    }
-
-    DateTime now = rtc.now();
-    uint8_t currentHour = now.hour();
-    uint8_t currentDay = now.dayOfTheWeek(); // 0 = Sunday, 6 = Saturday
-
-    // Sprawdź czy jest odpowiednia godzina
-    if (currentHour != pumps[pumpIndex].schedule_hour) {
-        return false;
-    }
-
-    // Sprawdź czy jest odpowiedni dzień
-    if (!(pumps[pumpIndex].schedule_days & (1 << currentDay))) {
-        return false;
-    }
-
-    // Sprawdź czy już nie dozowano dzisiaj
-    unsigned long currentTime = now.unixtime();
-    if (currentTime - pumps[pumpIndex].lastDosing < 24*60*60) {
-        return false;
-    }
-
-    return true;
-}
-
-// --- Główna funkcja obsługi pomp
-void handlePumps() {
-    if (!pumpInitialized || serviceMode) {
-        return;
-    }
-
-    unsigned long currentMillis = millis();
-    
-    // Sprawdzaj stan pomp co DOSE_CHECK_INTERVAL
-    if (currentMillis - lastDoseCheck >= DOSE_CHECK_INTERVAL) {
-        lastDoseCheck = currentMillis;
-        
-        for (uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
-            if (pumpRunning[i]) {
-                // Sprawdź czy czas dozowania minął
-                float dosingTime = (pumps[i].dose / pumps[i].calibration) * 1000;
-                if (currentMillis - doseStartTime[i] >= dosingTime) {
-                    stopPump(i);
-                }
-            } else if (shouldStartDosing(i)) {
-                startPump(i);
-            }
-        }
+    if (pcf8574.write(pumpIndex, LOW)) {  // LOW = pompa włączona
+        status.pumps[pumpIndex].isRunning = true;
+    } else {
+        Serial.printf("Błąd włączania pompy %d\n", pumpIndex + 1);
     }
 }
 
-// --- Obsługa trybu serwisowego dla pomp
-void servicePump(uint8_t pumpIndex, bool state) {
-    if (!pumpInitialized || pumpIndex >= NUMBER_OF_PUMPS || !serviceMode) {
-        return;
-    }
-
-    // Ustaw stan pompy
-    pcf8574.digitalWrite(pumpIndex, state ? HIGH : LOW);
+// Dozowanie określonej ilości
+void dosePump(uint8_t pumpIndex) {
+    if (!config.pumps[pumpIndex].enabled) return;
     
-    // Aktualizuj wyświetlanie
-    strip.show();
+    float doseTime = (config.pumps[pumpIndex].dosage / config.pumps[pumpIndex].calibration) * 60000; // czas w ms
+    
+    turnOnPump(pumpIndex);
+    delay(doseTime);
+    turnOffPump(pumpIndex);
+    
+    status.pumps[pumpIndex].lastDose = millis();
+    status.pumps[pumpIndex].totalDosed += config.pumps[pumpIndex].dosage;
+    
+    // Aktualizacja MQTT
+    updateHAState(pumpIndex);
 }
 
-void toggleServiceMode() {
-    serviceMode = !serviceMode;
-    if (serviceMode) {
-        // Zatrzymaj wszystkie pompy w trybie serwisowym
-        for (uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
-            stopPump(i);
-        }
+// Wyłączenie pompy
+void turnOffPump(uint8_t pumpIndex) {
+    if (pumpIndex >= 8) return;
+    
+    if (pcf8574.write(pumpIndex, HIGH)) {  // HIGH = pompa wyłączona
+        status.pumps[pumpIndex].isRunning = false;
+    } else {
+        Serial.printf("Błąd wyłączania pompy %d\n", pumpIndex + 1);
     }
 }
 
-// --- Zatrzymanie wszystkich pomp
+// Bezpieczne wyłączenie wszystkich pomp
 void stopAllPumps() {
-    for (uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
-        if (pumpRunning[i]) {
-            stopPump(i);
-        }
+    for(int i = 0; i < 8; i++) {
+        turnOffPump(i);
     }
 }
 
-// --- Inicjalizacja LED
-void initializeLEDs() {
-    strip.begin();
-    strip.show();
+// ** FUNKCJE WI-FI I MQTT **
+
+// Reset ustawień Wi-Fi
+void resetWiFiSettings() {
+    DEBUG_PRINT(F("Rozpoczynam kasowanie ustawień WiFi..."));
     
-    for(int i = 0; i < NUMBER_OF_PUMPS; i++) {
-        ledStates[i] = LEDState();  // Używamy konstruktora domyślnego
-    }
+    // Najpierw rozłącz WiFi i wyczyść wszystkie zapisane ustawienia
+    WiFi.disconnect(false, true);  // false = nie wyłączaj WiFi, true = kasuj zapisane ustawienia
+    
+    // Upewnij się, że WiFi jest w trybie stacji
+    WiFi.mode(WIFI_STA);
+    
+    // Reset przez WiFiManager
+    WiFiManager wm;
+    wm.resetSettings();
+    
+    DEBUG_PRINT(F("Ustawienia WiFi zostały skasowane"));
+    delay(100);
 }
 
-// --- Konwersja koloru na komponenty RGB
-void colorToRGB(uint32_t color, uint8_t &r, uint8_t &g, uint8_t &b) {
-    r = (color >> 16) & 0xFF;
-    g = (color >> 8) & 0xFF;
-    b = color & 0xFF;
-}
-
-// --- Konwersja komponentów RGB na kolor
-uint32_t RGBToColor(uint8_t r, uint8_t g, uint8_t b) {
-    return ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
-}
-
-// --- Interpolacja między dwoma kolorami
-uint32_t interpolateColor(uint32_t color1, uint32_t color2, float ratio) {
-    uint8_t r1, g1, b1, r2, g2, b2;
-    colorToRGB(color1, r1, g1, b1);
-    colorToRGB(color2, r2, g2, b2);
-    
-    uint8_t r = r1 + (r2 - r1) * ratio;
-    uint8_t g = g1 + (g2 - g1) * ratio;
-    uint8_t b = b1 + (b2 - b1) * ratio;
-    
-    return RGBToColor(r, g, b);
-}
-
-// --- Ustawienie koloru LED z animacją
-void setLEDColor(uint8_t index, uint32_t color, bool withPulsing = false) {
-    if (index >= NUMBER_OF_PUMPS) return;
-    
-    ledStates[index].targetColor = color;
-    ledStates[index].pulsing = withPulsing;
-}
-
-// --- Aktualizacja wszystkich LED
-void updateLEDs() {
-    unsigned long currentMillis = millis();
-    
-    // Aktualizuj tylko co LED_UPDATE_INTERVAL
-    if (currentMillis - lastLedUpdate < LED_UPDATE_INTERVAL) {
-        return;
-    }
-    lastLedUpdate = currentMillis;
-    
-    // Aktualizacja każdego LED
-    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-        LEDState &state = ledStates[i];
-        
-        // Obsługa pulsowania
-        if (state.pulsing) {
-            state.brightness += state.pulseDirection * 5;
-            
-            if (state.brightness >= PULSE_MAX_BRIGHTNESS) {
-                state.brightness = PULSE_MAX_BRIGHTNESS;
-                state.pulseDirection = -1;
-            } else if (state.brightness <= PULSE_MIN_BRIGHTNESS) {
-                state.brightness = PULSE_MIN_BRIGHTNESS;
-                state.pulseDirection = 1;
-            }
-        } else {
-            state.brightness = 255;
-        }
-        
-        // Płynne przejście do docelowego koloru
-        if (state.currentColor != state.targetColor) {
-            state.currentColor = interpolateColor(
-                state.currentColor, 
-                state.targetColor, 
-                0.1 // współczynnik płynności przejścia
-            );
-        }
-        
-        // Zastosowanie jasności do koloru
-        uint8_t r, g, b;
-        colorToRGB(state.currentColor, r, g, b);
-        float brightnessRatio = state.brightness / 255.0;
-        
-        strip.setPixelColor(i, 
-            (uint8_t)(r * brightnessRatio),
-            (uint8_t)(g * brightnessRatio),
-            (uint8_t)(b * brightnessRatio)
-        );
-    }
-    
-    strip.show();
-}
-
-// --- Aktualizacja LED dla trybu serwisowego
-void updateServiceModeLEDs() {
-    uint32_t color = serviceMode ? COLOR_SERVICE : COLOR_OFF;
-    
-    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-        if (!pumpRunning[i]) {
-            setLEDColor(i, color, serviceMode);
-        }
-    }
-}
-
-// --- Aktualizacja LED dla pompy
-void updatePumpLED(uint8_t pumpIndex) {
-    if (pumpIndex >= NUMBER_OF_PUMPS) return;
-    
-    if (serviceMode) {
-        setLEDColor(pumpIndex, COLOR_SERVICE, true);
-    } else if (pumpRunning[pumpIndex]) {
-        setLEDColor(pumpIndex, COLOR_WORKING, true);
-    } else {
-        setLEDColor(pumpIndex, pumps[pumpIndex].enabled ? COLOR_ON : COLOR_OFF, false);
-    }
-}
-
-// --- Aktualizacja wszystkich LED dla pomp
-void updateAllPumpLEDs() {
-    for (uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
-        updatePumpLED(i);
-    }
-}
-
-// --- Funkcje callback dla Home Assistant
-void onPumpSwitch(bool state, HASwitch* sender) {
-    // Znajdź indeks pompy na podstawie wskaźnika do przełącznika
-    int pumpIndex = -1;
-    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-        if (sender == pumpSwitches[i]) {
-            pumpIndex = i;
-            break;
-        }
-    }
-    
-    if (pumpIndex >= 0) {
-        pumps[pumpIndex].enabled = state;
-        updatePumpLED(pumpIndex);
-        saveConfiguration();
-    }
-}
-
-void onPumpCalibration(HANumeric value, HANumber* sender) {
-    // Znajdź indeks pompy na podstawie wskaźnika do kalibracji
-    int pumpIndex = -1;
-    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-        if (sender == pumpCalibrations[i]) {
-            pumpIndex = i;
-            break;
-        }
-    }
-    
-    if (pumpIndex >= 0) {
-        pumps[pumpIndex].calibration = value.toFloat();
-        saveConfiguration();
-    }
-}
-
-void onServiceModeSwitch(bool state, HASwitch* sender) {
-    serviceMode = state;
-    if (serviceMode) {
-        stopAllPumps();
-    }
-    updateServiceModeLEDs();
-}
-
-// --- Inicjalizacja encji Home Assistant
-void initHomeAssistant() {
-    char entityId[32];
-    for (uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
-        snprintf(entityId, sizeof(entityId), "pump_%d", i);
-        pumpStates[i].sensor = new HASensor(entityId); // Teraz używamy HASensor
-        pumpStates[i].sensor->setName(pumps[i].name);
-        pumpStates[i].sensor->setIcon("mdi:water-pump");
-    }
-}
-
-// --- Aktualizacja stanów w Home Assistant
-void updateHomeAssistant() {
-    DateTime now = rtc.now();
-    char currentTimeStr[32];
-    
-    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-        if (!pumpStates[i].isActive && pumps[i].enabled) {
-            char statusBuffer[128];
-            
-            if (pumpStates[i].isActive) {
-                // Format: "Active (Started: 2024-11-27 20:43)"
-                snprintf(statusBuffer, sizeof(statusBuffer), 
-                    "Active (Started: %04d-%02d-%02d %02d:%02d)", 
-                    now.year(), now.month(), now.day(), 
-                    now.hour(), now.minute());
-            } else {
-                if (pumpStates[i].lastDoseTime > 0) {
-                    // Konwertujemy unix timestamp na czytelną datę
-                    time_t rawTime = pumpStates[i].lastDoseTime;
-                    struct tm* timeInfo = localtime(&rawTime);
-                    
-                    // Format: "Inactive (Last: 2024-11-27 20:43)"
-                    snprintf(statusBuffer, sizeof(statusBuffer), 
-                        "Inactive (Last: %04d-%02d-%02d %02d:%02d)",
-                        timeInfo->tm_year + 1900, timeInfo->tm_mon + 1, timeInfo->tm_mday,
-                        timeInfo->tm_hour, timeInfo->tm_min);
-                } else {
-                    strcpy(statusBuffer, "Inactive (No previous runs)");
-                }
-            }
-            
-            // Dodaj informację o następnym zaplanowanym dozowaniu
-            if (!pumpStates[i].isActive && pumps[i].enabled) {
-                char nextRunBuffer[64];
-                DateTime nextRun = calculateNextDosing(i);
-                snprintf(nextRunBuffer, sizeof(nextRunBuffer), 
-                    " - Next: %02d:%02d",
-                    nextRun.hour(), nextRun.minute());
-                strcat(statusBuffer, nextRunBuffer);
-            }
-            
-            pumpStates[i].sensor->setValue(statusBuffer);
-
-            // Debug info
-            Serial.print("Pump ");
-            Serial.print(i + 1);
-            Serial.print(": ");
-            Serial.println(statusBuffer);
-        }
-    }
-}
-
-// Pomocnicza funkcja do obliczania następnego dozowania
-DateTime calculateNextDosing(uint8_t pumpIndex) {
-    DateTime now = rtc.now();
-    currentDay = now.dayOfTheWeek();
-    currentHour = now.hour();
-    currentMinute = now.minute();
-    
-    uint8_t schedHour = pumps[pumpIndex].schedule_hour;
-    uint8_t schedMinute = pumps[pumpIndex].minute;
-    uint8_t scheduleDays = pumps[pumpIndex].schedule_days;
-    
-    DateTime nextRun = now;
-    int daysToAdd = 0;
-    
-    // Najpierw sprawdź, czy dzisiaj jest jeszcze możliwe dozowanie
-    if (currentHour > schedHour || 
-        (currentHour == schedHour && currentMinute >= schedMinute)) {
-        // Jeśli czas dozowania na dziś już minął, zacznij sprawdzać od jutra
-        daysToAdd = 1;
-        currentDay = (currentDay + 1) % 7;
-    }
-    
-    // Znajdź następny zaplanowany dzień
-    int daysChecked = 0;
-    while (daysChecked < 7) {
-        if (scheduleDays & (1 << currentDay)) {
-            // Znaleziono następny zaplanowany dzień
-            break;
-        }
-        daysToAdd++;
-        currentDay = (currentDay + 1) % 7;
-        daysChecked++;
-    }
-    
-    if (daysToAdd > 0) {
-        nextRun = now + TimeSpan(daysToAdd, 0, 0, 0);
-    }
-    
-    return DateTime(nextRun.year(), nextRun.month(), nextRun.day(), 
-                   schedHour, schedMinute, 0);
-}
-
-void handleConfigSave() {
-    if (server.hasArg("mqtt_broker") && server.hasArg("mqtt_port")) {
-        String mqtt_broker = server.arg("mqtt_broker");
-        String mqtt_port = server.arg("mqtt_port");
-        String mqtt_user = server.arg("mqtt_user");
-        String mqtt_password = server.arg("mqtt_password");
-        
-        // Zapisz do konfiguracji MQTT
-        strlcpy(mqttConfig.broker, mqtt_broker.c_str(), sizeof(mqttConfig.broker));
-        mqttConfig.port = mqtt_port.toInt();
-        strlcpy(mqttConfig.username, mqtt_user.c_str(), sizeof(mqttConfig.username));
-        strlcpy(mqttConfig.password, mqtt_password.c_str(), sizeof(mqttConfig.password));
-        
-        // Zapisz do EEPROM
-        saveMQTTConfig();
-        
-        server.send(200, "text/plain", "Konfiguracja zapisana");
-    } else {
-        server.send(400, "text/plain", "Brak wymaganych parametrów");
-    }
-}
-
-bool validateMQTTConfig() {
-    if (strlen(networkConfig.mqtt_server) == 0) {
-        return false;
-    }
-    if (networkConfig.mqtt_port <= 0 || networkConfig.mqtt_port > 65535) {
-        return false;
-    }
-    return true;
-}
-
-// --- Obsługa przycisku
-void handleButton() {
-    bool currentButtonState = digitalRead(BUTTON_PIN);
-    
-    // Debouncing
-    if (currentButtonState != lastButtonState) {
-        if (millis() - lastButtonPress >= DEBOUNCE_TIME) {
-            lastButtonPress = millis();
-            
-            // Reaguj tylko na naciśnięcie (zmiana z HIGH na LOW)
-            if (currentButtonState == LOW) {
-                toggleServiceMode();
-            }
-        }
-    }
-    
-    lastButtonState = currentButtonState;
-}
-
-// --- Synchronizacja RTC z NTP
-void syncRTC() {
-    timeClient.update();
-    unsigned long epochTime = timeClient.getEpochTime();
-    
-    if (epochTime > 1600000000) { // sprawdź czy czas jest sensowny (po 2020 roku)
-        DateTime newTime(epochTime);
-        rtc.adjust(newTime);
-        
-        Serial.println("RTC zsynchronizowany z NTP:");
-        DateTime now = rtc.now();
-        Serial.printf("%04d-%02d-%02d %02d:%02d:%02d\n",
-            now.year(), now.month(), now.day(),
-            now.hour(), now.minute(), now.second());
-    }
-}
-
-// --- Inicjalizacja WiFi
-
+// Konfiguracja połączenia Wi-Fi
 void setupWiFi() {
     WiFiManager wifiManager;
-    wifiManager.setConfigPortalTimeout(180); // timeout po 3 minutach
-    
-    String apName = "AquaDoser-" + String(ESP.getChipId(), HEX);
-    if (!wifiManager.autoConnect(apName.c_str())) {
-        Serial.println("Nie udało się połączyć i timeout został osiągnięty");
-        ESP.restart();
+
+    // Reset WiFi settings if the button is pressed
+    if (digitalRead(PRZYCISK_PIN) == LOW) {
+        wifiManager.resetSettings();
         delay(1000);
     }
-    
-    Serial.println("WiFi połączone!");
-    Serial.print("IP: ");
+
+    wifiManager.autoConnect(config.hostname);
+
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("Failed to connect to WiFi");
+        ESP.restart();
+    }
+
+    Serial.println("Connected to WiFi");
+    Serial.print("IP Address: ");
     Serial.println(WiFi.localIP());
 }
 
-void setupWebServer() {
-    server.on("/", HTTP_GET, handleRoot);
-    server.on("/save", HTTP_POST, handleSave);
-    server.on("/update", HTTP_GET, []() {
-        server.sendHeader("Connection", "close");
-        server.send(200, "text/html", getUpdatePage());
-    });
-    
-    httpUpdateServer.setup(&server);
-    server.begin();
-    webSocket.begin();
-    webSocket.onEvent(webSocketEvent);
-}
+// Połączenie z serwerem MQTT
+bool connectMQTT() {
+    mqtt.setServer(config.mqttHost, config.mqttPort);
+    mqtt.setCredentials(config.mqttUser, config.mqttPassword);
 
-void checkMQTTConfig() {
-    Serial.print(F("MQTT Broker: "));
-    Serial.println(networkConfig.mqtt_server);
-    Serial.print(F("MQTT Port: "));
-    Serial.println(networkConfig.mqtt_port);
-}
-
-String getStyles() {
-    String styles = F(
-        "body { "
-        "    font-family: Arial, sans-serif; "
-        "    margin: 0; "
-        "    padding: 20px; "
-        "    background-color: #1a1a1a;"
-        "    color: #ffffff;"
-        "}"
-
-        ".buttons-container {"
-        "    display: flex;"
-        "    justify-content: space-between;"
-        "    margin: -5px;"
-        "}"
-
-        ".container { "
-        "    max-width: 800px; "
-        "    margin: 0 auto; "
-        "    padding: 0 15px;"
-        "}"
-
-        ".section {"
-        "    background-color: #2a2a2a;"
-        "    padding: 20px;"
-        "    margin-bottom: 20px;"
-        "    border-radius: 8px;"
-        "    width: 100%;"
-        "    box-sizing: border-box;"
-        "}"
-
-        "h1 { "
-        "    color: #ffffff; "
-        "    text-align: center;"
-        "    margin-bottom: 30px;"
-        "    font-size: 2.5em;"
-        "    background-color: #2d2d2d;"
-        "    padding: 20px;"
-        "    border-radius: 8px;"
-        "    box-shadow: 0 2px 4px rgba(0,0,0,0.2);"
-        "}"
-
-        "h2 { "
-        "    color: #2196F3;"
-        "    margin-top: 0;"
-        "    font-size: 1.5em;"
-        "}"
-
-        ".config-table {"
-        "    width: 100%;"
-        "    border-collapse: collapse;"
-        "    table-layout: fixed;"
-        "}"
-
-        ".config-table td {"
-        "    padding: 8px;"
-        "    border-bottom: 1px solid #3d3d3d;"
-        "}"
-
-        ".config-table td:first-child {"
-        "    width: 65%;"
-        "}"
-
-        ".config-table td:last-child {"
-        "    width: 35%;"
-        "}"
-
-        "input[type='text'],"
-        "input[type='password'],"
-        "input[type='number'] {"
-        "    width: 100%;"
-        "    padding: 8px;"
-        "    border: 1px solid #3d3d3d;"
-        "    border-radius: 4px;"
-        "    background-color: #1a1a1a;"
-        "    color: #ffffff;"
-        "    box-sizing: border-box;"
-        "    text-align: left;"
-        "}"
-
-        "input[type='checkbox'] {"
-        "    width: 20px;"
-        "    height: 20px;"
-        "    margin: 0;"
-        "    vertical-align: middle;"
-        "}"
-
-        ".btn {"
-        "    padding: 12px 24px;"
-        "    border: none;"
-        "    border-radius: 4px;"
-        "    cursor: pointer;"
-        "    font-size: 14px;"
-        "    width: calc(50% - 10px);"
-        "    display: inline-block;"
-        "    margin: 5px;"
-        "    text-align: center;"
-        "}"
-
-        ".btn-blue { "
-        "    background-color: #2196F3;"
-        "    color: white; "
-        "}"
-
-        ".btn-red { "
-        "    background-color: #F44336;"
-        "    color: white; "
-        "}"
-
-        ".status {"
-        "    padding: 4px 8px;"
-        "    border-radius: 4px;"
-        "    display: inline-block;"
-        "}"
-
-        ".success { "
-        "    color: #4CAF50; "
-        "}"
-
-        ".error { "
-        "    color: #F44336;"
-        "}"
-
-        ".message {"
-        "    position: fixed;"
-        "    top: 20px;"
-        "    left: 50%;"
-        "    transform: translateX(-50%);"
-        "    padding: 15px 30px;"
-        "    border-radius: 5px;"
-        "    color: white;"
-        "    opacity: 0;"
-        "    transition: opacity 0.3s ease-in-out;"
-        "    z-index: 1000;"
-        "}"
-
-        "@media (max-width: 600px) {"
-        "    body { padding: 10px; }"
-        "    .container { padding: 0; }"
-        "    .section { padding: 15px; margin-bottom: 15px; }"
-        "    .config-table td:first-child { width: 50%; }"
-        "    .config-table td:last-child { width: 50%; }"
-        "    .btn { width: 100%; margin: 5px 0; }"
-        "    .buttons-container { flex-direction: column; }"
-        "}"
-    );
-    return styles;
-}
-
-String getConfigPage() {
-    String page = F("<!DOCTYPE html><html lang='pl'><head>");
-    page += F("<meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1'>");
-    page += F("<title>AquaDoser</title><style>");
-    page += getStyles();
-    page += F("</style>");
-    
-    // Skrypt JavaScript z WebSocket i funkcjami
-    page += F("<script>");
-    // Dodanie WebSocket
-    page += F("let ws = new WebSocket('ws://' + window.location.hostname + ':81/');");
-    page += F("ws.onmessage = function(event) {");
-    page += F("    let status = JSON.parse(event.data);");
-    page += F("    updateStatus(status);");
-    page += F("};");
-    
-    // Funkcja aktualizacji statusu
-    page += F("function updateStatus(status) {");
-    page += F("    document.getElementById('mqtt-status').className = 'status ' + (status.mqtt_connected ? 'success' : 'error');");
-    page += F("    document.getElementById('mqtt-status').innerText = status.mqtt_connected ? 'Połączony' : 'Rozłączony';");
-    page += F("    document.getElementById('wifi-status').className = 'status ' + (status.wifi_connected ? 'success' : 'error');");
-    page += F("    document.getElementById('wifi-status').innerText = status.wifi_connected ? 'Połączony' : 'Rozłączony';");
-    page += F("    document.getElementById('uptime').innerText = formatUptime(status.uptime);");
-    page += F("    document.getElementById('current-time').innerText = status.current_time;");
-    page += F("}");
-    
-    // Funkcja formatowania czasu pracy
-    page += F("function formatUptime(seconds) {");
-    page += F("    let days = Math.floor(seconds / 86400);");
-    page += F("    let hours = Math.floor((seconds % 86400) / 3600);");
-    page += F("    let minutes = Math.floor((seconds % 3600) / 60);");
-    page += F("    let parts = [];");
-    page += F("    if(days > 0) parts.push(days + 'd');");
-    page += F("    if(hours > 0) parts.push(hours + 'h');");
-    page += F("    parts.push(minutes + 'm');");
-    page += F("    return parts.join(' ');");
-    page += F("}");
-
-    // Funkcja zapisu konfiguracji
-    page += F("function saveConfiguration() {");
-    page += F("    let pumpsData = [];");
-    page += F("    for(let i = 0; i < ");
-    page += String(NUMBER_OF_PUMPS);
-    page += F("; i++) {");
-    page += F("        let pumpData = {");
-    page += F("            name: document.querySelector(`input[name='pump_name_${i}']`).value,");
-    page += F("            enabled: document.querySelector(`input[name='pump_enabled_${i}']`).checked,");
-    page += F("            calibration: parseFloat(document.querySelector(`input[name='pump_calibration_${i}']`).value),");
-    page += F("            dose: parseFloat(document.querySelector(`input[name='pump_dose_${i}']`).value),");
-    page += F("            schedule_hour: parseInt(document.querySelector(`input[name='pump_schedule_hour_${i}']`).value),");
-    page += F("            minute: parseInt(document.querySelector(`input[name='pump_minute_${i}']`).value),");
-    page += F("            schedule_days: 0");
-    page += F("        };");
-    page += F("        // Oblicz dni tygodnia");
-    page += F("        for(let day = 0; day < 7; day++) {");
-    page += F("            if(document.querySelector(`input[name='pump_day_${i}_${day}']`).checked) {");
-    page += F("                pumpData.schedule_days |= (1 << day);");
-    page += F("            }");
-    page += F("        }");
-    page += F("        pumpsData.push(pumpData);");
-    page += F("    }");
-    page += F("    let mqttData = {");
-    page += F("        broker: document.querySelector('input[name=\"mqtt_broker\"]').value,");
-    page += F("        port: parseInt(document.querySelector('input[name=\"mqtt_port\"]').value),");
-    page += F("        username: document.querySelector('input[name=\"mqtt_user\"]').value,");
-    page += F("        password: document.querySelector('input[name=\"mqtt_pass\"]').value");
-    page += F("    };");
-    page += F("    let configData = {");
-    page += F("        pumps: pumpsData,");
-    page += F("        mqtt: mqttData");
-    page += F("    };");
-    page += F("    fetch('/save', {");
-    page += F("        method: 'POST',");
-    page += F("        headers: {");
-    page += F("            'Content-Type': 'application/json'");
-    page += F("        },");
-    page += F("        body: JSON.stringify(configData)");
-    page += F("    })");
-    page += F("    .then(response => response.json())");
-    page += F("    .then(data => {");
-    page += F("        if(data.status === 'success') {");
-    page += F("            alert('Konfiguracja została zapisana');");
-    page += F("            window.location.reload();");
-    page += F("        } else {");
-    page += F("            alert('Błąd: ' + data.message);");
-    page += F("        }");
-    page += F("    })");
-    page += F("    .catch(error => {");
-    page += F("        alert('Wystąpił błąd podczas zapisywania konfiguracji');");
-    page += F("        console.error('Error:', error);");
-    page += F("    });");
-    page += F("    return false;");
-    page += F("}");
-    page += F("</script></head><body>");
-    
-    // Strona główna
-    page += F("<div class='container'>");
-    page += F("<h1>AquaDoser</h1>");
-
-    // Rozszerzony status systemu
-    page += F("<div class='section'>");
-    page += F("<h2>Status systemu</h2>");
-    page += F("<table class='config-table'>");
-    // Status MQTT
-    page += F("<tr><td>Status MQTT</td><td><span id='mqtt-status' class='status ");
-    page += (systemStatus.mqtt_connected ? F("success'>Połączony") : F("error'>Rozłączony"));
-    page += F("</span></td></tr>");
-    // Status WiFi
-    page += F("<tr><td>Status WiFi</td><td><span id='wifi-status' class='status ");
-    page += (WiFi.status() == WL_CONNECTED ? F("success'>Połączony") : F("error'>Rozłączony"));
-    page += F("</span></td></tr>");
-    
-    // Czas pracy
-    page += F("<tr><td>Czas pracy</td><td><span id='uptime'>");
-    unsigned long uptime = millis() / 1000;
-    page += String(uptime);
-    page += F("</span></td></tr>");
-    
-    // Adres IP
-    page += F("<tr><td>Adres IP</td><td>");
-    page += WiFi.localIP().toString();
-    page += F("</td></tr>");
-    
-    // Aktualna data i czas
-    DateTime now = rtc.now();
-    page += F("<tr><td>Data i czas</td><td><span id='current-time'>");
-    page += String(now.year()) + "-" + 
-            (now.month() < 10 ? "0" : "") + String(now.month()) + "-" + 
-            (now.day() < 10 ? "0" : "") + String(now.day()) + " " +
-            (now.hour() < 10 ? "0" : "") + String(now.hour()) + ":" +
-            (now.minute() < 10 ? "0" : "") + String(now.minute());
-    page += F("</span></td></tr>");
-    page += F("</table></div>");
-
-    // Formularz konfiguracji
-    page += F("<form onsubmit='return saveConfiguration()'>");
-    
-    // Konfiguracja MQTT
-    page += F("<div class='section'>");
-    page += F("<h2>Konfiguracja MQTT</h2>");
-    page += F("<table class='config-table'>");
-    page += F("<tr><td>Broker MQTT</td><td><input type='text' name='mqtt_broker' value='");
-    page += mqttConfig.broker;
-    page += F("' required></td></tr>");
-    page += F("<tr><td>Port MQTT</td><td><input type='number' name='mqtt_port' value='");
-    page += String(mqttConfig.port);
-    page += F("' required min='1' max='65535'></td></tr>");
-    page += F("<tr><td>Użytkownik MQTT</td><td><input type='text' name='mqtt_user' value='");
-    page += mqttConfig.username;
-    page += F("' required></td></tr>");
-    page += F("<tr><td>Hasło MQTT</td><td><input type='password' name='mqtt_pass' value='");
-    page += mqttConfig.password;
-    page += F("' required></td></tr>");
-    page += F("</table></div>");
-
-    // Konfiguracja pomp
-    for(int i = 0; i < NUMBER_OF_PUMPS; i++) {
-        page += F("<div class='section'>");
-        page += F("<h2>Pompa "); 
-        page += String(i + 1);
-        page += F("</h2>");
-        page += F("<table class='config-table'>");
-        
-        // Nazwa pompy
-        page += F("<tr><td>Nazwa</td><td><input type='text' name='pump_name_");
-        page += String(i);
-        page += F("' value='");
-        // Zabezpieczenie przed pustą nazwą
-        page += pumps[i].name[0] ? pumps[i].name : ("Pompa " + String(i + 1));
-        page += F("' maxlength='19' required></td></tr>");
-
-        // Status aktywności
-        page += F("<tr><td>Aktywna</td><td><input type='checkbox' name='pump_enabled_");
-        page += String(i);
-        page += F("' ");
-        page += (pumps[i].enabled ? F("checked") : F(""));
-        page += F("></td></tr>");
-
-        // Kalibracja - zabezpieczenie przed wartością 0
-        page += F("<tr><td>Kalibracja (ml/s)</td><td><input type='number' step='0.01' name='pump_calibration_");
-        page += String(i);
-        page += F("' value='");
-        page += String(pumps[i].calibration > 0 ? pumps[i].calibration : 1.0);
-        page += F("' min='0.01' required></td></tr>");
-
-        // Dawka - zabezpieczenie przed wartością ujemną
-        page += F("<tr><td>Dawka (ml)</td><td><input type='number' step='0.1' name='pump_dose_");
-        page += String(i);
-        page += F("' value='");
-        page += String(pumps[i].dose >= 0 ? pumps[i].dose : 0);
-        page += F("' min='0' required></td></tr>");
-
-        // Godzina dozowania - walidacja zakresu
-        page += F("<tr><td>Godzina dozowania</td><td><input type='number' name='pump_schedule_hour_");
-        page += String(i);
-        page += F("' value='");
-        page += String(pumps[i].schedule_hour < 24 ? pumps[i].schedule_hour : 0);
-        page += F("' min='0' max='23' required></td></tr>");
-
-        // Minuta dozowania - walidacja zakresu
-        page += F("<tr><td>Minuta dozowania</td><td><input type='number' name='pump_minute_");
-        page += String(i);
-        page += F("' value='");
-        page += String(pumps[i].minute < 60 ? pumps[i].minute : 0);
-        page += F("' min='0' max='59' required></td></tr>");
-
-        // Dni tygodnia
-        page += F("<tr><td>Dni dozowania</td><td>");
-        for(int day = 0; day < 7; day++) {
-            page += F("<label style='margin-right: 5px;'><input type='checkbox' name='pump_day_");
-            page += String(i);
-            page += F("_");
-            page += String(day);
-            page += F("' ");
-            page += ((pumps[i].schedule_days & (1 << day)) ? F("checked") : F(""));
-            page += F("> ");
-            page += dayNames[day];
-            page += F("</label> ");
-        }
-        page += F("</td></tr>");
-        
-        page += F("</table></div>");
+    if (!mqtt.connect()) {
+        Serial.println("MQTT connection failed");
+        return false;
     }
 
-    // Przyciski akcji
-    page += F("<div class='section'>");
-    page += F("<div class='buttons-container'>");
-    page += F("<input type='submit' value='Zapisz ustawienia' class='btn btn-blue'>");
-    page += F("<button type='button' onclick='if(confirm(\"Czy na pewno chcesz zresetować urządzenie?\")) { fetch(\"/reset\"); }' class='btn btn-red'>Reset urządzenia</button>");
-    page += F("</div></div>");
-    
-    page += F("</form></div>");
-    
-    // Dodanie informacji o wersji
-    page += F("<div class='footer'>");
-    page += F("AquaDoser v1.0");
-    page += F("</div>");
-    
-    page += F("</body></html>");
-    return page;
+    Serial.println("Connected to MQTT");
+    return true;
 }
 
-void resetFactorySettings() {
-    // Wyczyść EEPROM
-    for (int i = 0; i < 1024; i++) {
-        EEPROM.write(i, 0);
-    }
-    EEPROM.commit();
-    
-    // Ustaw wartości domyślne
+// Konfiguracja MQTT z Home Assistant
+void setupHA() {
+    device.setUniqueId("AquaDoser");
+    device.setName("AquaDoser");
+    device.setSoftwareVersion(SOFTWARE_VERSION);
+
+    // Configure Home Assistant entities
     for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-        pumps[i].enabled = false;
-        pumps[i].calibration = 1.0;
-        pumps[i].dose = 0.0;
-        pumps[i].schedule_hour = 0;
-        pumps[i].schedule_days = 0;
-        pumps[i].minute = 0;
-        pumps[i].lastDosing = 0;
-        pumps[i].isRunning = false;
-        snprintf(pumps[i].name, sizeof(pumps[i].name), "Pump %d", i+1);
+        String pumpName = "Pump " + String(i + 1);
+        HADeviceSwitch* pumpSwitch = new HADeviceSwitch(device, pumpName.c_str());
+        pumpSwitch->onCommand(onPumpCommand, i);
     }
-    
-    // Domyślna konfiguracja MQTT
-    mqttConfig.port = 1883;
-    mqttConfig.enabled = false;
-    mqttConfig.broker[0] = '\0';
-    mqttConfig.username[0] = '\0';
-    mqttConfig.password[0] = '\0';
-    
-    // Domyślna konfiguracja sieci
-    networkConfig.dhcp = true;
-    networkConfig.mqtt_port = 1883;
-    networkConfig.mqtt_server[0] = '\0';
-    networkConfig.mqtt_user[0] = '\0';
-    networkConfig.mqtt_password[0] = '\0';
-    
-    // Zapisz wszystkie konfiguracje
-    saveConfiguration();
+
+    HASwitch soundSwitch(device, "Sound");
+    soundSwitch.onCommand(onSoundSwitchCommand);
+
+    HASwitch serviceSwitch(device, "Service Mode");
+    serviceSwitch.onCommand(onServiceSwitchCommand);
+
+    firstUpdateHA();
 }
 
-// --- Setup
-void setup() {
-    // 1. Inicjalizacja komunikacji
-    Serial.begin(115200);
-    Serial.println("\nAquaDoser Start");
-    Wire.begin();
+// ** FUNKCJE ZWIĄZANE Z PINAMI **
+
+// Konfiguracja pinów wejścia/wyjścia
+void setupPin() {   
+    pinMode(PRZYCISK_PIN, INPUT_PULLUP);  // Wejście z podciąganiem - przycisk
+    pinMode(BUZZER_PIN, OUTPUT);  // Wyjście - buzzer
+    digitalWrite(BUZZER_PIN, LOW);  // Wyłączenie buzzera
+}
+
+// Odtwarzaj melodię powitalną
+void welcomeMelody() {
+    tone(BUZZER_PIN, 1397, 100);  // F6
+    delay(150);
+    tone(BUZZER_PIN, 1568, 100);  // G6
+    delay(150);
+    tone(BUZZER_PIN, 1760, 150);  // A6
+    delay(200);
+}
+
+// Wyślij pierwszą aktualizację stanu do Home Assistant
+void firstUpdateHA() {
+    float initialDistance = measureDistance();
     
-    // 2. Inicjalizacja pamięci i konfiguracji
-    EEPROM.begin(1024);
-    initStorage();
-    loadConfiguration();
+    // Ustaw początkowe stany na podstawie pomiaru
+    status.waterAlarmActive = (initialDistance >= config.tank_empty);
+    status.waterReserveActive = (initialDistance >= config.reserve_level);
     
-    // 3. Inicjalizacja sprzętu
-    // Piny
-    pinMode(BUTTON_PIN, INPUT_PULLUP);
-    pinMode(BUZZER_PIN, OUTPUT);
-    digitalWrite(BUZZER_PIN, LOW);
+    // Wymuś stan OFF na początku
+    sensorAlarm.setValue("OFF");
+    sensorReserve.setValue("OFF");
+    switchSound.setState(false);  // Dodane - wymuś stan początkowy
+    mqtt.loop();
     
-    // RTC
-    if (!rtc.begin()) {
-        Serial.println("Nie znaleziono RTC!");
+    // Ustawienie końcowych stanów i wysyłka do HA
+    sensorAlarm.setValue(status.waterAlarmActive ? "ON" : "OFF");
+    sensorReserve.setValue(status.waterReserveActive ? "ON" : "OFF");
+    switchSound.setState(status.soundEnabled);  // Dodane - ustaw aktualny stan dźwięku
+    mqtt.loop();
+
+    sensorPumpWorkTime.setValue("0");
+    mqtt.loop();
+}
+
+// ** FUNKCJE ZWIĄZANE Z PRZYCISKIEM **
+
+// Obsługa przycisku
+void handleButton() {
+    static unsigned long lastDebounceTime = 0;
+    static bool lastReading = HIGH;
+    const unsigned long DEBOUNCE_DELAY = 50;  // 50ms debounce
+
+    bool reading = digitalRead(PRZYCISK_PIN);
+
+    // Jeśli odczyt się zmienił, zresetuj timer debounce
+    if (reading != lastReading) {
+        lastDebounceTime = millis();
     }
     
-    // PCF8574
-    if (!pcf8574.begin()) {
-        Serial.println("Nie znaleziono PCF8574!");
+    // Kontynuuj tylko jeśli minął czas debounce
+    if ((millis() - lastDebounceTime) > DEBOUNCE_DELAY) {
+        // Jeśli stan się faktycznie zmienił po debounce
+        if (reading != buttonState.lastState) {
+            buttonState.lastState = reading;
+            
+            if (reading == LOW) {  // Przycisk naciśnięty
+                buttonState.pressedTime = millis();
+                buttonState.isLongPressHandled = false;  // Reset flagi długiego naciśnięcia
+            } else {  // Przycisk zwolniony
+                buttonState.releasedTime = millis();
+                
+                // Sprawdzenie czy to było krótkie naciśnięcie
+                if (buttonState.releasedTime - buttonState.pressedTime < LONG_PRESS_TIME) {
+                    // Przełącz tryb serwisowy
+                    status.isServiceMode = !status.isServiceMode;
+                    playConfirmationSound();  // Sygnał potwierdzenia zmiany trybu
+                    switchService.setState(status.isServiceMode, true);  // force update w HA
+                    
+                    // Log zmiany stanu
+                    DEBUG_PRINTF("Tryb serwisowy: %s (przez przycisk)\n", status.isServiceMode ? "WŁĄCZONY" : "WYŁĄCZONY");
+                    
+                    // Jeśli włączono tryb serwisowy podczas pracy pompy
+                    if (status.isServiceMode && status.isPumpActive) {
+                        digitalWrite(POMPA_PIN, LOW);  // Wyłącz pompę
+                        status.isPumpActive = false;  // Reset flagi aktywności
+                        status.pumpStartTime = 0;  // Reset czasu startu
+                        sensorPump.setValue("OFF");  // Aktualizacja w HA
+                    }
+                }
+            }
+        }
+        
+        // Obsługa długiego naciśnięcia (reset blokady pompy)
+        if (reading == LOW && !buttonState.isLongPressHandled) {
+            if (millis() - buttonState.pressedTime >= LONG_PRESS_TIME) {
+                ESP.wdtFeed();  // Reset przy długim naciśnięciu
+                status.pumpSafetyLock = false;  // Zdjęcie blokady pompy
+                playConfirmationSound();  // Sygnał potwierdzenia zmiany trybu
+                switchPumpAlarm.setState(false, true);  // force update w HA
+                buttonState.isLongPressHandled = true;  // Oznacz jako obsłużone
+                DEBUG_PRINT("Alarm pompy skasowany");
+            }
+        }
     }
     
-    // LED
-    strip.begin();
-    strip.show();
-    initializeLEDs();
+    lastReading = reading;  // Zapisz ostatni odczyt dla następnego porównania
+    yield();  // Oddaj sterowanie systemowi
+}
+
+// Obsługa przełącznika dźwięku (HA)
+void onSoundSwitchCommand(bool state, HASwitch* sender) {   
+    status.soundEnabled = state;  // Aktualizuj status lokalny
+    config.soundEnabled = state;  // Aktualizuj konfigurację
+    saveConfig();  // Zapisz do EEPROM
     
-    // 4. Inicjalizacja sieci i komunikacji
-    setupWiFi();
-    checkMQTTConfig();
-    initHomeAssistant();
-    setupMQTT();
+    // Aktualizuj stan w Home Assistant
+    switchSound.setState(state, true);  // force update
     
-    // 5. Konfiguracja serwera Web
-    setupWebServer();
-    server.on("/save", HTTP_POST, handleSave);
-    server.on("/restart", HTTP_POST, []() {
+    // Zagraj dźwięk potwierdzenia tylko gdy włączamy dźwięk
+    if (state) {
+        playConfirmationSound();
+    }
+    
+    DEBUG_PRINTF("Zmieniono stan dźwięku na: ", state ? "WŁĄCZONY" : "WYŁĄCZONY");
+}
+
+void onPumpCommand(bool state, HASwitch* sender, int pumpIndex) {
+    if (state) {
+        dosePump(pumpIndex);
+    } else {
+        turnOffPump(pumpIndex);
+    }
+}
+
+// Obsługuje komendę przełącznika trybu serwisowego
+void onServiceSwitchCommand(bool state, HASwitch* sender) {
+    playConfirmationSound();  // Sygnał potwierdzenia zmiany trybu
+    status.isServiceMode = state;  // Ustawienie flagi trybu serwisowego
+    buttonState.lastState = HIGH;  // Reset stanu przycisku
+    
+    // Aktualizacja stanu w Home Assistant
+    switchService.setState(state);  // Synchronizacja stanu przełącznika
+    
+    if (state) {  // Włączanie trybu serwisowego
+        if (status.isPumpActive) {
+            digitalWrite(POMPA_PIN, LOW);  // Wyłączenie pompy
+            status.isPumpActive = false;  // Reset flagi aktywności
+            status.pumpStartTime = 0;  // Reset czasu startu
+            sensorPump.setValue("OFF");  // Aktualizacja stanu w HA
+        }
+    } else {  // Wyłączanie trybu serwisowego
+        // Reset stanu opóźnienia pompy aby umożliwić normalne uruchomienie
+        status.isPumpDelayActive = false;
+        status.pumpDelayStartTime = 0;
+        // Normalny tryb pracy - pompa uruchomi się automatycznie 
+        // jeśli czujnik poziomu wykryje wodę
+    }
+    
+    DEBUG_PRINTF("Tryb serwisowy: %s (przez HA)\n", state ? "WŁĄCZONY" : "WYŁĄCZONY");
+}
+
+// ** STRONA KONFIGURACYJNA **
+
+// Strona konfiguracji przechowywana w pamięci programu
+const char CONFIG_PAGE[] PROGMEM = R"rawliteral(
+  <!DOCTYPE html>
+  <html>
+    <head>
+        <meta charset='UTF-8'>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>HydroSense</title>
+        <style>
+            body { 
+                font-family: Arial, sans-serif; 
+                margin: 0; 
+                padding: 20px; 
+                background-color: #1a1a1a;
+                color: #ffffff;
+            }
+
+            .buttons-container {
+                display: flex;
+                justify-content: space-between;
+                margin: -5px;
+            }
+
+            .container { 
+                max-width: 800px; 
+                margin: 0 auto; 
+                padding: 0 15px;
+            }
+
+            .section {
+                background-color: #2a2a2a;
+                padding: 20px;
+                margin-bottom: 20px;
+                border-radius: 8px;
+                width: 100%;
+                box-sizing: border-box;
+            }
+
+            h1 { 
+                color: #ffffff; 
+                text-align: center;
+                margin-bottom: 30px;
+                font-size: 2.5em;
+                background-color: #2d2d2d;
+                padding: 20px;
+                border-radius: 8px;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            }
+
+            h2 { 
+                color: #2196F3;
+                margin-top: 0;
+                font-size: 1.5em;
+            }
+
+            table { 
+                width: 100%; 
+                border-collapse: collapse;
+            }
+
+            td { 
+                padding: 12px 8px;
+                border-bottom: 1px solid #3d3d3d;
+            }
+
+            .config-table td {
+                padding: 8px;
+            }
+
+            .config-table {
+                width: 100%;
+                border-collapse: collapse;
+                table-layout: fixed;
+            }
+
+            .config-table td:first-child {
+                width: 65%;
+            }
+
+            .config-table td:last-child {
+                width: 35%;
+            }
+            .config-table input[type="text"],
+            .config-table input[type="password"],
+            .config-table input[type="number"] {
+                width: 100%;
+                padding: 8px;
+                border: 1px solid #3d3d3d;
+                border-radius: 4px;
+                background-color: #1a1a1a;
+                color: #ffffff;
+                box-sizing: border-box;
+            }
+
+            input[type="text"],
+            input[type="password"],
+            input[type="number"] {
+                width: 100%;
+                padding: 8px;
+                border: 1px solid #3d3d3d;
+                border-radius: 4px;
+                background-color: #1a1a1a;
+                color: #ffffff;
+                box-sizing: border-box;
+                text-align: left;
+            }
+
+            input[type="submit"] { 
+                background-color: #4CAF50; 
+                color: white; 
+                padding: 12px 24px; 
+                border: none; 
+                border-radius: 4px; 
+                cursor: pointer;
+                width: 100%;
+                font-size: 16px;
+            }
+
+            input[type="submit"]:hover { 
+                background-color: #45a049; 
+            }
+
+            input[type="file"] {
+                background-color: #1a1a1a;
+                color: #ffffff;
+                padding: 8px;
+                border: 1px solid #3d3d3d;
+                border-radius: 4px;
+                width: 100%;
+                cursor: pointer;
+            }
+
+            input[type="file"]::-webkit-file-upload-button {
+                background-color: #2196F3;
+                color: white;
+                padding: 8px 16px;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                margin-right: 10px;
+            }
+
+            input[type="file"]::-webkit-file-upload-button:hover {
+                background-color: #1976D2;
+            }
+
+            .success { 
+                color: #4CAF50; 
+            }
+
+            .error { 
+                color: #F44336;
+            }
+
+            .alert { 
+                padding: 15px; 
+                margin-bottom: 20px; 
+                border-radius: 0;
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                width: 100%;
+                z-index: 1000;
+                text-align: center;
+                animation: fadeOut 0.5s ease-in-out 5s forwards;
+            }
+            .alert.success { 
+                background-color: #4CAF50;
+                color: white;
+                border: none;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            }
+
+            .btn {
+                padding: 12px 24px;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 14px;
+                width: calc(50% - 10px);
+                display: inline-block;
+                margin: 5px;
+                text-align: center;
+            }
+
+            .btn-blue { 
+                background-color: #2196F3;
+                color: white; 
+            }
+
+            .btn-red { 
+                background-color: #F44336;
+                color: white; 
+            }
+
+            .btn-orange {
+                background-color: #FF9800 !important;
+                color: white !important;
+            }
+
+            .btn-orange:hover {
+                background-color: #F57C00 !important;
+            }
+
+            .console {
+                background-color: #1a1a1a;
+                color: #ffffff;
+                padding: 15px;
+                border-radius: 4px;
+                font-family: monospace;
+                height: 200px;
+                overflow-y: auto;
+                margin-top: 10px;
+                border: 1px solid #3d3d3d;
+            }
+
+            .footer {
+                background-color: #2d2d2d;
+                padding: 20px;
+                margin-top: 20px;
+                border-radius: 8px;
+                text-align: center;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            }
+
+            .footer a {
+                display: inline-block;
+                background-color: #2196F3;
+                color: white;
+                text-decoration: underline;
+                padding: 12px 24px;
+                border-radius: 4px;
+                font-weight: normal;
+                transition: background-color 0.3s;
+                width: 100%;
+                box-sizing: border-box;
+            }
+
+            .footer a:hover {
+                background-color: #1976D2;
+            }
+
+            .progress {
+                width: 100%;
+                background-color: #1a1a1a;
+                border: 1px solid #3d3d3d;
+                border-radius: 4px;
+                padding: 3px;
+                margin-top: 15px;
+            }
+            .progress-bar {
+                width: 0%;
+                height: 20px;
+                background-color: #4CAF50;
+                border-radius: 2px;
+                transition: width 0.3s ease-in-out;
+                text-align: center;
+                color: white;
+                line-height: 20px;
+            }
+
+            .message {
+                position: fixed;
+                top: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                padding: 15px 30px;
+                border-radius: 5px;
+                color: white;
+                opacity: 0;
+                transition: opacity 0.3s ease-in-out;
+                z-index: 1000;
+            }
+
+            .message.success {
+                background-color: #4CAF50;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            }
+
+            .message.error {
+                background-color: #f44336;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            }
+
+            @media (max-width: 600px) {
+                body {
+                    padding: 10px;
+                }
+                .container {
+                    padding: 0;
+                }
+                .section {
+                    padding: 15px;
+                    margin-bottom: 15px;
+                }
+                .console {
+                    height: 150px;
+                }
+            }
+        </style>
+        <script>
+            function confirmReset() {
+                return confirm('Czy na pewno chcesz przywrócić ustawienia fabryczne? Spowoduje to utratę wszystkich ustawień.');
+            }
+
+            function rebootDevice() {
+                if(confirm('Czy na pewno chcesz zrestartować urządzenie?')) {
+                    fetch('/reboot', {method: 'POST'}).then(() => {
+                        showMessage('Urządzenie zostanie zrestartowane...', 'success');
+                        setTimeout(() => { window.location.reload(); }, 3000);
+                    });
+                }
+            }
+
+            function factoryReset() {
+                if(confirmReset()) {
+                    fetch('/factory-reset', {method: 'POST'}).then(() => {
+                        showMessage('Przywracanie ustawień fabrycznych...', 'success');
+                        setTimeout(() => { window.location.reload(); }, 3000);
+                    });
+                }
+            }
+            function showMessage(text, type) {
+                var oldMessages = document.querySelectorAll('.message');
+                oldMessages.forEach(function(msg) {
+                    msg.remove();
+                });
+                
+                var messageBox = document.createElement('div');
+                messageBox.className = 'message ' + type;
+                messageBox.innerHTML = text;
+                document.body.appendChild(messageBox);
+                
+                setTimeout(function() {
+                    messageBox.style.opacity = '1';
+                }, 10);
+                
+                setTimeout(function() {
+                    messageBox.style.opacity = '0';
+                    setTimeout(function() {
+                        messageBox.remove();
+                    }, 300);
+                }, 3000);
+            }
+
+            var socket;
+            window.onload = function() {
+                document.querySelector('form[action="/save"]').addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    
+                    var formData = new FormData(this);
+                    fetch('/save', {
+                        method: 'POST',
+                        body: formData
+                    }).then(response => {
+                        if (!response.ok) {
+                            throw new Error('Network response was not ok');
+                        }
+                    }).catch(error => {
+                        showMessage('Błąd podczas zapisywania!', 'error');
+                    });
+                });
+
+                socket = new WebSocket('ws://' + window.location.hostname + ':81/');
+                socket.onmessage = function(event) {
+                    var message = event.data;
+                    
+                    if (message.startsWith('update:')) {
+                        if (message.startsWith('update:error:')) {
+                            document.getElementById('update-progress').style.display = 'none';
+                            showMessage(message.split(':')[2], 'error');
+                            return;
+                        }
+                        var percentage = message.split(':')[1];
+                        document.getElementById('update-progress').style.display = 'block';
+                        document.getElementById('progress-bar').style.width = percentage + '%';
+                        document.getElementById('progress-bar').textContent = percentage + '%';
+                        
+                        if (percentage == '100') {
+                            document.getElementById('update-progress').style.display = 'none';
+                            showMessage('Aktualizacja zakończona pomyślnie! Trwa restart urządzenia...', 'success');
+                            setTimeout(function() {
+                                window.location.reload();
+                            }, 3000);
+                        }
+                    } 
+                    else if (message.startsWith('save:')) {
+                        var parts = message.split(':');
+                        var type = parts[1];
+                        var text = parts[2];
+                        showMessage(text, type);
+                    }
+                    else {
+                        var console = document.getElementById('console');
+                        console.innerHTML += message + '<br>';
+                        console.scrollTop = console.scrollHeight;
+                    }
+                };
+            };
+        </script>
+    </head>
+    <body>
+        <h1>HydroSense</h1>
+        
+        <div class='section'>
+            <h2>Status systemu</h2>
+            <table class='config-table'>
+                <tr>
+                    <td>Status MQTT</td>
+                    <td><span class='status %MQTT_STATUS_CLASS%'>%MQTT_STATUS%</span></td>
+                </tr>
+                <tr>
+                    <td>Status dźwięku</td>
+                    <td><span class='status %SOUND_STATUS_CLASS%'>%SOUND_STATUS%</span></td>
+                </tr>
+                <tr>
+                    <td>Wersja oprogramowania</td>
+                    <td>%SOFTWARE_VERSION%</td>
+                </tr>
+            </table>
+        </div>
+
+        %BUTTONS%
+        %CONFIG_FORMS%
+        %UPDATE_FORM%
+        %FOOTER%
+
+    </body>
+  </html>
+)rawliteral";
+
+// Formularz do aktualizacji firmware przechowywany w pamięci programu
+const char UPDATE_FORM[] PROGMEM = R"rawliteral(
+<div class='section'>
+    <h2>Aktualizacja firmware</h2>
+    <form method='POST' action='/update' enctype='multipart/form-data'>
+        <table class='config-table' style='margin-bottom: 15px;'>
+            <tr><td colspan='2'><input type='file' name='update' accept='.bin'></td></tr>
+        </table>
+        <input type='submit' value='Aktualizuj firmware' class='btn btn-orange'>
+    </form>
+    <div id='update-progress' style='display:none'>
+        <div class='progress'>
+            <div id='progress-bar' class='progress-bar' role='progressbar' style='width: 0%'>0%</div>
+        </div>
+    </div>
+</div>
+)rawliteral";
+
+// Strona konfiguracji przechowywana w pamięci programu
+const char PAGE_FOOTER[] PROGMEM = R"rawliteral(
+<div class='footer'>
+    <a href='https://github.com/pimowo/HydroSense' target='_blank'>Project by PMW</a>
+</div>
+)rawliteral";
+
+// Zwraca zawartość strony konfiguracji jako ciąg znaków
+String getConfigPage() {
+    String html = FPSTR(CONFIG_PAGE);
+    
+    // Przygotuj wszystkie wartości przed zastąpieniem
+    bool mqttConnected = client.connected();
+    String mqttStatus = mqttConnected ? "Połączony" : "Rozłączony";
+    String mqttStatusClass = mqttConnected ? "success" : "error";
+    String soundStatus = config.soundEnabled ? "Włączony" : "Wyłączony";
+    String soundStatusClass = config.soundEnabled ? "success" : "error";
+    
+    // Sekcja przycisków - zmieniona na String zamiast PROGMEM
+    String buttons = F(
+        "<div class='section'>"
+        "<div class='buttons-container'>"
+        "<button class='btn btn-blue' onclick='rebootDevice()'>Restart urządzenia</button>"
+        "<button class='btn btn-red' onclick='factoryReset()'>Przywróć ustawienia fabryczne</button>"
+        "</div>"
+        "</div>"
+    );
+
+    // Zastąp wszystkie placeholdery
+    html.replace("%MQTT_SERVER%", config.mqtt_server);
+    html.replace("%MQTT_PORT%", String(config.mqtt_port));
+    html.replace("%MQTT_USER%", config.mqtt_user);
+    html.replace("%MQTT_PASSWORD%", config.mqtt_password);
+    html.replace("%MQTT_STATUS%", mqttStatus);
+    html.replace("%MQTT_STATUS_CLASS%", mqttStatusClass);
+    html.replace("%SOUND_STATUS%", soundStatus);
+    html.replace("%SOUND_STATUS_CLASS%", soundStatusClass);
+    html.replace("%SOFTWARE_VERSION%", SOFTWARE_VERSION);
+    html.replace("%TANK_EMPTY%", String(config.tank_empty));
+    html.replace("%TANK_FULL%", String(config.tank_full));
+    html.replace("%RESERVE_LEVEL%", String(config.reserve_level));
+    html.replace("%TANK_DIAMETER%", String(config.tank_diameter));
+    html.replace("%PUMP_DELAY%", String(config.pump_delay));
+    html.replace("%PUMP_WORK_TIME%", String(config.pump_work_time));
+    html.replace("%BUTTONS%", buttons);
+    html.replace("%UPDATE_FORM%", FPSTR(UPDATE_FORM));
+    html.replace("%FOOTER%", FPSTR(PAGE_FOOTER));
+    html.replace("%MESSAGE%", "");
+
+    // Przygotuj formularze konfiguracyjne
+    String configForms = F("<form method='POST' action='/save'>");
+    
+    // MQTT
+    configForms += F("<div class='section'>"
+                     "<h2>Konfiguracja MQTT</h2>"
+                     "<table class='config-table'>"
+                     "<tr><td>Serwer</td><td><input type='text' name='mqtt_server' value='");
+    configForms += config.mqtt_server;
+    configForms += F("'></td></tr>"
+                     "<tr><td>Port</td><td><input type='number' name='mqtt_port' value='");
+    configForms += String(config.mqtt_port);
+    configForms += F("'></td></tr>"
+                     "<tr><td>Użytkownik</td><td><input type='text' name='mqtt_user' value='");
+    configForms += config.mqtt_user;
+    configForms += F("'></td></tr>"
+                     "<tr><td>Hasło</td><td><input type='password' name='mqtt_password' value='");
+    configForms += config.mqtt_password;
+    configForms += F("'></td></tr>"
+                     "</table></div>");
+    
+    // Zbiornik
+    configForms += F("<div class='section'>"
+                     "<h2>Ustawienia zbiornika</h2>"
+                     "<table class='config-table'>");
+    configForms += "<tr><td>Odległość przy pustym [mm]</td><td><input type='number' name='tank_empty' value='" + String(config.tank_empty) + "'></td></tr>";
+    configForms += "<tr><td>Odległość przy pełnym [mm]</td><td><input type='number' name='tank_full' value='" + String(config.tank_full) + "'></td></tr>";
+    configForms += "<tr><td>Odległość przy rezerwie [mm]</td><td><input type='number' name='reserve_level' value='" + String(config.reserve_level) + "'></td></tr>";
+    configForms += "<tr><td>Średnica zbiornika [mm]</td><td><input type='number' name='tank_diameter' value='" + String(config.tank_diameter) + "'></td></tr>";
+    configForms += F("</table></div>");
+    
+    // Pompa
+    configForms += F("<div class='section'>"
+                     "<h2>Ustawienia pompy</h2>"
+                     "<table class='config-table'>");
+    configForms += "<tr><td>Opóźnienie załączenia pompy [s]</td><td><input type='number' name='pump_delay' value='" + String(config.pump_delay) + "'></td></tr>";
+    configForms += "<tr><td>Czas pracy pompy [s]</td><td><input type='number' name='pump_work_time' value='" + String(config.pump_work_time) + "'></td></tr>";
+    configForms += F("</table></div>");
+    
+    configForms += F("<div class='section'>"
+                     "<input type='submit' value='Zapisz ustawienia' class='btn btn-blue'>"
+                     "</div></form>");
+    
+    html.replace("%CONFIG_FORMS%", configForms);
+    
+    // Sprawdź, czy wszystkie znaczniki zostały zastąpione
+    if (html.indexOf('%') != -1) {
+        DEBUG_PRINTF("Uwaga: Niektóre znaczniki nie zostały zastąpione!");
+        int pos = html.indexOf('%');
+        DEBUG_PRINTF(html.substring(pos - 20, pos + 20));
+    }
+    
+    return html;
+}
+
+// Obsługa żądania HTTP do głównej strony konfiguracji
+void handleRoot() {
+    String content = getConfigPage();
+
+    server.send(200, "text/html", content);
+}
+
+// Waliduje wartości konfiguracji wprowadzone przez użytkownika
+bool validateConfigValues() {
+    if (webServer.arg("hostname").length() >= sizeof(config.hostname)) return false;
+    if (webServer.arg("mqtt_host").length() >= sizeof(config.mqttHost)) return false;
+    if (webServer.arg("mqtt_user").length() >= sizeof(config.mqttUser)) return false;
+    if (webServer.arg("mqtt_pass").length() >= sizeof(config.mqttPass)) return false;
+    
+    // Walidacja ustawień pomp
+    for (int i = 0; i < 8; i++) {
+        float dose = webServer.arg("p" + String(i) + "_dose").toFloat();
+        if (dose < 0 || dose > 1000) return false;  // Maksymalna dawka 1L
+        
+        String timeStr = webServer.arg("p" + String(i) + "_time");
+        int hour = timeStr.substring(0, 2).toInt();
+        int minute = timeStr.substring(3, 5).toInt();
+        
+        if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return false;
+    }
+    
+    return true;
+}
+
+// Obsługa zapisania konfiguracji po jej wprowadzeniu przez użytkownika
+void handleSave() {
+    if (webServer.method() != HTTP_POST) {
+        webServer.send(405, "text/plain", "Method Not Allowed");
+        return;
+    }
+
+    // Zapisz poprzednie wartości na wypadek błędów
+    Config oldConfig = config;
+    bool needMqttReconnect = false;
+
+    // Zapisz poprzednie wartości MQTT do porównania
+    String oldHost = config.mqttHost;
+    int oldPort = config.mqttPort;
+    String oldUser = config.mqttUser;
+    String oldPass = config.mqttPass;
+
+    // Zapisz podstawowe ustawienia
+    if (webServer.hasArg("hostname")) {
+        strlcpy(config.hostname, webServer.arg("hostname").c_str(), sizeof(config.hostname));
+    }
+    if (webServer.hasArg("mqtt_host")) {
+        strlcpy(config.mqttHost, webServer.arg("mqtt_host").c_str(), sizeof(config.mqttHost));
+    }
+    if (webServer.hasArg("mqtt_port")) {
+        config.mqttPort = webServer.arg("mqtt_port").toInt();
+    }
+    if (webServer.hasArg("mqtt_user")) {
+        strlcpy(config.mqttUser, webServer.arg("mqtt_user").c_str(), sizeof(config.mqttUser));
+    }
+    if (webServer.hasArg("mqtt_pass")) {
+        strlcpy(config.mqttPass, webServer.arg("mqtt_pass").c_str(), sizeof(config.mqttPass));
+    }
+    config.soundEnabled = webServer.hasArg("sound_enabled");
+
+    // Zapisz konfigurację pomp
+    for (int i = 0; i < 8; i++) {
+        String pumpPrefix = "p" + String(i);
+        config.pumps[i].enabled = webServer.hasArg(pumpPrefix + "_enabled");
+        
+        if (webServer.hasArg(pumpPrefix + "_dose")) {
+            config.pumps[i].dosage = webServer.arg(pumpPrefix + "_dose").toFloat();
+        }
+        
+        if (webServer.hasArg(pumpPrefix + "_time")) {
+            String timeStr = webServer.arg(pumpPrefix + "_time");
+            if (timeStr.length() >= 5) { // Format HH:MM
+                config.pumps[i].hour = timeStr.substring(0, 2).toInt();
+                config.pumps[i].minute = timeStr.substring(3, 5).toInt();
+            }
+        }
+    }
+
+    // Sprawdź poprawność wartości
+    if (!validateConfigValues()) {
+        config = oldConfig; // Przywróć poprzednie wartości
+        webServer.send(400, "text/plain", "Invalid configuration values! Please check your input.");
+        return;
+    }
+
+    // Sprawdź czy dane MQTT się zmieniły
+    if (oldHost != config.mqttHost ||
+        oldPort != config.mqttPort ||
+        oldUser != config.mqttUser ||
+        oldPass != config.mqttPass) {
+        needMqttReconnect = true;
+    }
+
+    // Zapisz konfigurację do EEPROM
+    saveConfig();
+
+    // Jeśli dane MQTT się zmieniły, zrestartuj połączenie
+    if (needMqttReconnect) {
+        if (mqtt.isConnected()) {
+            mqtt.disconnect();
+        }
+        connectMQTT();
+    }
+
+    // Potwierdź zapisanie i zagraj dźwięk potwierdzenia jeśli włączony
+    if (config.soundEnabled) {
+        playConfirmationSound();
+    }
+
+    webServer.sendHeader("Location", "/");
+    webServer.send(303);
+}
+
+// Obsługa aktualizacji oprogramowania przez HTTP
+void handleDoUpdate() {
+    HTTPUpload& upload = server.upload();
+    
+    if (upload.status == UPLOAD_FILE_START) {
+        if (upload.filename == "") {
+            webSocket.broadcastTXT("update:error:No file selected");
+            server.send(204);
+            return;
+        }
+        
+        if (!Update.begin(upload.contentLength)) {
+            Update.printError(Serial);
+            webSocket.broadcastTXT("update:error:Update initialization failed");
+            server.send(204);
+            return;
+        }
+        webSocket.broadcastTXT("update:0");  // Start progress
+    } 
+    else if (upload.status == UPLOAD_FILE_WRITE) {
+        if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+            Update.printError(Serial);
+            webSocket.broadcastTXT("update:error:Write failed");
+            return;
+        }
+        // Aktualizacja paska postępu
+        int progress = (upload.totalSize * 100) / upload.contentLength;
+        String progressMsg = "update:" + String(progress);
+        webSocket.broadcastTXT(progressMsg);
+    } 
+    else if (upload.status == UPLOAD_FILE_END) {
+        if (Update.end(true)) {
+            webSocket.broadcastTXT("update:100");  // Completed
+            server.send(204);
+            delay(1000);
+            ESP.restart();
+        } else {
+            Update.printError(Serial);
+            webSocket.broadcastTXT("update:error:Update failed");
+            server.send(204);
+        }
+    }
+}
+
+// Obsługa wyniku procesu aktualizacji oprogramowania
+void handleUpdateResult() {
+    if (Update.hasError()) {
+        server.send(200, "text/html", 
+            "<h1>Aktualizacja nie powiodła się</h1>"
+            "<a href='/'>Powrót</a>");
+    } else {
+        server.send(200, "text/html", 
+            "<h1>Aktualizacja zakończona powodzeniem</h1>"
+            "Urządzenie zostanie zrestartowane...");
+        delay(1000);
+        ESP.restart();
+    }
+}
+
+// Konfiguracja serwera weboweg do obsługi żądań HTTP
+void setupWebServer() {
+    server.on("/", handleRoot);
+    server.on("/update", HTTP_POST, handleUpdateResult, handleDoUpdate);
+    server.on("/save", handleSave);
+    
+    server.on("/reboot", HTTP_POST, []() {
         server.send(200, "text/plain", "Restarting...");
         delay(1000);
         ESP.restart();
     });
+
+    // Obsługa resetu przez WWW
     server.on("/factory-reset", HTTP_POST, []() {
         server.send(200, "text/plain", "Resetting to factory defaults...");
-        resetFactorySettings();
-        delay(1000);
-        ESP.restart();
+        delay(200);  // Daj czas na wysłanie odpowiedzi
+        factoryReset();  // Wywołaj tę samą funkcję co przy resecie fizycznym
     });
     
-    // 6. Synchronizacja czasu
-    syncRTC();
-    
-    // 7. Efekty startowe
-    playWelcomeEffect();
-    welcomeMelody();
-    
-    Serial.println("Inicjalizacja zakończona");
+    server.begin();
 }
 
-// --- Loop
+// ** WEBSOCKET I KOMUNIKACJA W SIECI **
+
+void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
+    // Obsługujemy tylko połączenie - reszta nie jest potrzebna
+    if (type == WStype_CONNECTED) {
+        Serial.printf("[%u] Connected\n", num);
+    }
+}
+
+// ** Funkcja setup - inicjalizacja urządzeń i konfiguracja **
+
+void setup() {
+    Serial.begin(115200);
+    Serial.println("\nAquaDoser Starting...");
+    
+    EEPROM.begin(sizeof(Config));
+    
+    // Inicjalizacja pinu buzzera (jeśli używany)
+    pinMode(BUZZER_PIN, OUTPUT);
+    digitalWrite(BUZZER_PIN, LOW);
+    
+    // Wczytaj konfigurację
+    if (!loadConfig()) {
+        Serial.println("Ładowanie konfiguracji domyślnej");
+    }
+    
+        // Inicjalizacja komponentów
+    setupWiFi();
+    if (!connectMQTT()) {
+        Serial.println("Błąd połączenia z MQTT, restart urządzenia.");
+        ESP.restart();
+    }
+    
+    setupPCF8574();  // Inicjalizacja PCF8574
+    setupWiFi();     // Konfiguracja WiFi
+    setupHA();       // Konfiguracja Home Assistant
+    setupWebServer();// Konfiguracja serwera WWW
+    
+    welcomeMelody();
+}
+
+// ** Funkcja loop - główny cykl pracy urządzenia **
+
 void loop() {
     unsigned long currentMillis = millis();
     
-    // Obsługa serwera WWW i WebSocket
-    server.handleClient();
-    webSocket.loop();
+    // Obsługa przepełnienia licznika millis()
+    handleMillisOverflow();
     
     // Obsługa MQTT
+    if (!mqtt.connected()) {
+        connectMQTT();
+    }
     mqtt.loop();
     
-    // Obsługa przycisków i LED
-    handleButton();
-    updateLEDs();
+    // Obsługa serwera WWW
+    webServer.handleClient();
     
-    // Aktualizacja statusu na WebSocket co 1 sekundę
-    static unsigned long lastWebSocketUpdate = 0;
-    if (currentMillis - lastWebSocketUpdate >= 1000) {
-        String status = getSystemStatusJSON();
-        webSocket.broadcastTXT(status);
-        lastWebSocketUpdate = currentMillis;
-    }
-    
-    // Log do Serial co LOG_INTERVAL
-    if (firstRun || (currentMillis - lastLogTime >= LOG_INTERVAL)) {
-        printLogHeader();
-        
-        bool hasActivePumps = false;
-        for (uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
-            if (pumps[i].enabled) {
-                printPumpStatus(i);
-                hasActivePumps = true;
-            }
+    // Sprawdzenie stanu pomp i bezpieczeństwa
+    for(int i = 0; i < 8; i++) {
+        if (status.pumps[i].isRunning) {
+            // Tutaj później dodamy logikę czasu dozowania
         }
-        
-        if (!hasActivePumps) {
-            Serial.println(F("No active pumps configured"));
-        }
-        
-        Serial.println(F("========================================\n"));
-        lastLogTime = currentMillis;
-        firstRun = false;
-    }
-
-    // Sprawdzanie systemu i pomp co 5 sekund
-    static unsigned long lastSystemCheck = 0;
-    if (currentMillis - lastSystemCheck >= 5000) {
-        // Sprawdź stan WiFi
-        if (WiFi.status() != WL_CONNECTED) {
-            Serial.println("WiFi connection lost - reconnecting...");
-            WiFi.reconnect();
-        }
-        
-        // Aktualizacja Home Assistant
-        updateHomeAssistant();
-        
-        // Obsługa pomp
-        handlePumps();
-        
-        lastSystemCheck = currentMillis;
     }
     
-    // Synchronizacja RTC co 24h
-    static unsigned long lastRtcSync = 0;
-    if (currentMillis - lastRtcSync >= 24*60*60*1000UL || lastRtcSync == 0) {
-        syncRTC();
-        lastRtcSync = currentMillis;
+    // Dodatkowe zabezpieczenie - wyłącz wszystkie pompy w trybie serwisowym
+    if (status.serviceMode) {
+        stopAllPumps();
     }
-    
-    // Obsługa przekroczenia millis()
-    if (currentMillis < lastLogTime || currentMillis < lastSystemCheck || 
-        currentMillis < lastRtcSync || currentMillis < lastWebSocketUpdate) {
-        // Reset wszystkich liczników czasu
-        lastLogTime = currentMillis;
-        lastSystemCheck = currentMillis;
-        lastRtcSync = currentMillis;
-        lastWebSocketUpdate = currentMillis;
-    }
-    
-    yield(); // Pozwól ESP8266 obsłużyć zadania systemowe
 }
