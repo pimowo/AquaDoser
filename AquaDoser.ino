@@ -60,6 +60,8 @@ const char* SOFTWARE_VERSION = "2.12.24";  // Definiowanie wersji oprogramowania
 struct PumpConfig {
     bool enabled;                // czy pompa jest włączona w harmonogramie
     uint8_t dosage_ml;          // dawka w ml
+    float calibration;       // kalibracja (ml/min)
+    uint8_t pcf8574_pin;    // numer pinu na PCF8574
     uint8_t hour;               // godzina dozowania
     uint8_t minute;             // minuta dozowania
     bool workdays_only;         // czy dozować tylko w dni robocze
@@ -299,20 +301,13 @@ void playConfirmationSound() {
 
 // Inicjalizacja PCF8574
 void setupPCF8574() {
-    Wire.begin();  // Inicjalizacja I2C (SDA - D2, SCL - D1 dla ESP8266)
-    
     if (pcf8574.begin()) {
-        Serial.println("PCF8574 zainicjowany");
-        
-        // Wyłącz wszystkie pompy na starcie
-        for(int i = 0; i < 8; i++) {
-            pcf8574.write(i, HIGH);  // HIGH = pompa wyłączona
+        for (int i = 0; i < NUM_PUMPS; i++) {
+            pcf8574.write(config.pumps[i].pcf8574_pin, HIGH);  // HIGH = pompa wyłączona
             status.pumps[i].isRunning = false;
             status.pumps[i].lastDose = 0;
             status.pumps[i].totalDosed = 0;
         }
-    } else {
-        Serial.println("Błąd inicjalizacji PCF8574!");
     }
 }
 
@@ -321,8 +316,8 @@ void turnOnPump(uint8_t pumpIndex) {
     #if DEBUG
     AQUA_DEBUG_PRINTF("Turning ON pump %d\n", pumpIndex);
     #endif
+    pcf8574.write(config.pumps[pumpIndex].pcf8574_pin, LOW);  // LOW = pompa włączona
     status.pumps[pumpIndex].isRunning = true;
-    // pcf8574.write(pumpIndex, LOW) będzie dodane później
 }
 
 // Dozowanie określonej ilości
@@ -347,8 +342,8 @@ void turnOffPump(uint8_t pumpIndex) {
     #if DEBUG
     AQUA_DEBUG_PRINTF("Turning OFF pump %d\n", pumpIndex);
     #endif
+    pcf8574.write(config.pumps[pumpIndex].pcf8574_pin, HIGH);  // HIGH = pompa wyłączona
     status.pumps[pumpIndex].isRunning = false;
-    // pcf8574.write(pumpIndex, HIGH) będzie dodane później
 }
 
 // Bezpieczne wyłączenie wszystkich pomp
@@ -509,7 +504,7 @@ void handleButton() {
                     
                     // Jeśli włączono tryb serwisowy podczas pracy pompy
                     if (status.isServiceMode && status.isPumpActive) {
-                        digitalWrite(POMPA_PIN, LOW);  // Wyłącz pompę
+                        pcf8574.write(pumpPin, LOW);  // Wyłącz pompę
                         status.isPumpActive = false;  // Reset flagi aktywności
                         status.pumpStartTime = 0;  // Reset czasu startu
                         sensorPump.setValue("OFF");  // Aktualizacja w HA
@@ -571,7 +566,7 @@ void onServiceSwitchCommand(bool state, HASwitch* sender) {
     
     if (state) {  // Włączanie trybu serwisowego
         if (status.isPumpActive) {
-            digitalWrite(POMPA_PIN, LOW);  // Wyłączenie pompy
+            pcf8574.write(pumpPin, LOW);  // Wyłączenie pompy
             status.isPumpActive = false;  // Reset flagi aktywności
             status.pumpStartTime = 0;  // Reset czasu startu
             sensorPump.setValue("OFF");  // Aktualizacja stanu w HA
