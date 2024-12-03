@@ -171,7 +171,7 @@ HASwitch switchPumpAlarm("pump_alarm");  // Resetowania blokady pompy
 HASwitch switchService("service_mode");  // Tryb serwisowy
 HASwitch switchSound("sound_switch");    // Dźwięki systemu
 
-HASwitch pumpSwitches[NUMBER_OF_PUMPS];  // Tablica przełączników pomp
+HASwitch* pumpSwitches[NUMBER_OF_PUMPS];  // Tablica przełączników pomp
 HASensor sensorPump("pump_status");  // Sensor statusu pompy
 
 // ** FUNKCJE I METODY SYSTEMOWE **
@@ -413,15 +413,12 @@ void setupHA() {
     device.setSoftwareVersion(SOFTWARE_VERSION);  // Wersja oprogramowania
 
     // Configure Home Assistant entities
-    for(uint8_t i = 0; i < NUM_PUMPS; i++) {
+    for(uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
         String pumpName = String("pump_") + String(i + 1);
-        pumpSwitches[i] = HASwitch(pumpName.c_str());  // Tworzenie przełącznika
-        pumpSwitches[i].setName(pumpName.c_str());     // Ustawienie nazwy
-        
-        // Ustawienie callbacka z odpowiednim prototypem
-        pumpSwitches[i].onCommand([i](bool state, HASwitch* sender) {
-            onPumpCommand(state, sender, i);
-        });
+        // Tworzymy nowy przełącznik dynamicznie
+        pumpSwitches[i] = new HASwitch(pumpName.c_str());
+        pumpSwitches[i]->setName(pumpName.c_str());
+        pumpSwitches[i]->onCommand(onPumpCommand);
     }
 
     switchSound.setName("Dźwięk");
@@ -511,12 +508,12 @@ void handleButton() {
                     AQUA_DEBUG_PRINTF("Tryb serwisowy: %s (przez przycisk)\n", status.isServiceMode ? "WŁĄCZONY" : "WYŁĄCZONY");
                     
                     // Jeśli włączono tryb serwisowy podczas pracy pompy
-                    if (status.isServiceMode && status.isPumpActive) {
-                        pcf8574.digitalWrite(pumpPin, LOW);  // Wyłącz pompę
-                        status.isPumpActive = false;  // Reset flagi aktywności
-                        status.pumpStartTime = 0;  // Reset czasu startu
-                        sensorPump.setValue("OFF");  // Aktualizacja w HA
-                    }
+                    // if (status.isServiceMode && status.isPumpActive) {
+                    //     pcf8574.digitalWrite(pumpPin, LOW);  // Wyłącz pompę
+                    //     status.isPumpActive = false;  // Reset flagi aktywności
+                    //     status.pumpStartTime = 0;  // Reset czasu startu
+                    //     sensorPump.setValue("OFF");  // Aktualizacja w HA
+                    // }
                 }
             }
         }
@@ -1189,12 +1186,12 @@ void handleSave() {
 
 
     // Zapisz konfigurację pomp
-    for (int i = 0; i < 8; i++) {
-        String pumpPrefix = "p" + String(i);
-        config.pumps[i].enabled = server.hasArg(pumpPrefix + "_enabled");
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        pumpPrefix = String("pump") + String(i + 1);
+        String doseArg = pumpPrefix + "_dose";
         
-        if (Server.hasArg(pumpPrefix + "_dose")) {
-            config.pumps[i].dosage = server.arg(pumpPrefix + "_dose").toFloat();
+        if (Server.hasArg(doseArg)) {
+            config.pumps[i].dosage = Server.arg(doseArg).toFloat();
         }
         
         if (server.hasArg(pumpPrefix + "_time")) {
