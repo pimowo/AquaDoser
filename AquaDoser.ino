@@ -22,7 +22,8 @@ const int LED_PIN = 12;    // GPIO 12
 const int PRZYCISK_PIN = 14;    // GPIO 14
 const int SDA_PIN = 4;        // GPIO 4
 const int SCL_PIN = 5;        // GPIO 5
-const int PCF8574_ADDRESS = 0x20;  // Adres I2C: 0x20
+//const int PCF8574_ADDRESS = 0x20;  // Adres I2C: 0x20
+PCF8574 pcf8574(0x20);
 
 // ** USTAWIENIA CZASOWE **
 
@@ -34,17 +35,21 @@ const unsigned long OTA_CHECK_INTERVAL = 1000;     // Sprawdzanie OTA co 1s
 const unsigned long MQTT_RETRY_INTERVAL = 10000;   // Próba połączenia MQTT co 10s
 const unsigned long MILLIS_OVERFLOW_THRESHOLD = 4294967295U - 60000; // ~49.7 dni
 
+
+void updateHAState(uint8_t pumpIndex);
+float measureDistance();
+
 // ** KONFIGURACJA SYSTEMU **
 
 // Makra debugowania
 #define DEBUG 1  // 0 wyłącza debug, 1 włącza debug
 
 #if DEBUG
-    #define DEBUG_PRINT(x) Serial.println(x)
-    #define DEBUG_PRINTF(format, ...) Serial.printf(format, __VA_ARGS__)
+    #define AQUA_DEBUG_PRINT(x) Serial.println(x)
+    #define AQUA_DEBUG_PRINTF(format, ...) Serial.printf(format, __VA_ARGS__)
 #else
-    #define DEBUG_PRINT(x)
-    #define DEBUG_PRINTF(format, ...)
+    #define AQUA_DEBUG_PRINT(x)
+    #define AQUA_DEBUG_PRINTF(format, ...)
 #endif
 
 // Zmienna przechowująca wersję oprogramowania
@@ -455,24 +460,14 @@ void welcomeMelody() {
 // Wyślij pierwszą aktualizację stanu do Home Assistant
 void firstUpdateHA() {
     float initialDistance = measureDistance();
-    
-    // Ustaw początkowe stany na podstawie pomiaru
-    status.waterAlarmActive = (initialDistance >= config.tank_empty);
-    status.waterReserveActive = (initialDistance >= config.reserve_level);
-    
+        
     // Wymuś stan OFF na początku
-    sensorAlarm.setValue("OFF");
-    sensorReserve.setValue("OFF");
+    //sensorAlarm.setValue("OFF");
     switchSound.setState(false);  // Dodane - wymuś stan początkowy
     mqtt.loop();
     
     // Ustawienie końcowych stanów i wysyłka do HA
-    sensorAlarm.setValue(status.waterAlarmActive ? "ON" : "OFF");
-    sensorReserve.setValue(status.waterReserveActive ? "ON" : "OFF");
     switchSound.setState(status.soundEnabled);  // Dodane - ustaw aktualny stan dźwięku
-    mqtt.loop();
-
-    sensorPumpWorkTime.setValue("0");
     mqtt.loop();
 }
 
@@ -1083,12 +1078,6 @@ String getConfigPage() {
     html.replace("%SOUND_STATUS%", soundStatus);
     html.replace("%SOUND_STATUS_CLASS%", soundStatusClass);
     html.replace("%SOFTWARE_VERSION%", SOFTWARE_VERSION);
-    html.replace("%TANK_EMPTY%", String(config.tank_empty));
-    html.replace("%TANK_FULL%", String(config.tank_full));
-    html.replace("%RESERVE_LEVEL%", String(config.reserve_level));
-    html.replace("%TANK_DIAMETER%", String(config.tank_diameter));
-    html.replace("%PUMP_DELAY%", String(config.pump_delay));
-    html.replace("%PUMP_WORK_TIME%", String(config.pump_work_time));
     html.replace("%BUTTONS%", buttons);
     html.replace("%UPDATE_FORM%", FPSTR(UPDATE_FORM));
     html.replace("%FOOTER%", FPSTR(PAGE_FOOTER));
@@ -1115,23 +1104,23 @@ String getConfigPage() {
     configForms += F("'></td></tr>"
                      "</table></div>");
     
-    // Zbiornik
-    configForms += F("<div class='section'>"
-                     "<h2>Ustawienia zbiornika</h2>"
-                     "<table class='config-table'>");
-    configForms += "<tr><td>Odległość przy pustym [mm]</td><td><input type='number' name='tank_empty' value='" + String(config.tank_empty) + "'></td></tr>";
-    configForms += "<tr><td>Odległość przy pełnym [mm]</td><td><input type='number' name='tank_full' value='" + String(config.tank_full) + "'></td></tr>";
-    configForms += "<tr><td>Odległość przy rezerwie [mm]</td><td><input type='number' name='reserve_level' value='" + String(config.reserve_level) + "'></td></tr>";
-    configForms += "<tr><td>Średnica zbiornika [mm]</td><td><input type='number' name='tank_diameter' value='" + String(config.tank_diameter) + "'></td></tr>";
-    configForms += F("</table></div>");
+    // // Zbiornik
+    // configForms += F("<div class='section'>"
+    //                  "<h2>Ustawienia zbiornika</h2>"
+    //                  "<table class='config-table'>");
+    // configForms += "<tr><td>Odległość przy pustym [mm]</td><td><input type='number' name='tank_empty' value='" + String(config.tank_empty) + "'></td></tr>";
+    // configForms += "<tr><td>Odległość przy pełnym [mm]</td><td><input type='number' name='tank_full' value='" + String(config.tank_full) + "'></td></tr>";
+    // configForms += "<tr><td>Odległość przy rezerwie [mm]</td><td><input type='number' name='reserve_level' value='" + String(config.reserve_level) + "'></td></tr>";
+    // configForms += "<tr><td>Średnica zbiornika [mm]</td><td><input type='number' name='tank_diameter' value='" + String(config.tank_diameter) + "'></td></tr>";
+    // configForms += F("</table></div>");
     
-    // Pompa
-    configForms += F("<div class='section'>"
-                     "<h2>Ustawienia pompy</h2>"
-                     "<table class='config-table'>");
-    configForms += "<tr><td>Opóźnienie załączenia pompy [s]</td><td><input type='number' name='pump_delay' value='" + String(config.pump_delay) + "'></td></tr>";
-    configForms += "<tr><td>Czas pracy pompy [s]</td><td><input type='number' name='pump_work_time' value='" + String(config.pump_work_time) + "'></td></tr>";
-    configForms += F("</table></div>");
+    // // Pompa
+    // configForms += F("<div class='section'>"
+    //                  "<h2>Ustawienia pompy</h2>"
+    //                  "<table class='config-table'>");
+    // configForms += "<tr><td>Opóźnienie załączenia pompy [s]</td><td><input type='number' name='pump_delay' value='" + String(config.pump_delay) + "'></td></tr>";
+    // configForms += "<tr><td>Czas pracy pompy [s]</td><td><input type='number' name='pump_work_time' value='" + String(config.pump_work_time) + "'></td></tr>";
+    // configForms += F("</table></div>");
     
     configForms += F("<div class='section'>"
                      "<input type='submit' value='Zapisz ustawienia' class='btn btn-blue'>"
