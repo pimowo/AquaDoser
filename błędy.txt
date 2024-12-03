@@ -1,95 +1,79 @@
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:43: warning: "DEBUG_PRINT" redefined
-   43 |     #define DEBUG_PRINT(x) Serial.println(x)
-      | 
-In file included from C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:14:
-c:\Users\piotrek\Documents\Arduino\libraries\PCF8574_library/PCF8574.h:75: note: this is the location of the previous definition
-   75 |  #define DEBUG_PRINT(...) {}
-      | 
 C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino: In function 'void handleMillisOverflow()':
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:201:32: error: 'struct Status' has no member named 'pumpStartTime'
-  201 |     if (currentMillis < status.pumpStartTime) status.pumpStartTime = 0;
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:205:32: error: 'struct Status' has no member named 'pumpStartTime'
+  205 |     if (currentMillis < status.pumpStartTime) status.pumpStartTime = 0;
       |                                ^~~~~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:201:54: error: 'struct Status' has no member named 'pumpStartTime'
-  201 |     if (currentMillis < status.pumpStartTime) status.pumpStartTime = 0;
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:205:54: error: 'struct Status' has no member named 'pumpStartTime'
+  205 |     if (currentMillis < status.pumpStartTime) status.pumpStartTime = 0;
       |                                                      ^~~~~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:202:32: error: 'struct Status' has no member named 'pumpDelayStartTime'
-  202 |     if (currentMillis < status.pumpDelayStartTime) status.pumpDelayStartTime = 0;
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:206:32: error: 'struct Status' has no member named 'pumpDelayStartTime'
+  206 |     if (currentMillis < status.pumpDelayStartTime) status.pumpDelayStartTime = 0;
       |                                ^~~~~~~~~~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:202:59: error: 'struct Status' has no member named 'pumpDelayStartTime'
-  202 |     if (currentMillis < status.pumpDelayStartTime) status.pumpDelayStartTime = 0;
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:206:59: error: 'struct Status' has no member named 'pumpDelayStartTime'
+  206 |     if (currentMillis < status.pumpDelayStartTime) status.pumpDelayStartTime = 0;
       |                                                           ^~~~~~~~~~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:203:32: error: 'struct Status' has no member named 'lastSoundAlert'
-  203 |     if (currentMillis < status.lastSoundAlert) status.lastSoundAlert = 0;
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:207:32: error: 'struct Status' has no member named 'lastSoundAlert'
+  207 |     if (currentMillis < status.lastSoundAlert) status.lastSoundAlert = 0;
       |                                ^~~~~~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:203:55: error: 'struct Status' has no member named 'lastSoundAlert'
-  203 |     if (currentMillis < status.lastSoundAlert) status.lastSoundAlert = 0;
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:207:55: error: 'struct Status' has no member named 'lastSoundAlert'
+  207 |     if (currentMillis < status.lastSoundAlert) status.lastSoundAlert = 0;
       |                                                       ^~~~~~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:204:32: error: 'struct Status' has no member named 'lastSuccessfulMeasurement'
-  204 |     if (currentMillis < status.lastSuccessfulMeasurement) status.lastSuccessfulMeasurement = 0;
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:208:32: error: 'struct Status' has no member named 'lastSuccessfulMeasurement'
+  208 |     if (currentMillis < status.lastSuccessfulMeasurement) status.lastSuccessfulMeasurement = 0;
       |                                ^~~~~~~~~~~~~~~~~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:204:66: error: 'struct Status' has no member named 'lastSuccessfulMeasurement'
-  204 |     if (currentMillis < status.lastSuccessfulMeasurement) status.lastSuccessfulMeasurement = 0;
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:208:66: error: 'struct Status' has no member named 'lastSuccessfulMeasurement'
+  208 |     if (currentMillis < status.lastSuccessfulMeasurement) status.lastSuccessfulMeasurement = 0;
       |                                                                  ^~~~~~~~~~~~~~~~~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:209:16: error: 'struct Status' has no member named 'pumpStartTime'
-  209 |         status.pumpStartTime = 0;
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:213:16: error: 'struct Status' has no member named 'pumpStartTime'
+  213 |         status.pumpStartTime = 0;
       |                ^~~~~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:210:16: error: 'struct Status' has no member named 'pumpDelayStartTime'
-  210 |         status.pumpDelayStartTime = 0;
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:214:16: error: 'struct Status' has no member named 'pumpDelayStartTime'
+  214 |         status.pumpDelayStartTime = 0;
       |                ^~~~~~~~~~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:211:16: error: 'struct Status' has no member named 'lastSoundAlert'
-  211 |         status.lastSoundAlert = 0;
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:215:16: error: 'struct Status' has no member named 'lastSoundAlert'
+  215 |         status.lastSoundAlert = 0;
       |                ^~~~~~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:212:16: error: 'struct Status' has no member named 'lastSuccessfulMeasurement'
-  212 |         status.lastSuccessfulMeasurement = 0;
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:216:16: error: 'struct Status' has no member named 'lastSuccessfulMeasurement'
+  216 |         status.lastSuccessfulMeasurement = 0;
       |                ^~~~~~~~~~~~~~~~~~~~~~~~~
 C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino: In function 'void setupPCF8574()':
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:297:9: error: 'pcf8574' was not declared in this scope
-  297 |     if (pcf8574.begin()) {
-      |         ^~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:303:20: error: 'struct Status' has no member named 'pumps'
-  303 |             status.pumps[i].isRunning = false;
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:306:21: error: 'class PCF8574' has no member named 'write'
+  306 |             pcf8574.write(i, HIGH);  // HIGH = pompa wyłączona
+      |                     ^~~~~
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:307:20: error: 'struct Status' has no member named 'pumps'
+  307 |             status.pumps[i].isRunning = false;
       |                    ^~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:304:20: error: 'struct Status' has no member named 'pumps'
-  304 |             status.pumps[i].lastDose = 0;
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:308:20: error: 'struct Status' has no member named 'pumps'
+  308 |             status.pumps[i].lastDose = 0;
       |                    ^~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:305:20: error: 'struct Status' has no member named 'pumps'
-  305 |             status.pumps[i].totalDosed = 0;
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:309:20: error: 'struct Status' has no member named 'pumps'
+  309 |             status.pumps[i].totalDosed = 0;
       |                    ^~~~~
 C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino: In function 'void turnOnPump(uint8_t)':
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:316:9: error: 'pcf8574' was not declared in this scope
-  316 |     if (pcf8574.write(pumpIndex, LOW)) {  // LOW = pompa włączona
-      |         ^~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:317:16: error: 'struct Status' has no member named 'pumps'
-  317 |         status.pumps[pumpIndex].isRunning = true;
-      |                ^~~~~
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:321:12: error: 'struct Status' has no member named 'pumps'
+  321 |     status.pumps[pumpIndex].isRunning = true;
+      |            ^~~~~
 C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino: In function 'void dosePump(uint8_t)':
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:327:47: error: 'struct PumpConfig' has no member named 'dosage'; did you mean 'dosage_ml'?
-  327 |     float doseTime = (config.pumps[pumpIndex].dosage / config.pumps[pumpIndex].calibration) * 60000; // czas w ms
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:329:47: error: 'struct PumpConfig' has no member named 'dosage'; did you mean 'dosage_ml'?
+  329 |     float doseTime = (config.pumps[pumpIndex].dosage / config.pumps[pumpIndex].calibration) * 60000; // czas w ms
       |                                               ^~~~~~
       |                                               dosage_ml
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:327:80: error: 'struct PumpConfig' has no member named 'calibration'
-  327 |     float doseTime = (config.pumps[pumpIndex].dosage / config.pumps[pumpIndex].calibration) * 60000; // czas w ms
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:329:80: error: 'struct PumpConfig' has no member named 'calibration'
+  329 |     float doseTime = (config.pumps[pumpIndex].dosage / config.pumps[pumpIndex].calibration) * 60000; // czas w ms
       |                                                                                ^~~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:333:12: error: 'struct Status' has no member named 'pumps'
-  333 |     status.pumps[pumpIndex].lastDose = millis();
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:335:12: error: 'struct Status' has no member named 'pumps'
+  335 |     status.pumps[pumpIndex].lastDose = millis();
       |            ^~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:334:12: error: 'struct Status' has no member named 'pumps'
-  334 |     status.pumps[pumpIndex].totalDosed += config.pumps[pumpIndex].dosage;
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:336:12: error: 'struct Status' has no member named 'pumps'
+  336 |     status.pumps[pumpIndex].totalDosed += config.pumps[pumpIndex].dosage;
       |            ^~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:334:67: error: 'struct PumpConfig' has no member named 'dosage'; did you mean 'dosage_ml'?
-  334 |     status.pumps[pumpIndex].totalDosed += config.pumps[pumpIndex].dosage;
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:336:67: error: 'struct PumpConfig' has no member named 'dosage'; did you mean 'dosage_ml'?
+  336 |     status.pumps[pumpIndex].totalDosed += config.pumps[pumpIndex].dosage;
       |                                                                   ^~~~~~
       |                                                                   dosage_ml
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:337:5: error: 'updateHAState' was not declared in this scope
-  337 |     updateHAState(pumpIndex);
-      |     ^~~~~~~~~~~~~
 C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino: In function 'void turnOffPump(uint8_t)':
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:344:9: error: 'pcf8574' was not declared in this scope
-  344 |     if (pcf8574.write(pumpIndex, HIGH)) {  // HIGH = pompa wyłączona
-      |         ^~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:345:16: error: 'struct Status' has no member named 'pumps'
-  345 |         status.pumps[pumpIndex].isRunning = false;
-      |                ^~~~~
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:347:12: error: 'struct Status' has no member named 'pumps'
+  347 |     status.pumps[pumpIndex].isRunning = false;
+      |            ^~~~~
 C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino: In function 'bool connectMQTT()':
 C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:402:10: error: 'class HAMqtt' has no member named 'setServer'
   402 |     mqtt.setServer(config.mqttHost, config.mqttPort);
@@ -153,299 +137,243 @@ c:\Users\piotrek\Documents\Arduino\libraries\home-assistant-integration\src/devi
 c:\Users\piotrek\Documents\Arduino\libraries\home-assistant-integration\src/device-types/HASwitch.h:17:7: note: candidate: 'constexpr HASwitch::HASwitch(HASwitch&&)'
 c:\Users\piotrek\Documents\Arduino\libraries\home-assistant-integration\src/device-types/HASwitch.h:17:7: note:   candidate expects 1 argument, 2 provided
 C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino: In function 'void firstUpdateHA()':
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:457:29: error: 'measureDistance' was not declared in this scope; did you mean 'sensorDistance'?
-  457 |     float initialDistance = measureDistance();
-      |                             ^~~~~~~~~~~~~~~
-      |                             sensorDistance
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:460:12: error: 'struct Status' has no member named 'waterAlarmActive'
-  460 |     status.waterAlarmActive = (initialDistance >= config.tank_empty);
-      |            ^~~~~~~~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:460:58: error: 'struct Config' has no member named 'tank_empty'
-  460 |     status.waterAlarmActive = (initialDistance >= config.tank_empty);
-      |                                                          ^~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:461:12: error: 'struct Status' has no member named 'waterReserveActive'
-  461 |     status.waterReserveActive = (initialDistance >= config.reserve_level);
-      |            ^~~~~~~~~~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:461:60: error: 'struct Config' has no member named 'reserve_level'
-  461 |     status.waterReserveActive = (initialDistance >= config.reserve_level);
-      |                                                            ^~~~~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:470:33: error: 'struct Status' has no member named 'waterAlarmActive'
-  470 |     sensorAlarm.setValue(status.waterAlarmActive ? "ON" : "OFF");
-      |                                 ^~~~~~~~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:471:35: error: 'struct Status' has no member named 'waterReserveActive'
-  471 |     sensorReserve.setValue(status.waterReserveActive ? "ON" : "OFF");
-      |                                   ^~~~~~~~~~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:472:33: error: 'struct Status' has no member named 'soundEnabled'
-  472 |     switchSound.setState(status.soundEnabled);  // Dodane - ustaw aktualny stan dźwięku
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:464:33: error: 'struct Status' has no member named 'soundEnabled'
+  464 |     switchSound.setState(status.soundEnabled);  // Dodane - ustaw aktualny stan dźwięku
       |                                 ^~~~~~~~~~~~
 C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino: In function 'void handleButton()':
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:497:36: error: 'struct ButtonState' has no member named 'lastState'
-  497 |         if (reading != buttonState.lastState) {
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:486:36: error: 'struct ButtonState' has no member named 'lastState'
+  486 |         if (reading != buttonState.lastState) {
       |                                    ^~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:498:25: error: 'struct ButtonState' has no member named 'lastState'
-  498 |             buttonState.lastState = reading;
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:487:25: error: 'struct ButtonState' has no member named 'lastState'
+  487 |             buttonState.lastState = reading;
       |                         ^~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:501:29: error: 'struct ButtonState' has no member named 'pressedTime'; did you mean 'pressTime'?
-  501 |                 buttonState.pressedTime = millis();
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:490:29: error: 'struct ButtonState' has no member named 'pressedTime'; did you mean 'pressTime'?
+  490 |                 buttonState.pressedTime = millis();
       |                             ^~~~~~~~~~~
       |                             pressTime
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:502:29: error: 'struct ButtonState' has no member named 'isLongPressHandled'
-  502 |                 buttonState.isLongPressHandled = false;  // Reset flagi długiego naciśnięcia
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:491:29: error: 'struct ButtonState' has no member named 'isLongPressHandled'
+  491 |                 buttonState.isLongPressHandled = false;  // Reset flagi długiego naciśnięcia
       |                             ^~~~~~~~~~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:504:29: error: 'struct ButtonState' has no member named 'releasedTime'
-  504 |                 buttonState.releasedTime = millis();
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:493:29: error: 'struct ButtonState' has no member named 'releasedTime'
+  493 |                 buttonState.releasedTime = millis();
       |                             ^~~~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:507:33: error: 'struct ButtonState' has no member named 'releasedTime'
-  507 |                 if (buttonState.releasedTime - buttonState.pressedTime < LONG_PRESS_TIME) {
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:496:33: error: 'struct ButtonState' has no member named 'releasedTime'
+  496 |                 if (buttonState.releasedTime - buttonState.pressedTime < LONG_PRESS_TIME) {
       |                                 ^~~~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:507:60: error: 'struct ButtonState' has no member named 'pressedTime'; did you mean 'pressTime'?
-  507 |                 if (buttonState.releasedTime - buttonState.pressedTime < LONG_PRESS_TIME) {
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:496:60: error: 'struct ButtonState' has no member named 'pressedTime'; did you mean 'pressTime'?
+  496 |                 if (buttonState.releasedTime - buttonState.pressedTime < LONG_PRESS_TIME) {
       |                                                            ^~~~~~~~~~~
       |                                                            pressTime
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:509:28: error: 'struct Status' has no member named 'isServiceMode'; did you mean 'serviceMode'?
-  509 |                     status.isServiceMode = !status.isServiceMode;
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:498:28: error: 'struct Status' has no member named 'isServiceMode'; did you mean 'serviceMode'?
+  498 |                     status.isServiceMode = !status.isServiceMode;
       |                            ^~~~~~~~~~~~~
       |                            serviceMode
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:509:52: error: 'struct Status' has no member named 'isServiceMode'; did you mean 'serviceMode'?
-  509 |                     status.isServiceMode = !status.isServiceMode;
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:498:52: error: 'struct Status' has no member named 'isServiceMode'; did you mean 'serviceMode'?
+  498 |                     status.isServiceMode = !status.isServiceMode;
       |                                                    ^~~~~~~~~~~~~
       |                                                    serviceMode
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:511:51: error: 'struct Status' has no member named 'isServiceMode'; did you mean 'serviceMode'?
-  511 |                     switchService.setState(status.isServiceMode, true);  // force update w HA
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:500:51: error: 'struct Status' has no member named 'isServiceMode'; did you mean 'serviceMode'?
+  500 |                     switchService.setState(status.isServiceMode, true);  // force update w HA
       |                                                   ^~~~~~~~~~~~~
       |                                                   serviceMode
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:514:82: error: 'struct Status' has no member named 'isServiceMode'; did you mean 'serviceMode'?
-  514 |                     DEBUG_PRINTF("Tryb serwisowy: %s (przez przycisk)\n", status.isServiceMode ? "WŁĄCZONY" : "WYŁĄCZONY");
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:503:82: error: 'struct Status' has no member named 'isServiceMode'; did you mean 'serviceMode'?
+  503 |                     DEBUG_PRINTF("Tryb serwisowy: %s (przez przycisk)\n", status.isServiceMode ? "WŁĄCZONY" : "WYŁĄCZONY");
       |                                                                                  ^~~~~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:44:61: note: in definition of macro 'DEBUG_PRINTF'
-   44 |     #define DEBUG_PRINTF(format, ...) Serial.printf(format, __VA_ARGS__)
-      |                                                             ^~~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:517:32: error: 'struct Status' has no member named 'isServiceMode'; did you mean 'serviceMode'?
-  517 |                     if (status.isServiceMode && status.isPumpActive) {
+      |                                                                                  serviceMode
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:503:21: error: 'DEBUG_PRINTF' was not declared in this scope; did you mean 'DEBUG_PRINT'?
+  503 |                     DEBUG_PRINTF("Tryb serwisowy: %s (przez przycisk)\n", status.isServiceMode ? "WŁĄCZONY" : "WYŁĄCZONY");
+      |                     ^~~~~~~~~~~~
+      |                     DEBUG_PRINT
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:506:32: error: 'struct Status' has no member named 'isServiceMode'; did you mean 'serviceMode'?
+  506 |                     if (status.isServiceMode && status.isPumpActive) {
       |                                ^~~~~~~~~~~~~
       |                                serviceMode
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:517:56: error: 'struct Status' has no member named 'isPumpActive'; did you mean 'pumpActive'?
-  517 |                     if (status.isServiceMode && status.isPumpActive) {
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:506:56: error: 'struct Status' has no member named 'isPumpActive'; did you mean 'pumpActive'?
+  506 |                     if (status.isServiceMode && status.isPumpActive) {
       |                                                        ^~~~~~~~~~~~
       |                                                        pumpActive
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:518:38: error: 'POMPA_PIN' was not declared in this scope; did you mean 'NOT_A_PIN'?
-  518 |                         digitalWrite(POMPA_PIN, LOW);  // Wyłącz pompę
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:507:38: error: 'POMPA_PIN' was not declared in this scope; did you mean 'NOT_A_PIN'?
+  507 |                         digitalWrite(POMPA_PIN, LOW);  // Wyłącz pompę
       |                                      ^~~~~~~~~
       |                                      NOT_A_PIN
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:519:32: error: 'struct Status' has no member named 'isPumpActive'; did you mean 'pumpActive'?
-  519 |                         status.isPumpActive = false;  // Reset flagi aktywności
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:508:32: error: 'struct Status' has no member named 'isPumpActive'; did you mean 'pumpActive'?
+  508 |                         status.isPumpActive = false;  // Reset flagi aktywności
       |                                ^~~~~~~~~~~~
       |                                pumpActive
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:520:32: error: 'struct Status' has no member named 'pumpStartTime'
-  520 |                         status.pumpStartTime = 0;  // Reset czasu startu
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:509:32: error: 'struct Status' has no member named 'pumpStartTime'
+  509 |                         status.pumpStartTime = 0;  // Reset czasu startu
       |                                ^~~~~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:528:44: error: 'struct ButtonState' has no member named 'isLongPressHandled'
-  528 |         if (reading == LOW && !buttonState.isLongPressHandled) {
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:517:44: error: 'struct ButtonState' has no member named 'isLongPressHandled'
+  517 |         if (reading == LOW && !buttonState.isLongPressHandled) {
       |                                            ^~~~~~~~~~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:529:40: error: 'struct ButtonState' has no member named 'pressedTime'; did you mean 'pressTime'?
-  529 |             if (millis() - buttonState.pressedTime >= LONG_PRESS_TIME) {
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:518:40: error: 'struct ButtonState' has no member named 'pressedTime'; did you mean 'pressTime'?
+  518 |             if (millis() - buttonState.pressedTime >= LONG_PRESS_TIME) {
       |                                        ^~~~~~~~~~~
       |                                        pressTime
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:531:24: error: 'struct Status' has no member named 'pumpSafetyLock'
-  531 |                 status.pumpSafetyLock = false;  // Zdjęcie blokady pompy
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:520:24: error: 'struct Status' has no member named 'pumpSafetyLock'
+  520 |                 status.pumpSafetyLock = false;  // Zdjęcie blokady pompy
       |                        ^~~~~~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:534:29: error: 'struct ButtonState' has no member named 'isLongPressHandled'
-  534 |                 buttonState.isLongPressHandled = true;  // Oznacz jako obsłużone
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:523:29: error: 'struct ButtonState' has no member named 'isLongPressHandled'
+  523 |                 buttonState.isLongPressHandled = true;  // Oznacz jako obsłużone
       |                             ^~~~~~~~~~~~~~~~~~
 C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino: In function 'void onSoundSwitchCommand(bool, HASwitch*)':
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:546:12: error: 'struct Status' has no member named 'soundEnabled'
-  546 |     status.soundEnabled = state;  // Aktualizuj status lokalny
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:535:12: error: 'struct Status' has no member named 'soundEnabled'
+  535 |     status.soundEnabled = state;  // Aktualizuj status lokalny
       |            ^~~~~~~~~~~~
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:547:5: error: 'DEBUG_PRINTF' was not declared in this scope; did you mean 'DEBUG_PRINT'?
+  547 |     DEBUG_PRINTF("Zmieniono stan dźwięku na: ", state ? "WŁĄCZONY" : "WYŁĄCZONY");
+      |     ^~~~~~~~~~~~
+      |     DEBUG_PRINT
 C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino: In function 'void onServiceSwitchCommand(bool, HASwitch*)':
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:572:12: error: 'struct Status' has no member named 'isServiceMode'; did you mean 'serviceMode'?
-  572 |     status.isServiceMode = state;  // Ustawienie flagi trybu serwisowego
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:561:12: error: 'struct Status' has no member named 'isServiceMode'; did you mean 'serviceMode'?
+  561 |     status.isServiceMode = state;  // Ustawienie flagi trybu serwisowego
       |            ^~~~~~~~~~~~~
       |            serviceMode
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:573:17: error: 'struct ButtonState' has no member named 'lastState'
-  573 |     buttonState.lastState = HIGH;  // Reset stanu przycisku
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:562:17: error: 'struct ButtonState' has no member named 'lastState'
+  562 |     buttonState.lastState = HIGH;  // Reset stanu przycisku
       |                 ^~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:579:20: error: 'struct Status' has no member named 'isPumpActive'; did you mean 'pumpActive'?
-  579 |         if (status.isPumpActive) {
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:568:20: error: 'struct Status' has no member named 'isPumpActive'; did you mean 'pumpActive'?
+  568 |         if (status.isPumpActive) {
       |                    ^~~~~~~~~~~~
       |                    pumpActive
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:580:26: error: 'POMPA_PIN' was not declared in this scope; did you mean 'NOT_A_PIN'?
-  580 |             digitalWrite(POMPA_PIN, LOW);  // Wyłączenie pompy
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:569:26: error: 'POMPA_PIN' was not declared in this scope; did you mean 'NOT_A_PIN'?
+  569 |             digitalWrite(POMPA_PIN, LOW);  // Wyłączenie pompy
       |                          ^~~~~~~~~
       |                          NOT_A_PIN
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:581:20: error: 'struct Status' has no member named 'isPumpActive'; did you mean 'pumpActive'?
-  581 |             status.isPumpActive = false;  // Reset flagi aktywności
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:570:20: error: 'struct Status' has no member named 'isPumpActive'; did you mean 'pumpActive'?
+  570 |             status.isPumpActive = false;  // Reset flagi aktywności
       |                    ^~~~~~~~~~~~
       |                    pumpActive
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:582:20: error: 'struct Status' has no member named 'pumpStartTime'
-  582 |             status.pumpStartTime = 0;  // Reset czasu startu
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:571:20: error: 'struct Status' has no member named 'pumpStartTime'
+  571 |             status.pumpStartTime = 0;  // Reset czasu startu
       |                    ^~~~~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:587:16: error: 'struct Status' has no member named 'isPumpDelayActive'
-  587 |         status.isPumpDelayActive = false;
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:576:16: error: 'struct Status' has no member named 'isPumpDelayActive'
+  576 |         status.isPumpDelayActive = false;
       |                ^~~~~~~~~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:588:16: error: 'struct Status' has no member named 'pumpDelayStartTime'
-  588 |         status.pumpDelayStartTime = 0;
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:577:16: error: 'struct Status' has no member named 'pumpDelayStartTime'
+  577 |         status.pumpDelayStartTime = 0;
       |                ^~~~~~~~~~~~~~~~~~
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:582:5: error: 'DEBUG_PRINTF' was not declared in this scope; did you mean 'DEBUG_PRINT'?
+  582 |     DEBUG_PRINTF("Tryb serwisowy: %s (przez HA)\n", state ? "WŁĄCZONY" : "WYŁĄCZONY");
+      |     ^~~~~~~~~~~~
+      |     DEBUG_PRINT
 C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino: In function 'String getConfigPage()':
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1077:42: error: 'struct Config' has no member named 'mqtt_server'; did you mean 'mqttUser'?
- 1077 |     html.replace("%MQTT_SERVER%", config.mqtt_server);
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1066:42: error: 'struct Config' has no member named 'mqtt_server'; did you mean 'mqttUser'?
+ 1066 |     html.replace("%MQTT_SERVER%", config.mqtt_server);
       |                                          ^~~~~~~~~~~
       |                                          mqttUser
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1078:47: error: 'struct Config' has no member named 'mqtt_port'; did you mean 'mqttPort'?
- 1078 |     html.replace("%MQTT_PORT%", String(config.mqtt_port));
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1067:47: error: 'struct Config' has no member named 'mqtt_port'; did you mean 'mqttPort'?
+ 1067 |     html.replace("%MQTT_PORT%", String(config.mqtt_port));
       |                                               ^~~~~~~~~
       |                                               mqttPort
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1079:40: error: 'struct Config' has no member named 'mqtt_user'; did you mean 'mqttUser'?
- 1079 |     html.replace("%MQTT_USER%", config.mqtt_user);
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1068:40: error: 'struct Config' has no member named 'mqtt_user'; did you mean 'mqttUser'?
+ 1068 |     html.replace("%MQTT_USER%", config.mqtt_user);
       |                                        ^~~~~~~~~
       |                                        mqttUser
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1080:44: error: 'struct Config' has no member named 'mqtt_password'; did you mean 'mqttPassword'?
- 1080 |     html.replace("%MQTT_PASSWORD%", config.mqtt_password);
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1069:44: error: 'struct Config' has no member named 'mqtt_password'; did you mean 'mqttPassword'?
+ 1069 |     html.replace("%MQTT_PASSWORD%", config.mqtt_password);
       |                                            ^~~~~~~~~~~~~
       |                                            mqttPassword
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1086:48: error: 'struct Config' has no member named 'tank_empty'
- 1086 |     html.replace("%TANK_EMPTY%", String(config.tank_empty));
-      |                                                ^~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1087:47: error: 'struct Config' has no member named 'tank_full'
- 1087 |     html.replace("%TANK_FULL%", String(config.tank_full));
-      |                                               ^~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1088:51: error: 'struct Config' has no member named 'reserve_level'
- 1088 |     html.replace("%RESERVE_LEVEL%", String(config.reserve_level));
-      |                                                   ^~~~~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1089:51: error: 'struct Config' has no member named 'tank_diameter'
- 1089 |     html.replace("%TANK_DIAMETER%", String(config.tank_diameter));
-      |                                                   ^~~~~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1090:48: error: 'struct Config' has no member named 'pump_delay'
- 1090 |     html.replace("%PUMP_DELAY%", String(config.pump_delay));
-      |                                                ^~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1091:52: error: 'struct Config' has no member named 'pump_work_time'
- 1091 |     html.replace("%PUMP_WORK_TIME%", String(config.pump_work_time));
-      |                                                    ^~~~~~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1105:27: error: 'struct Config' has no member named 'mqtt_server'; did you mean 'mqttUser'?
- 1105 |     configForms += config.mqtt_server;
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1088:27: error: 'struct Config' has no member named 'mqtt_server'; did you mean 'mqttUser'?
+ 1088 |     configForms += config.mqtt_server;
       |                           ^~~~~~~~~~~
       |                           mqttUser
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1108:34: error: 'struct Config' has no member named 'mqtt_port'; did you mean 'mqttPort'?
- 1108 |     configForms += String(config.mqtt_port);
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1091:34: error: 'struct Config' has no member named 'mqtt_port'; did you mean 'mqttPort'?
+ 1091 |     configForms += String(config.mqtt_port);
       |                                  ^~~~~~~~~
       |                                  mqttPort
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1111:27: error: 'struct Config' has no member named 'mqtt_user'; did you mean 'mqttUser'?
- 1111 |     configForms += config.mqtt_user;
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1094:27: error: 'struct Config' has no member named 'mqtt_user'; did you mean 'mqttUser'?
+ 1094 |     configForms += config.mqtt_user;
       |                           ^~~~~~~~~
       |                           mqttUser
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1114:27: error: 'struct Config' has no member named 'mqtt_password'; did you mean 'mqttPassword'?
- 1114 |     configForms += config.mqtt_password;
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1097:27: error: 'struct Config' has no member named 'mqtt_password'; did you mean 'mqttPassword'?
+ 1097 |     configForms += config.mqtt_password;
       |                           ^~~~~~~~~~~~~
       |                           mqttPassword
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1122:131: error: 'struct Config' has no member named 'tank_empty'
- 1122 |     configForms += "<tr><td>Odległość przy pustym [mm]</td><td><input type='number' name='tank_empty' value='" + String(config.tank_empty) + "'></td></tr>";
-      |                                                                                                                                ^~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1123:131: error: 'struct Config' has no member named 'tank_full'
- 1123 |     configForms += "<tr><td>Odległość przy pełnym [mm]</td><td><input type='number' name='tank_full' value='" + String(config.tank_full) + "'></td></tr>";
-      |                                                                                                                               ^~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1124:136: error: 'struct Config' has no member named 'reserve_level'
- 1124 |     configForms += "<tr><td>Odległość przy rezerwie [mm]</td><td><input type='number' name='reserve_level' value='" + String(config.reserve_level) + "'></td></tr>";
-      |                                                                                                                                     ^~~~~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1125:129: error: 'struct Config' has no member named 'tank_diameter'
- 1125 |     configForms += "<tr><td>Średnica zbiornika [mm]</td><td><input type='number' name='tank_diameter' value='" + String(config.tank_diameter) + "'></td></tr>";
-      |                                                                                                                                ^~~~~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1132:137: error: 'struct Config' has no member named 'pump_delay'
- 1132 |     configForms += "<tr><td>Opóźnienie załączenia pompy [s]</td><td><input type='number' name='pump_delay' value='" + String(config.pump_delay) + "'></td></tr>";
-      |                                                                                                                                     ^~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1133:126: error: 'struct Config' has no member named 'pump_work_time'
- 1133 |     configForms += "<tr><td>Czas pracy pompy [s]</td><td><input type='number' name='pump_work_time' value='" + String(config.pump_work_time) + "'></td></tr>";
-      |                                                                                                                              ^~~~~~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:44:72: error: expected primary-expression before ')' token
-   44 |     #define DEBUG_PRINTF(format, ...) Serial.printf(format, __VA_ARGS__)
-      |                                                                        ^
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1144:9: note: in expansion of macro 'DEBUG_PRINTF'
- 1144 |         DEBUG_PRINTF("Uwaga: Niektóre znaczniki nie zostały zastąpione!");
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1127:9: error: 'DEBUG_PRINTF' was not declared in this scope; did you mean 'DEBUG_PRINT'?
+ 1127 |         DEBUG_PRINTF("Uwaga: Niektóre znaczniki nie zostały zastąpione!");
       |         ^~~~~~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:44:72: error: expected primary-expression before ')' token
-   44 |     #define DEBUG_PRINTF(format, ...) Serial.printf(format, __VA_ARGS__)
-      |                                                                        ^
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1146:9: note: in expansion of macro 'DEBUG_PRINTF'
- 1146 |         DEBUG_PRINTF(html.substring(pos - 20, pos + 20));
-      |         ^~~~~~~~~~~~
+      |         DEBUG_PRINT
 C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino: In function 'bool validateConfigValues()':
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1161:9: error: 'webServer' was not declared in this scope; did you mean 'DNSServer'?
- 1161 |     if (webServer.arg("hostname").length() >= sizeof(config.hostname)) return false;
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1144:9: error: 'webServer' was not declared in this scope; did you mean 'DNSServer'?
+ 1144 |     if (webServer.arg("hostname").length() >= sizeof(config.hostname)) return false;
       |         ^~~~~~~~~
       |         DNSServer
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1162:9: error: 'webServer' was not declared in this scope; did you mean 'DNSServer'?
- 1162 |     if (webServer.arg("mqtt_host").length() >= sizeof(config.mqttHost)) return false;
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1145:9: error: 'webServer' was not declared in this scope; did you mean 'DNSServer'?
+ 1145 |     if (webServer.arg("mqtt_host").length() >= sizeof(config.mqttHost)) return false;
       |         ^~~~~~~~~
       |         DNSServer
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1163:9: error: 'webServer' was not declared in this scope; did you mean 'DNSServer'?
- 1163 |     if (webServer.arg("mqtt_user").length() >= sizeof(config.mqttUser)) return false;
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1146:9: error: 'webServer' was not declared in this scope; did you mean 'DNSServer'?
+ 1146 |     if (webServer.arg("mqtt_user").length() >= sizeof(config.mqttUser)) return false;
       |         ^~~~~~~~~
       |         DNSServer
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1164:9: error: 'webServer' was not declared in this scope; did you mean 'DNSServer'?
- 1164 |     if (webServer.arg("mqtt_pass").length() >= sizeof(config.mqttPass)) return false;
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1147:9: error: 'webServer' was not declared in this scope; did you mean 'DNSServer'?
+ 1147 |     if (webServer.arg("mqtt_pass").length() >= sizeof(config.mqttPass)) return false;
       |         ^~~~~~~~~
       |         DNSServer
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1164:62: error: 'struct Config' has no member named 'mqttPass'
- 1164 |     if (webServer.arg("mqtt_pass").length() >= sizeof(config.mqttPass)) return false;
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1147:62: error: 'struct Config' has no member named 'mqttPass'
+ 1147 |     if (webServer.arg("mqtt_pass").length() >= sizeof(config.mqttPass)) return false;
       |                                                              ^~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1168:22: error: 'webServer' was not declared in this scope; did you mean 'DNSServer'?
- 1168 |         float dose = webServer.arg("p" + String(i) + "_dose").toFloat();
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1151:22: error: 'webServer' was not declared in this scope; did you mean 'DNSServer'?
+ 1151 |         float dose = webServer.arg("p" + String(i) + "_dose").toFloat();
       |                      ^~~~~~~~~
       |                      DNSServer
 C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino: In function 'void handleSave()':
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1183:9: error: 'webServer' was not declared in this scope; did you mean 'DNSServer'?
- 1183 |     if (webServer.method() != HTTP_POST) {
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1166:9: error: 'webServer' was not declared in this scope; did you mean 'DNSServer'?
+ 1166 |     if (webServer.method() != HTTP_POST) {
       |         ^~~~~~~~~
       |         DNSServer
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1196:29: error: 'struct Config' has no member named 'mqttPass'
- 1196 |     String oldPass = config.mqttPass;
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1179:29: error: 'struct Config' has no member named 'mqttPass'
+ 1179 |     String oldPass = config.mqttPass;
       |                             ^~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1199:9: error: 'webServer' was not declared in this scope; did you mean 'DNSServer'?
- 1199 |     if (webServer.hasArg("hostname")) {
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1182:9: error: 'webServer' was not declared in this scope; did you mean 'DNSServer'?
+ 1182 |     if (webServer.hasArg("hostname")) {
       |         ^~~~~~~~~
       |         DNSServer
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1202:9: error: 'webServer' was not declared in this scope; did you mean 'DNSServer'?
- 1202 |     if (webServer.hasArg("mqtt_host")) {
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1185:9: error: 'webServer' was not declared in this scope; did you mean 'DNSServer'?
+ 1185 |     if (webServer.hasArg("mqtt_host")) {
       |         ^~~~~~~~~
       |         DNSServer
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1205:9: error: 'webServer' was not declared in this scope; did you mean 'DNSServer'?
- 1205 |     if (webServer.hasArg("mqtt_port")) {
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1188:9: error: 'webServer' was not declared in this scope; did you mean 'DNSServer'?
+ 1188 |     if (webServer.hasArg("mqtt_port")) {
       |         ^~~~~~~~~
       |         DNSServer
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1208:9: error: 'webServer' was not declared in this scope; did you mean 'DNSServer'?
- 1208 |     if (webServer.hasArg("mqtt_user")) {
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1191:9: error: 'webServer' was not declared in this scope; did you mean 'DNSServer'?
+ 1191 |     if (webServer.hasArg("mqtt_user")) {
       |         ^~~~~~~~~
       |         DNSServer
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1211:9: error: 'webServer' was not declared in this scope; did you mean 'DNSServer'?
- 1211 |     if (webServer.hasArg("mqtt_pass")) {
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1194:9: error: 'webServer' was not declared in this scope; did you mean 'DNSServer'?
+ 1194 |     if (webServer.hasArg("mqtt_pass")) {
       |         ^~~~~~~~~
       |         DNSServer
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1212:24: error: 'struct Config' has no member named 'mqttPass'
- 1212 |         strlcpy(config.mqttPass, webServer.arg("mqtt_pass").c_str(), sizeof(config.mqttPass));
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1195:24: error: 'struct Config' has no member named 'mqttPass'
+ 1195 |         strlcpy(config.mqttPass, webServer.arg("mqtt_pass").c_str(), sizeof(config.mqttPass));
       |                        ^~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1212:84: error: 'struct Config' has no member named 'mqttPass'
- 1212 |         strlcpy(config.mqttPass, webServer.arg("mqtt_pass").c_str(), sizeof(config.mqttPass));
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1195:84: error: 'struct Config' has no member named 'mqttPass'
+ 1195 |         strlcpy(config.mqttPass, webServer.arg("mqtt_pass").c_str(), sizeof(config.mqttPass));
       |                                                                                    ^~~~~~~~
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1214:27: error: 'webServer' was not declared in this scope; did you mean 'DNSServer'?
- 1214 |     config.soundEnabled = webServer.hasArg("sound_enabled");
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1197:27: error: 'webServer' was not declared in this scope; did you mean 'DNSServer'?
+ 1197 |     config.soundEnabled = webServer.hasArg("sound_enabled");
       |                           ^~~~~~~~~
       |                           DNSServer
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1222:29: error: 'struct PumpConfig' has no member named 'dosage'; did you mean 'dosage_ml'?
- 1222 |             config.pumps[i].dosage = webServer.arg(pumpPrefix + "_dose").toFloat();
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1205:29: error: 'struct PumpConfig' has no member named 'dosage'; did you mean 'dosage_ml'?
+ 1205 |             config.pumps[i].dosage = webServer.arg(pumpPrefix + "_dose").toFloat();
       |                             ^~~~~~
       |                             dosage_ml
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1245:27: error: 'struct Config' has no member named 'mqttPass'
- 1245 |         oldPass != config.mqttPass) {
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1228:27: error: 'struct Config' has no member named 'mqttPass'
+ 1228 |         oldPass != config.mqttPass) {
       |                           ^~~~~~~~
 C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino: In function 'void loop()':
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1400:15: error: 'class HAMqtt' has no member named 'connected'; did you mean 'onConnected'?
- 1400 |     if (!mqtt.connected()) {
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1388:15: error: 'class HAMqtt' has no member named 'connected'; did you mean 'onConnected'?
+ 1388 |     if (!mqtt.connected()) {
       |               ^~~~~~~~~
       |               onConnected
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1406:5: error: 'webServer' was not declared in this scope; did you mean 'DNSServer'?
- 1406 |     webServer.handleClient();
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1394:5: error: 'webServer' was not declared in this scope; did you mean 'DNSServer'?
+ 1394 |     webServer.handleClient();
       |     ^~~~~~~~~
       |     DNSServer
-C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1410:20: error: 'struct Status' has no member named 'pumps'
- 1410 |         if (status.pumps[i].isRunning) {
+C:\Users\piotrek\Documents\Arduino\AquaDoser_2_12_24\AquaDoser_2_12_24.ino:1398:20: error: 'struct Status' has no member named 'pumps'
+ 1398 |         if (status.pumps[i].isRunning) {
       |                    ^~~~~
 
 exit status 1
