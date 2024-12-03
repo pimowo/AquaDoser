@@ -16,10 +16,10 @@
 // ** DEFINICJE PINÓW **
 
 // Przypisanie pinów do urządzeń
-const int NUMBER_OF_PUMPS = 8;  // Ilość pomp
+const uint8_t NUMBER_OF_PUMPS = 8;  // Ilość pomp
 const int BUZZER_PIN = 13;      // GPIO 13
 const int LED_PIN = 12;         // GPIO 12
-const int PRZYCISK_PIN = 14;    // GPIO 14
+const int BUTTON_PIN = 14;    // GPIO 14
 const int SDA_PIN = 4;          // GPIO 4
 const int SCL_PIN = 5;          // GPIO 5
 
@@ -148,20 +148,20 @@ float waterLevelBeforePump = 0;     // Poziom wody przed uruchomieniem pompy
 
 // ** INSTANCJE URZĄDZEŃ I USŁUG **
 
+// Serwer HTTP i WebSockets
+ESP8266WebServer server(80);     // Tworzenie instancji serwera HTTP na porcie 80
+WebSocketsServer webSocket(81);  // Tworzenie instancji serwera WebSockets na porcie 81
+
 // Wi-Fi, MQTT i Home Assistant
 WiFiClient client;              // Klient połączenia WiFi
 HADevice device("AquaDoser");  // Definicja urządzenia dla Home Assistant
 HAMqtt mqtt(client, device);    // Klient MQTT dla Home Assistant
 
-// Serwer HTTP i WebSockets
-ESP8266WebServer server(80);     // Tworzenie instancji serwera HTTP na porcie 80
-WebSocketsServer webSocket(81);  // Tworzenie instancji serwera WebSockets na porcie 81
-
 // Czujniki i przełączniki dla Home Assistant
 
-// Przełączniki
-HASwitch* pumpSwitches[NUMBER_OF_PUMPS];// = {nullptr};  // Tablica przełączników pomp
-//HASwitch switchPumpAlarm("pump_alarm");  // Resetowania blokady pompy
+HABinarySensor* pumpStates[NUMBER_OF_PUMPS];  // Sensory do pokazywania aktualnego stanu pomp (włączona/wyłączona)
+
+HASwitch* pumpSchedules[NUMBER_OF_PUMPS];  // Przełączniki do aktywacji/deaktywacji harmonogramu dla każdej pompy
 HASwitch switchService("service_mode");  // Tryb serwisowy
 HASwitch switchSound("sound_switch");    // Dźwięki systemu
 
@@ -782,14 +782,12 @@ void playConfirmationSound() {
 // ** FUNKCJE ALARMÓW I STEROWANIA POMPĄ **
 
 // Inicjalizacja PCF8574
-void setupPCF8574() {
-    if (pcf8574.begin()) {
-        for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-            pcf8574.digitalWrite(config.pumps[i].pcf8574_pin, HIGH);  // HIGH = pompa wyłączona
-            status.pumps[i].isRunning = false;
-            status.pumps[i].lastDose = 0;
-            status.pumps[i].totalDosed = 0;
-        }
+void setupPump() {
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        pcf8574.digitalWrite(config.pumps[i].pcf8574_pin, HIGH);  // HIGH = pompa wyłączona
+        status.pumps[i].isRunning = false;
+        status.pumps[i].lastDose = 0;
+        status.pumps[i].totalDosed = 0;
     }
 }
 
@@ -866,7 +864,7 @@ void setupWiFi() {
     WiFiManager wifiManager;
 
     // Reset WiFi settings if the button is pressed
-    if (digitalRead(PRZYCISK_PIN) == LOW) {
+    if (digitalRead(BUTTON_PIN) == LOW) {
         wifiManager.resetSettings();
         delay(1000);
     }
@@ -891,14 +889,24 @@ void setupHA() {
     device.setManufacturer("PMW");  // Producent
     device.setSoftwareVersion(SOFTWARE_VERSION);  // Wersja oprogramowania
 
-    mqtt.begin(config.mqtt_server, config.mqtt_port, config.mqtt_user, config.mqtt_password);  // Połącz z MQTT
-
-    // Bezpieczna inicjalizacja przełączników
+    // Tworzenie sensorów dla aktualnego stanu pomp
     for(int i = 0; i < NUMBER_OF_PUMPS; i++) {
-        pumpSwitches[i]->setName(String("Pompa " + String(i + 1)).c_str());
-        pumpSwitches[i]->setIcon("mdi:water-pump");
-        //pumpSwitches[i]->onCommand(onPumpCommand);
-        //pumpSwitches[i]->setState(false);
+        char uniqueId[32];
+        sprintf(uniqueId, "stan_pumpy_%d", i + 1);
+        
+        pumpStates[i] = new HABinarySensor(uniqueId);
+        pumpStates[i]->setName(String("Stan Pompy ") + String(i + 1));
+        pumpStates[i]->setDeviceClass("running");
+    }
+    
+    // Tworzenie przełączników do aktywacji harmonogramu
+    for(int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        char uniqueId[32];
+        sprintf(uniqueId, "pompa_%d", i + 1);
+        
+        pumpSchedules[i] = new HASwitch(uniqueId);
+        pumpSchedules[i]->setName(String("Pompa ") + String(i + 1));
+        pumpSchedules[i]->onCommand(onPumpCommand);
     }
 
     switchSound.setName("Dźwięk");
@@ -909,15 +917,26 @@ void setupHA() {
     switchService.setName("Serwis");
     switchService.setIcon("mdi:account-wrench-outline");  
     switchService.onCommand(onServiceSwitchCommand);  // Funkcja obsługi zmiany stanu    
+
+    mqtt.begin(config.mqtt_server, config.mqtt_port, config.mqtt_user, config.mqtt_password);  // Połącz z MQTT
 }
 
 // ** FUNKCJE ZWIĄZANE Z PINAMI **
 
 // Konfiguracja pinów wejścia/wyjścia
 void setupPin() {   
-    pinMode(PRZYCISK_PIN, INPUT_PULLUP);  // Wejście z podciąganiem - przycisk
+    pinMode(BUTTON_PIN, INPUT_PULLUP);  // Wejście z podciąganiem - przycisk
+
     pinMode(BUZZER_PIN, OUTPUT);  // Wyjście - buzzer
     digitalWrite(BUZZER_PIN, LOW);  // Wyłączenie buzzera
+
+    pcf8574.begin();
+    
+    // Ustaw wszystkie piny jako wyjścia
+    for(int i = 0; i < 8; i++) {
+        pcf8574.pinMode(i, OUTPUT);
+        pcf8574.digitalWrite(i, HIGH);  // HIGH = wyłączone (logika ujemna)
+    }
 }
 
 // Odtwarzaj melodię powitalną
@@ -952,7 +971,7 @@ void handleButton() {
     static bool lastReading = HIGH;
     const unsigned long DEBOUNCE_DELAY = 50;  // 50ms debounce
 
-    bool reading = digitalRead(PRZYCISK_PIN);
+    bool reading = digitalRead(BUTTON_PIN);
 
     // Jeśli odczyt się zmienił, zresetuj timer debounce
     if (reading != lastReading) {
@@ -1026,29 +1045,21 @@ void onSoundSwitchCommand(bool state, HASwitch* sender) {
     AQUA_DEBUG_PRINTF("Zmieniono stan dźwięku na: ", state ? "WŁĄCZONY" : "WYŁĄCZONY");
 }
 
-// Deklaracja funkcji callback bez parametru int
+// Callback dla przełączników aktywacji pomp
 void onPumpCommand(bool state, HASwitch* sender) {
-    if (sender == nullptr) {
-        Serial.println("Błąd: null sender w onPumpCommand");
-        return;
-    }
-
-    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-        if (pumpSwitches[i] == nullptr) continue;
-        
-        if (sender == pumpSwitches[i]) {
-            Serial.printf("Komenda dla pompy %d: %s\n", i + 1, state ? "ON" : "OFF");
-            
-            if (state) {
-                turnOnPump(i);
-            } else {
-                turnOffPump(i);
-            }
-            
-            // Aktualizacja stanu
-            pumpSwitches[i]->setState(state);
+    // Znajdź indeks pompy
+    int pumpIndex = -1;
+    for(int i = 0; i < 8; i++) {
+        if(sender == pumpSchedules[i]) {
+            pumpIndex = i;
             break;
         }
+    }
+    
+    if(pumpIndex >= 0) {
+        // Tu później dodamy kod obsługi włączania/wyłączania harmonogramu
+        // Na razie tylko aktualizujemy stan w HA
+        sender->setState(state);
     }
 }
 
@@ -1391,11 +1402,9 @@ void setup() {
         saveConfig();  // Zapisz domyślną konfigurację do EEPROM
     }
 
-    // Inicjalizacja pinu buzzera (jeśli używany)
-    pinMode(BUZZER_PIN, OUTPUT);
-    digitalWrite(BUZZER_PIN, LOW);
-       
-    setupPCF8574();  // Inicjalizacja PCF8574   
+    setupPin();
+    setupPump();
+  
     WiFiManager wifiManager;
     wifiManager.autoConnect("AquaDoser");  // Samo zadba o połączenie
     setupWebServer();
@@ -1420,11 +1429,10 @@ void loop() {
     mqtt.loop();  // Obsługa MQTT
     server.handleClient();  // Obsługa serwera WWW
     
-    // Sprawdzenie stanu pomp i bezpieczeństwa
+    // Aktualizacja stanu sensorów na podstawie PCF8574
     for(int i = 0; i < 8; i++) {
-        if (status.pumps[i].isRunning) {
-            // Tutaj później dodamy logikę czasu dozowania
-        }
+        bool pumpState = !pcf8574.read(i);  // Negacja bo logika ujemna
+        pumpStates[i]->setState(pumpState);
     }
     
     // Dodatkowe zabezpieczenie - wyłącz wszystkie pompy w trybie serwisowym
