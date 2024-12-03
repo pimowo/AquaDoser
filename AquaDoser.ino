@@ -81,13 +81,16 @@ struct Config {
 
 // Struktura do przechowywania różnych stanów i parametrów systemu
 struct Status {
-    bool mqttConnected;        // status połączenia z MQTT
-    bool pumpActive[NUMBER_OF_PUMPS];  // aktualny stan pomp (włączona/wyłączona)
-    bool serviceMode;          // czy urządzenie jest w trybie serwisowym
-    unsigned long lastDose[NUMBER_OF_PUMPS];  // timestamp ostatniego dozowania
-    float totalDosed[NUMBER_OF_PUMPS];  // całkowita ilość dozowana (ml)
-    bool networkConnected;     // status połączenia z siecią
-    uint8_t errorCode;        // kod błędu (0 = brak błędu)
+  unsigned long pumpStartTime;
+  unsigned long pumpDelayStartTime;
+  unsigned long lastSoundAlert;
+  unsigned long lastSuccessfulMeasurement;
+  bool isServiceMode;
+  bool isPumpActive;
+  bool isPumpDelayActive;
+  bool soundEnabled;
+  bool pumpSafetyLock;
+  Pump pumps[NUM_PUMPS];
 };
 
 // Stan przycisku
@@ -413,9 +416,11 @@ bool connectMQTT() {
 
 // Konfiguracja MQTT z Home Assistant
 void setupHA() {
-    device.setUniqueId("AquaDoser");
-    device.setName("AquaDoser");
-    device.setSoftwareVersion(SOFTWARE_VERSION);
+    // Konfiguracja urządzenia dla Home Assistant
+    device.setName("AquaDoser");  // Nazwa urządzenia
+    device.setModel("AD ESP8266");  // Model urządzenia
+    device.setManufacturer("PMW");  // Producent
+    device.setSoftwareVersion(SOFTWARE_VERSION);  // Wersja oprogramowania
 
     // Configure Home Assistant entities
     for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
@@ -424,10 +429,10 @@ void setupHA() {
         pumpSwitch->onCommand(onPumpCommand, i);
     }
 
-    HASwitch soundSwitch(device, "Sound");
+    //HASwitch switchSound("sound");
     soundSwitch.onCommand(onSoundSwitchCommand);
 
-    HASwitch serviceSwitch(device, "Service Mode");
+    //HASwitch serviceSwitch(device, "Service Mode");
     serviceSwitch.onCommand(onServiceSwitchCommand);
 
     firstUpdateHA();
