@@ -166,12 +166,12 @@ WebSocketsServer webSocket(81);  // Tworzenie instancji serwera WebSockets na po
 // Czujniki i przełączniki dla Home Assistant
 
 // Przełączniki
-HASwitch* pumpSwitches[NUMBER_OF_PUMPS] = {nullptr};  // Tablica przełączników pomp
+HASwitch* pumpSwitches[NUMBER_OF_PUMPS];// = {nullptr};  // Tablica przełączników pomp
 //HASwitch switchPumpAlarm("pump_alarm");  // Resetowania blokady pompy
 HASwitch switchService("service_mode");  // Tryb serwisowy
 HASwitch switchSound("sound_switch");    // Dźwięki systemu
 
-HASensor sensorPump("pump_status");  // Sensor statusu pompy
+//HASensor sensorPump("pump_status");  // Sensor statusu pompy
 
 // ** STRONA KONFIGURACYJNA **
 
@@ -708,23 +708,55 @@ void setDefaultConfig() {
 
 // Ładowanie konfiguracji z pamięci EEPROM
 bool loadConfig() {
-    EEPROM.begin(sizeof(Config));
-    EEPROM.get(0, config);
-
+    EEPROM.begin(sizeof(Config) + 1);  // +1 dla sumy kontrolnej
+    
+    // Tymczasowa struktura do wczytania danych
+    Config tempConfig;
+    
+    // Wczytaj dane z EEPROM do tymczasowej struktury
+    uint8_t *p = (uint8_t*)&tempConfig;
+    for (size_t i = 0; i < sizeof(Config); i++) {
+        p[i] = EEPROM.read(i);
+    }
+    
+    EEPROM.end();
+    
     // Sprawdź sumę kontrolną
-    if (config.checksum != calculateChecksum(config)) {
-        // Jeśli suma kontrolna się nie zgadza, ustaw domyślną konfigurację
+    char calculatedChecksum = calculateChecksum(tempConfig);
+    if (calculatedChecksum == tempConfig.checksum) {
+        // Jeśli suma kontrolna się zgadza, skopiuj dane do głównej struktury config
+        memcpy(&config, &tempConfig, sizeof(Config));
+        AQUA_DEBUG_PRINTF("Konfiguracja wczytana pomyślnie");
+        return true;
+    } else {
+        AQUA_DEBUG_PRINTF("Błąd sumy kontrolnej - ładowanie ustawień domyślnych");
         setDefaultConfig();
         return false;
     }
-    return true;
 }
 
 // Zapis aktualnej konfiguracji do pamięci EEPROM
 void saveConfig() {
+    EEPROM.begin(sizeof(Config) + 1);  // +1 dla sumy kontrolnej
+    
+    // Oblicz sumę kontrolną przed zapisem
     config.checksum = calculateChecksum(config);
-    EEPROM.put(0, config);
-    EEPROM.commit();
+    
+    // Zapisz strukturę do EEPROM
+    uint8_t *p = (uint8_t*)&config;
+    for (size_t i = 0; i < sizeof(Config); i++) {
+        EEPROM.write(i, p[i]);
+    }
+    
+    // Wykonaj faktyczny zapis do EEPROM
+    bool success = EEPROM.commit();
+    EEPROM.end();
+    
+    if (success) {
+        AQUA_DEBUG_PRINTF("Konfiguracja zapisana pomyślnie");
+    } else {
+        AQUA_DEBUG_PRINTF("Błąd zapisu konfiguracji!");
+    }
 }
 
 // Oblicz sumę kontrolną dla danej konfiguracji
@@ -877,25 +909,11 @@ void setupHA() {
     device.setSoftwareVersion(SOFTWARE_VERSION);  // Wersja oprogramowania
 
     // Bezpieczna inicjalizacja przełączników
-    for(uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
-        if (pumpSwitches[i] != nullptr) {
-            delete pumpSwitches[i];  // Usuń poprzednią instancję jeśli istnieje
-            pumpSwitches[i] = nullptr;
-        }
-
-        char uniqueId[32];
-        snprintf(uniqueId, sizeof(uniqueId), "pump_%d", i + 1);
-        
-        pumpSwitches[i] = new HASwitch(uniqueId);
-        if (pumpSwitches[i] == nullptr) {
-            Serial.printf("Błąd: Nie można utworzyć przełącznika dla pompy %d\n", i + 1);
-            continue;
-        }
-
+    for(int i = 0; i < NUMBER_OF_PUMPS; i++) {
         pumpSwitches[i]->setName(String("Pompa " + String(i + 1)).c_str());
         pumpSwitches[i]->setIcon("mdi:water-pump");
-        pumpSwitches[i]->onCommand(onPumpCommand);
-        pumpSwitches[i]->setState(false);
+        //pumpSwitches[i]->onCommand(onPumpCommand);
+        //pumpSwitches[i]->setState(false);
     }
 
     switchSound.setName("Dźwięk");
@@ -907,14 +925,7 @@ void setupHA() {
     switchService.setIcon("mdi:account-wrench-outline");  
     switchService.onCommand(onServiceSwitchCommand);  // Funkcja obsługi zmiany stanu
 
-    // Konfiguracja sensora statusu
-    sensorPump.setName("Status pomp");
-    sensorPump.setIcon("mdi:information");
-
-    // Inicjalizacja MQTT
-    if (mqtt.begin(config.mqtt_server, 1883, config.mqtt_user, config.mqtt_password)) {  
-        AQUA_DEBUG_PRINT("MQTT zainicjalizowane");
-    }
+    //mqtt.begin();
 }
 
 // ** FUNKCJE ZWIĄZANE Z PINAMI **
@@ -1326,13 +1337,16 @@ void handleDoUpdate() {
 }
 
 void updatePumpState(uint8_t pumpIndex, bool state) {
+    //pumps[pumpIndex].state = state;
+    //pumps[pumpIndex].haSwitch->setState(state); // Aktualizuj stan w HA
+
     if (pumpIndex < NUMBER_OF_PUMPS && pumpSwitches[pumpIndex] != nullptr) {
         pumpSwitches[pumpIndex]->setState(state, true); // force update
         
         // Aktualizacja sensora statusu
         String statusText = "Pompa_" + String(pumpIndex + 1) + 
                           (state ? "ON" : "OFF");
-        sensorPump.setValue(statusText.c_str());
+        //sensorPump.setValue(statusText.c_str());
         
         mqtt.loop(); // Wymuszenie aktualizacji
     }
@@ -1387,14 +1401,11 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length
 // ** Funkcja setup - inicjalizacja urządzeń i konfiguracja **
 
 void setup() {
-    Serial.begin(115200);
+    //ESP.wdtEnable(WATCHDOG_TIMEOUT);  // Aktywacja watchdoga
+    Serial.begin(115200);  // Inicjalizacja portu szeregowego
     Serial.println("\nAquaDoser Starting...");
     
-    EEPROM.begin(sizeof(Config));
-    
-    // Inicjalizacja pinu buzzera (jeśli używany)
-    pinMode(BUZZER_PIN, OUTPUT);
-    digitalWrite(BUZZER_PIN, LOW);
+    //(sizeof(Config));
     
     // Wczytaj konfigurację na początku
     if (!loadConfig()) {
@@ -1402,22 +1413,30 @@ void setup() {
         setDefaultConfig();
         saveConfig();  // Zapisz domyślną konfigurację do EEPROM
     }
-    
+
+    // Inicjalizacja pinu buzzera (jeśli używany)
+    pinMode(BUZZER_PIN, OUTPUT);
+    digitalWrite(BUZZER_PIN, LOW);
+       
     setupPCF8574();  // Inicjalizacja PCF8574
     setupWiFi();     // Konfiguracja WiFi    
     setupWebServer();// Konfiguracja serwera WWW
     webSocket.begin();
     webSocket.onEvent(webSocketEvent);
+
+    // Próba połączenia MQTT
+    DEBUG_PRINT("Rozpoczynam połączenie MQTT...");
     connectMQTT();
+    
     setupHA();       // Konfiguracja Home Assistant
-    firstUpdateHA();  // Wyślij pierwsze odczyty do Home Assistant
+    //firstUpdateHA();  // Wyślij pierwsze odczyty do Home Assistant
 
     // Konfiguracja OTA
     ArduinoOTA.setHostname("AquaDoser");  // Ustaw nazwę urządzenia
     ArduinoOTA.setPassword("aquadoser");  // Ustaw hasło dla OTA
     ArduinoOTA.begin();  // Uruchom OTA   
 
-    welcomeMelody();
+    //welcomeMelody();
 }
 
 // ** Funkcja loop - główny cykl pracy urządzenia **
