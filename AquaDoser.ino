@@ -41,7 +41,6 @@ void updateHAState(uint8_t pumpIndex);
 // ** KONFIGURACJA SYSTEMU **
 
 // Makra debugowania
-// Makra debugowania
 #define DEBUG 0  // 0 wyłącza debug, 1 włącza debug
 
 #if DEBUG
@@ -53,7 +52,7 @@ void updateHAState(uint8_t pumpIndex);
 #endif
 
 // Zmienna przechowująca wersję oprogramowania
-const char* SOFTWARE_VERSION = "2.12.24";  // Definiowanie wersji oprogramowania
+const char* SOFTWARE_VERSION = "3.12.24";  // Definiowanie wersji oprogramowania
 
 // Struktury konfiguracyjne i statusowe
 
