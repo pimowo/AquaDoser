@@ -30,9 +30,7 @@ PCF8574 pcf8574(0x20);
 // Konfiguracja timeoutów i interwałów
 const unsigned long WATCHDOG_TIMEOUT = 8000;       // Timeout dla watchdoga
 const unsigned long LONG_PRESS_TIME = 1000;        // Czas długiego naciśnięcia przycisku
-const unsigned long MQTT_LOOP_INTERVAL = 100;      // Obsługa MQTT co 100ms
 const unsigned long OTA_CHECK_INTERVAL = 1000;     // Sprawdzanie OTA co 1s
-const unsigned long MQTT_RETRY_INTERVAL = 10000;   // Próba połączenia MQTT co 10s
 const unsigned long MILLIS_OVERFLOW_THRESHOLD = 4294967295U - 60000; // ~49.7 dni
 
 
@@ -936,17 +934,14 @@ void welcomeMelody() {
 void firstUpdateHA() {
     for(uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
         updatePumpState(i, false);
-    }
-    //mqtt.loop();    
+    }   
 
     // Wymuś stan OFF na początku
     //sensorAlarm.setValue("OFF");
     switchSound.setState(false);  // Dodane - wymuś stan początkowy
-    //mqtt.loop();
     
     // Ustawienie końcowych stanów i wysyłka do HA
     switchSound.setState(status.soundEnabled);  // Dodane - ustaw aktualny stan dźwięku
-    //mqtt.loop();
 }
 
 // ** FUNKCJE ZWIĄZANE Z PRZYCISKIEM **
@@ -1052,7 +1047,6 @@ void onPumpCommand(bool state, HASwitch* sender) {
             
             // Aktualizacja stanu
             pumpSwitches[i]->setState(state);
-            //mqtt.loop();
             break;
         }
     }
@@ -1421,8 +1415,7 @@ void setup() {
 
 void loop() {
     unsigned long currentMillis = millis();
-    
-    
+        
     handleMillisOverflow();  // Obsługa przepełnienia licznika millis()   
     mqtt.loop();  // Obsługa MQTT
     server.handleClient();  // Obsługa serwera WWW
