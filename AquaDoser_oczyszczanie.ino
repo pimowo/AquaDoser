@@ -218,89 +218,58 @@ void handleMillisOverflow() {
 
 // Ustawienia domyślne konfiguracji
 void setDefaultConfig() {
-    strlcpy(config.hostname, "aquadoser", sizeof(config.hostname));
-    strlcpy(config.mqttHost, "homeassistant.local", sizeof(config.mqttHost));
+    // Ustawienia domyślne konfiguracji
+    strcpy(config.hostname, "AquaDoser");
+    strcpy(config.mqttHost, "mqtt.example.com");
     config.mqttPort = 1883;
-    strlcpy(config.mqttUser, "", sizeof(config.mqttUser));
-    strlcpy(config.mqttPass, "", sizeof(config.mqttPass));
+    strcpy(config.mqttUser, "user");
+    strcpy(config.mqttPassword, "password");
     config.soundEnabled = true;
-    
-    // Domyślna konfiguracja dla wszystkich pomp
-    for(int i = 0; i < 8; i++) {
-        config.pumps[i].enabled = false;
-        config.pumps[i].dosage = 1.0;      // 1ml domyślna dawka
-        config.pumps[i].calibration = 60.0; // 60ml/min domyślna kalibracja
-        config.pumps[i].hour = 12;          // domyślnie 12:00
-        config.pumps[i].minute = 0;
+
+    // Domyślna konfiguracja pomp
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        config.pumps[i].enabled = false;  // Pompy wyłączone domyślnie
+        config.pumps[i].dosage_ml = 10;   // Domyślna dawka 10ml
+        config.pumps[i].hour = 8;         // Domyślna godzina dozowania 8:00
+        config.pumps[i].minute = 0;       // Minuta 0
+        config.pumps[i].workdays_only = true; // Tylko dni robocze
     }
-    
+
+    // Wersja konfiguracji
+    config.configVersion = 1;
+    // Oblicz sumę kontrolną dla domyślnej konfiguracji
     config.checksum = calculateChecksum(config);
 }
 
 // Ładowanie konfiguracji z pamięci EEPROM
 bool loadConfig() {
-    EEPROM.begin(sizeof(Config) + 1);  // +1 dla sumy kontrolnej
-    
-    // Tymczasowa struktura do wczytania danych
-    Config tempConfig;
-    
-    // Wczytaj dane z EEPROM do tymczasowej struktury
-    uint8_t *p = (uint8_t*)&tempConfig;
-    for (size_t i = 0; i < sizeof(Config); i++) {
-        p[i] = EEPROM.read(i);
-    }
-    
-    EEPROM.end();
-    
+    EEPROM.begin(sizeof(Config));
+    EEPROM.get(0, config);
+
     // Sprawdź sumę kontrolną
-    char calculatedChecksum = calculateChecksum(tempConfig);
-    if (calculatedChecksum == tempConfig.checksum) {
-        // Jeśli suma kontrolna się zgadza, skopiuj dane do głównej struktury config
-        memcpy(&config, &tempConfig, sizeof(Config));
-        DEBUG_PRINTF("Konfiguracja wczytana pomyślnie");
-        return true;
-    } else {
-        DEBUG_PRINTF("Błąd sumy kontrolnej - ładowanie ustawień domyślnych");
+    if (config.checksum != calculateChecksum(config)) {
+        // Jeśli suma kontrolna się nie zgadza, ustaw domyślną konfigurację
         setDefaultConfig();
         return false;
     }
+    return true;
 }
 
 // Zapis aktualnej konfiguracji do pamięci EEPROM
 void saveConfig() {
-    EEPROM.begin(sizeof(Config) + 1);  // +1 dla sumy kontrolnej
-    
-    // Oblicz sumę kontrolną przed zapisem
     config.checksum = calculateChecksum(config);
-    
-    // Zapisz strukturę do EEPROM
-    uint8_t *p = (uint8_t*)&config;
-    for (size_t i = 0; i < sizeof(Config); i++) {
-        EEPROM.write(i, p[i]);
-    }
-    
-    // Wykonaj faktyczny zapis do EEPROM
-    bool success = EEPROM.commit();
-    EEPROM.end();
-    
-    if (success) {
-        DEBUG_PRINTF("Konfiguracja zapisana pomyślnie");
-    } else {
-        DEBUG_PRINTF("Błąd zapisu konfiguracji!");
-    }
+    EEPROM.put(0, config);
+    EEPROM.commit();
 }
 
 // Oblicz sumę kontrolną dla danej konfiguracji
 char calculateChecksum(const Config& cfg) {
-    const byte* data = (const byte*)&cfg;
-    char checksum = 0;
-    
-    // Obliczamy sumę kontrolną dla wszystkich danych oprócz ostatniego bajtu (który jest samą sumą kontrolną)
+    char sum = 0;
+    const char* ptr = (const char*)&cfg;
     for (size_t i = 0; i < sizeof(Config) - 1; i++) {
-        checksum ^= data[i];
+        sum ^= *ptr++;
     }
-    
-    return checksum;
+    return sum;
 }
 
 // ** FUNKCJE DŹWIĘKOWE **
@@ -409,78 +378,59 @@ void resetWiFiSettings() {
 // Konfiguracja połączenia Wi-Fi
 void setupWiFi() {
     WiFiManager wifiManager;
-       
-    wifiManager.setAPCallback([](WiFiManager *myWiFiManager) {
-        DEBUG_PRINT("Tryb punktu dostępowego");
-        DEBUG_PRINT("SSID: HydroSense");
-        DEBUG_PRINT("IP: 192.168.4.1");
-    });
-    
-    wifiManager.setConfigPortalTimeout(180); // 3 minuty na konfigurację
-    
-    // Próba połączenia lub utworzenia AP
-    if (!wifiManager.autoConnect("HydroSense", "hydrosense")) {
-        DEBUG_PRINT("Nie udało się połączyć i timeout upłynął");
-        ESP.restart(); // Restart ESP w przypadku niepowodzenia
+
+    // Reset WiFi settings if the button is pressed
+    if (digitalRead(PRZYCISK_PIN) == LOW) {
+        wifiManager.resetSettings();
+        delay(1000);
     }
-    
-    DEBUG_PRINT("Połączono z WiFi!");
-    
-    // Pokaż uzyskane IP
-    DEBUG_PRINT("IP: ");
-    DEBUG_PRINT(WiFi.localIP().toString().c_str());
+
+    wifiManager.autoConnect(config.hostname);
+
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("Failed to connect to WiFi");
+        ESP.restart();
+    }
+
+    Serial.println("Connected to WiFi");
+    Serial.print("IP Address: ");
+    Serial.println(WiFi.localIP());
 }
 
 // Połączenie z serwerem MQTT
-bool connectMQTT() {   
-    if (!mqtt.begin(config.mqtt_server, 1883, config.mqtt_user, config.mqtt_password)) {
-        DEBUG_PRINT("\nBŁĄD POŁĄCZENIA MQTT!");
+bool connectMQTT() {
+    mqtt.setServer(config.mqttHost, config.mqttPort);
+    mqtt.setCredentials(config.mqttUser, config.mqttPassword);
+
+    if (!mqtt.connect()) {
+        Serial.println("MQTT connection failed");
         return false;
     }
-    
-    DEBUG_PRINT("MQTT połączono pomyślnie!");
+
+    Serial.println("Connected to MQTT");
     return true;
 }
 
 // Konfiguracja MQTT z Home Assistant
 void setupHA() {
-    // Konfiguracja urządzenia dla Home Assistant
-    device.setName("AquaDoser");  // Nazwa urządzenia
-    device.setModel("AD ESP8266");  // Model urządzenia
-    device.setManufacturer("PMW");  // Producent
-    device.setSoftwareVersion(SOFTWARE_VERSION);  // Wersja oprogramowania
+    device.setUniqueId("AquaDoser");
+    device.setName("AquaDoser");
+    device.setSoftwareVersion(SOFTWARE_VERSION);
 
-    for (int i = 0; i < 8; i++) {
-        char entityName[32];
-        sprintf(entityName, "Pump %d", i + 1);
-        
-        // Utworzenie przełącznika dla każdej pompy
-        HASwitch* pump = new HASwitch(entityName);
-        pump->setName(entityName);
-        pump->setIcon("mdi:water-pump");
-        
-        // Licznik całkowitej ilości dozowanej
-        char sensorName[32];
-        sprintf(sensorName, "Pump %d Total", i + 1);
-        HASensor* total = new HASensor(sensorName);
-        total->setName(sensorName);
-        total->setIcon("mdi:beaker");
-        total->setUnitOfMeasurement("ml");
-    } 
-    
-    // Konfiguracja przełączników w HA
-    switchService.setName("Serwis");
-    switchService.setIcon("mdi:account-wrench-outline");            
-    switchService.onCommand(onServiceSwitchCommand);  // Funkcja obsługi zmiany stanu
-    switchService.setState(status.isServiceMode);  // Stan początkowy
-    // Inicjalizacja stanu - domyślnie wyłączony
-    status.isServiceMode = false;
-    switchService.setState(false, true);  // force update przy starcie
+    // Configure Home Assistant entities
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        String pumpName = "Pump " + String(i + 1);
+        HADeviceSwitch* pumpSwitch = new HADeviceSwitch(device, pumpName.c_str());
+        pumpSwitch->onCommand(onPumpCommand, i);
+    }
 
-    switchSound.setName("Dźwięk");
-    switchSound.setIcon("mdi:volume-high");        // Ikona głośnika
-    switchSound.onCommand(onSoundSwitchCommand);   // Funkcja obsługi zmiany stanu
-    switchSound.setState(status.soundEnabled);      // Stan początkowy
+    HASwitch soundSwitch(device, "Sound");
+    soundSwitch.onCommand(onSoundSwitchCommand);
+
+    HASwitch serviceSwitch(device, "Service Mode");
+    serviceSwitch.onCommand(onServiceSwitchCommand);
+
+    firstUpdateHA();
 }
 
 // ** FUNKCJE ZWIĄZANE Z PINAMI **
@@ -1421,8 +1371,13 @@ void setup() {
     // Wczytaj konfigurację
     if (!loadConfig()) {
         Serial.println("Ładowanie konfiguracji domyślnej");
-        setDefaultConfig();
-        saveConfig();
+    }
+    
+        // Inicjalizacja komponentów
+    setupWiFi();
+    if (!connectMQTT()) {
+        Serial.println("Błąd połączenia z MQTT, restart urządzenia.");
+        ESP.restart();
     }
     
     setupPCF8574();  // Inicjalizacja PCF8574
