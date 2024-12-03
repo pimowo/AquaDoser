@@ -22,8 +22,7 @@ const int LED_PIN = 12;    // GPIO 12
 const int PRZYCISK_PIN = 14;    // GPIO 14
 const int SDA_PIN = 4;        // GPIO 4
 const int SCL_PIN = 5;        // GPIO 5
-//const int PCF8574_ADDRESS = 0x20;  // Adres I2C: 0x20
-PCF8574 pcf8574(0x20);  // Sprawdź właściwy adres I2C
+const int PCF8574_ADDRESS = 0x20;  // Adres I2C: 0x20
 
 // ** USTAWIENIA CZASOWE **
 
@@ -78,39 +77,22 @@ struct Config {
 
 // Struktura do przechowywania różnych stanów i parametrów systemu
 struct Status {
-    bool mqttConnected;
-    bool pumpActive[NUMBER_OF_PUMPS];
-    bool serviceMode;
-    unsigned long lastDose[NUMBER_OF_PUMPS];
-    float totalDosed[NUMBER_OF_PUMPS];
-    bool networkConnected;
-    uint8_t errorCode;
-    // Dodaj brakujące pola:
-    unsigned long pumpStartTime;
-    unsigned long pumpDelayStartTime;
-    unsigned long lastSoundAlert;
-    unsigned long lastSuccessfulMeasurement;
-    bool waterAlarmActive;
-    bool waterReserveActive;
-    bool soundEnabled;
-    struct {
-        bool isRunning;
-        unsigned long lastDose;
-        float totalDosed;
-    } pumps[NUMBER_OF_PUMPS];
+    bool mqttConnected;        // status połączenia z MQTT
+    bool pumpActive[NUMBER_OF_PUMPS];  // aktualny stan pomp (włączona/wyłączona)
+    bool serviceMode;          // czy urządzenie jest w trybie serwisowym
+    unsigned long lastDose[NUMBER_OF_PUMPS];  // timestamp ostatniego dozowania
+    float totalDosed[NUMBER_OF_PUMPS];  // całkowita ilość dozowana (ml)
+    bool networkConnected;     // status połączenia z siecią
+    uint8_t errorCode;        // kod błędu (0 = brak błędu)
 };
 
 // Stan przycisku
 struct ButtonState {
-    bool isPressed;
-    unsigned long pressTime;
-    bool wasLongPress;
-    uint8_t clickCount;
-    unsigned long lastClickTime;
-    // Dodaj brakujące pola:
-    bool lastState;
-    unsigned long releasedTime;
-    bool isLongPressHandled;
+    bool isPressed;           // czy przycisk jest obecnie wciśnięty
+    unsigned long pressTime;  // czas początku wciśnięcia
+    bool wasLongPress;       // czy ostatnie wciśnięcie było długie
+    uint8_t clickCount;      // licznik szybkich kliknięć
+    unsigned long lastClickTime; // czas ostatniego kliknięcia
 };
 
 // Timery dla różnych operacji
@@ -168,8 +150,22 @@ WebSocketsServer webSocket(81);  // Tworzenie instancji serwera WebSockets na po
 
 // Czujniki i przełączniki dla Home Assistant
 
+// Sensory pomiarowe
+HASensor sensorDistance("water_level");         // Odległość od lustra wody (w mm)
+HASensor sensorLevel("water_level_percent");    // Poziom wody w zbiorniku (w procentach)
+HASensor sensorVolume("water_volume");          // Objętość wody (w litrach)
+HASensor sensorPumpWorkTime("pump_work_time");  // Czas pracy pompy
+
+// Sensory statusu
+HASensor sensorPump("pump");    // Praca pompy (ON/OFF)
+HASensor sensorWater("water");  // Czujnik poziomu w akwarium (ON=niski/OFF=ok)
+
+// Sensory alarmowe
+HASensor sensorAlarm("water_alarm");      // Brak wody w zbiorniku dolewki
+HASensor sensorReserve("water_reserve");  // Rezerwa w zbiorniku dolewki
+
 // Przełączniki
-HASwitch pumpSwitch(String("pump_" + String(i)).c_str());
+HASwitch switchPumpAlarm("pump_alarm");  // Resetowania blokady pompy
 HASwitch switchService("service_mode");  // Tryb serwisowy
 HASwitch switchSound("sound_switch");    // Dźwięki systemu
 
@@ -1383,12 +1379,17 @@ void setup() {
         Serial.println("Błąd połączenia z MQTT, restart urządzenia.");
         ESP.restart();
     }
-
+    
     setupPCF8574();  // Inicjalizacja PCF8574
     setupWiFi();     // Konfiguracja WiFi
     setupHA();       // Konfiguracja Home Assistant
     setupWebServer();// Konfiguracja serwera WWW
     
+    // Konfiguracja OTA
+    ArduinoOTA.setHostname("AquaDoser");  // Ustaw nazwę urządzenia
+    ArduinoOTA.setPassword("aquadoser");  // Ustaw hasło dla OTA
+    ArduinoOTA.begin();  // Uruchom OTA   
+
     welcomeMelody();
 }
 
@@ -1419,5 +1420,10 @@ void loop() {
     // Dodatkowe zabezpieczenie - wyłącz wszystkie pompy w trybie serwisowym
     if (status.serviceMode) {
         stopAllPumps();
+    }
+
+    if (currentMillis - timers.lastOTACheck >= OTA_CHECK_INTERVAL) {
+        ArduinoOTA.handle();                  // Obsługa aktualizacji OTA
+        timers.lastOTACheck = currentMillis;  // Aktualizacja znacznika czasu ostatniego sprawdzenia OTA
     }
 }
