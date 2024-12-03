@@ -24,6 +24,7 @@ const int SDA_PIN = 4;        // GPIO 4
 const int SCL_PIN = 5;        // GPIO 5
 //const int PCF8574_ADDRESS = 0x20;  // Adres I2C: 0x20
 PCF8574 pcf8574(0x20);
+#define NUM_PUMPS 8
 
 // ** USTAWIENIA CZASOWE **
 
@@ -71,10 +72,10 @@ struct PumpConfig {
 // Główna struktura konfiguracji
 struct Config {
     char hostname[32];          // nazwa urządzenia w sieci
-    char mqttHost[64];         // adres serwera MQTT
-    int mqttPort;              // port MQTT
-    char mqttUser[32];         // nazwa użytkownika MQTT
-    char mqttPassword[32];     // hasło MQTT
+    char mqtt_server[64];         // adres serwera MQTT
+    int mqtt_port;              // port MQTT
+    char mqtt_user[32];         // nazwa użytkownika MQTT
+    char mqtt_password[32];     // hasło MQTT
     bool soundEnabled;         // czy dźwięki są włączone
     PumpConfig pumps[NUMBER_OF_PUMPS];  // konfiguracja dla każdej pompy
     uint8_t configVersion;     // wersja konfiguracji (dla EEPROM)
@@ -98,7 +99,8 @@ struct Status {
 // Stan przycisku
 struct ButtonState {
     bool isPressed;           // czy przycisk jest obecnie wciśnięty
-    unsigned long pressTime;  // czas początku wciśnięcia
+    unsigned long pressedTime;  // czas początku wciśnięcia
+    unsigned long releasedTime;  // było releasedTime
     bool wasLongPress;       // czy ostatnie wciśnięcie było długie
     uint8_t clickCount;      // licznik szybkich kliknięć
     unsigned long lastClickTime; // czas ostatniego kliknięcia
@@ -154,7 +156,8 @@ HADevice device("HydroSense");  // Definicja urządzenia dla Home Assistant
 HAMqtt mqtt(client, device);    // Klient MQTT dla Home Assistant
 
 // Serwer HTTP i WebSockets
-ESP8266WebServer server(80);     // Tworzenie instancji serwera HTTP na porcie 80
+ESP8266WebServer webServer(80);
+//ESP8266WebServer server(80);     // Tworzenie instancji serwera HTTP na porcie 80
 WebSocketsServer webSocket(81);  // Tworzenie instancji serwera WebSockets na porcie 81
 
 // Czujniki i przełączniki dla Home Assistant
@@ -221,7 +224,7 @@ void handleMillisOverflow() {
         status.lastSuccessfulMeasurement = 0;
         lastMeasurement = 0;
         
-        DEBUG_PRINT(F("Reset timerów - zbliża się przepełnienie millis()"));
+        AQUA_DEBUG_PRINT(F("Reset timerów - zbliża się przepełnienie millis()"));
     }
 }
 
@@ -303,7 +306,7 @@ void playConfirmationSound() {
 void setupPCF8574() {
     if (pcf8574.begin()) {
         for (int i = 0; i < NUM_PUMPS; i++) {
-            pcf8574.write(config.pumps[i].pcf8574_pin, HIGH);  // HIGH = pompa wyłączona
+            pcf8574.digitalWrite(config.pumps[i].pcf8574_pin, HIGH);  // HIGH = pompa wyłączona
             status.pumps[i].isRunning = false;
             status.pumps[i].lastDose = 0;
             status.pumps[i].totalDosed = 0;
@@ -316,7 +319,7 @@ void turnOnPump(uint8_t pumpIndex) {
     #if DEBUG
     AQUA_DEBUG_PRINTF("Turning ON pump %d\n", pumpIndex);
     #endif
-    pcf8574.write(config.pumps[pumpIndex].pcf8574_pin, LOW);  // LOW = pompa włączona
+    pcf8574.digitalWrite(config.pumps[pumpIndex].pcf8574_pin, LOW);  // LOW = pompa włączona
     status.pumps[pumpIndex].isRunning = true;
 }
 
@@ -342,7 +345,7 @@ void turnOffPump(uint8_t pumpIndex) {
     #if DEBUG
     AQUA_DEBUG_PRINTF("Turning OFF pump %d\n", pumpIndex);
     #endif
-    pcf8574.write(config.pumps[pumpIndex].pcf8574_pin, HIGH);  // HIGH = pompa wyłączona
+    pcf8574.digitalWrite(config.pumps[pumpIndex].pcf8574_pin, HIGH);  // HIGH = pompa wyłączona
     status.pumps[pumpIndex].isRunning = false;
 }
 
@@ -357,7 +360,7 @@ void stopAllPumps() {
 
 // Reset ustawień Wi-Fi
 void resetWiFiSettings() {
-    DEBUG_PRINT(F("Rozpoczynam kasowanie ustawień WiFi..."));
+    AQUA_DEBUG_PRINT(F("Rozpoczynam kasowanie ustawień WiFi..."));
     
     // Najpierw rozłącz WiFi i wyczyść wszystkie zapisane ustawienia
     WiFi.disconnect(false, true);  // false = nie wyłączaj WiFi, true = kasuj zapisane ustawienia
@@ -369,7 +372,7 @@ void resetWiFiSettings() {
     WiFiManager wm;
     wm.resetSettings();
     
-    DEBUG_PRINT(F("Ustawienia WiFi zostały skasowane"));
+    AQUA_DEBUG_PRINT(F("Ustawienia WiFi zostały skasowane"));
     delay(100);
 }
 
@@ -500,11 +503,11 @@ void handleButton() {
                     switchService.setState(status.isServiceMode, true);  // force update w HA
                     
                     // Log zmiany stanu
-                    DEBUG_PRINTF("Tryb serwisowy: %s (przez przycisk)\n", status.isServiceMode ? "WŁĄCZONY" : "WYŁĄCZONY");
+                    AQUA_DEBUG_PRINTF("Tryb serwisowy: %s (przez przycisk)\n", status.isServiceMode ? "WŁĄCZONY" : "WYŁĄCZONY");
                     
                     // Jeśli włączono tryb serwisowy podczas pracy pompy
                     if (status.isServiceMode && status.isPumpActive) {
-                        pcf8574.write(pumpPin, LOW);  // Wyłącz pompę
+                        pcf8574.digitalWrite(pumpPin, LOW);  // Wyłącz pompę
                         status.isPumpActive = false;  // Reset flagi aktywności
                         status.pumpStartTime = 0;  // Reset czasu startu
                         sensorPump.setValue("OFF");  // Aktualizacja w HA
@@ -521,7 +524,7 @@ void handleButton() {
                 playConfirmationSound();  // Sygnał potwierdzenia zmiany trybu
                 switchPumpAlarm.setState(false, true);  // force update w HA
                 buttonState.isLongPressHandled = true;  // Oznacz jako obsłużone
-                DEBUG_PRINT("Alarm pompy skasowany");
+                AQUA_DEBUG_PRINT("Alarm pompy skasowany");
             }
         }
     }
@@ -544,7 +547,7 @@ void onSoundSwitchCommand(bool state, HASwitch* sender) {
         playConfirmationSound();
     }
     
-    DEBUG_PRINTF("Zmieniono stan dźwięku na: ", state ? "WŁĄCZONY" : "WYŁĄCZONY");
+    AQUA_DEBUG_PRINTF("Zmieniono stan dźwięku na: ", state ? "WŁĄCZONY" : "WYŁĄCZONY");
 }
 
 void onPumpCommand(bool state, HASwitch* sender, int pumpIndex) {
@@ -566,7 +569,7 @@ void onServiceSwitchCommand(bool state, HASwitch* sender) {
     
     if (state) {  // Włączanie trybu serwisowego
         if (status.isPumpActive) {
-            pcf8574.write(pumpPin, LOW);  // Wyłączenie pompy
+            pcf8574.digitalWrite(pumpPin, LOW);  // Wyłączenie pompy
             status.isPumpActive = false;  // Reset flagi aktywności
             status.pumpStartTime = 0;  // Reset czasu startu
             sensorPump.setValue("OFF");  // Aktualizacja stanu w HA
@@ -579,7 +582,7 @@ void onServiceSwitchCommand(bool state, HASwitch* sender) {
         // jeśli czujnik poziomu wykryje wodę
     }
     
-    DEBUG_PRINTF("Tryb serwisowy: %s (przez HA)\n", state ? "WŁĄCZONY" : "WYŁĄCZONY");
+    AQUA_DEBUG_PRINTF("Tryb serwisowy: %s (przez HA)\n", state ? "WŁĄCZONY" : "WYŁĄCZONY");
 }
 
 // ** STRONA KONFIGURACYJNA **
@@ -1124,9 +1127,9 @@ String getConfigPage() {
     
     // Sprawdź, czy wszystkie znaczniki zostały zastąpione
     if (html.indexOf('%') != -1) {
-        DEBUG_PRINTF("Uwaga: Niektóre znaczniki nie zostały zastąpione!");
+        AQUA_DEBUG_PRINTF("Uwaga: Niektóre znaczniki nie zostały zastąpione!");
         int pos = html.indexOf('%');
-        DEBUG_PRINTF(html.substring(pos - 20, pos + 20));
+        AQUA_DEBUG_PRINTF(html.substring(pos - 20, pos + 20));
     }
     
     return html;
@@ -1385,7 +1388,7 @@ void loop() {
     handleMillisOverflow();
     
     // Obsługa MQTT
-    if (!mqtt.connected()) {
+    if (!mqtt.isConnected()) {
         connectMQTT();
     }
     mqtt.loop();
@@ -1401,7 +1404,7 @@ void loop() {
     }
     
     // Dodatkowe zabezpieczenie - wyłącz wszystkie pompy w trybie serwisowym
-    if (status.serviceMode) {
+    if (status.isServiceMode) {
         stopAllPumps();
     }
 
