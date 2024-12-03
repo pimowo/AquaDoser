@@ -552,11 +552,17 @@ void onSoundSwitchCommand(bool state, HASwitch* sender) {
     AQUA_DEBUG_PRINTF("Zmieniono stan dźwięku na: ", state ? "WŁĄCZONY" : "WYŁĄCZONY");
 }
 
-void onPumpCommand(bool state, HASwitch* sender, int pumpIndex) {
-    if (state) {
-        dosePump(pumpIndex);
-    } else {
-        turnOffPump(pumpIndex);
+// Deklaracja funkcji callback bez parametru int
+void onPumpCommand(bool state, HASwitch* sender) {
+    // Znajdź indeks pompy na podstawie sender
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        if (sender == pumpSwitches[i]) {
+            if (!state) {
+                sensorPump.setValue("OFF");
+            }
+            // Tu możesz dodać specyficzną logikę dla konkretnej pompy
+            break;
+        }
     }
 }
 
@@ -570,16 +576,16 @@ void onServiceSwitchCommand(bool state, HASwitch* sender) {
     switchService.setState(state);  // Synchronizacja stanu przełącznika
     
     if (state) {  // Włączanie trybu serwisowego
-        if (status.isPumpActive) {
-            pcf8574.digitalWrite(pumpPin, LOW);  // Wyłączenie pompy
-            status.isPumpActive = false;  // Reset flagi aktywności
-            status.pumpStartTime = 0;  // Reset czasu startu
-            sensorPump.setValue("OFF");  // Aktualizacja stanu w HA
-        }
+        // if (status.isPumpActive) {
+        //     pcf8574.digitalWrite(pumpPin, LOW);  // Wyłączenie pompy
+        //     status.isPumpActive = false;  // Reset flagi aktywności
+        //     status.pumpStartTime = 0;  // Reset czasu startu
+        //     sensorPump.setValue("OFF");  // Aktualizacja stanu w HA
+        // }
     } else {  // Wyłączanie trybu serwisowego
         // Reset stanu opóźnienia pompy aby umożliwić normalne uruchomienie
-        status.isPumpDelayActive = false;
-        status.pumpDelayStartTime = 0;
+        //status.isPumpDelayActive = false;
+        //status.pumpDelayStartTime = 0;
         // Normalny tryb pracy - pompa uruchomi się automatycznie 
         // jeśli czujnik poziomu wykryje wodę
     }
@@ -1188,10 +1194,10 @@ void handleSave() {
     // Zapisz konfigurację pomp
     for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
         pumpPrefix = String("pump") + String(i + 1);
-        String doseArg = pumpPrefix + "_dose";
+        doseArg = pumpPrefix + "_dose";
         
-        if (Server.hasArg(doseArg)) {
-            config.pumps[i].dosage = Server.arg(doseArg).toFloat();
+        if (webServer.hasArg(doseArg)) {  // Używamy webServer zamiast Server
+            config.pumps[i].dosage = webServer.arg(doseArg).toFloat();
         }
         
         if (server.hasArg(pumpPrefix + "_time")) {
