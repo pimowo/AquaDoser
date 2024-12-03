@@ -167,11 +167,11 @@ WebSocketsServer webSocket(81);  // Tworzenie instancji serwera WebSockets na po
 // Czujniki i przełączniki dla Home Assistant
 
 // Przełączniki
+HASwitch* pumpSwitches[NUMBER_OF_PUMPS];  // Tablica przełączników pomp
 HASwitch switchPumpAlarm("pump_alarm");  // Resetowania blokady pompy
 HASwitch switchService("service_mode");  // Tryb serwisowy
 HASwitch switchSound("sound_switch");    // Dźwięki systemu
 
-HASwitch* pumpSwitches[NUMBER_OF_PUMPS];  // Tablica przełączników pomp
 HASensor sensorPump("pump_status");  // Sensor statusu pompy
 
 // ** FUNKCJE I METODY SYSTEMOWE **
@@ -412,13 +412,14 @@ void setupHA() {
     device.setManufacturer("PMW");  // Producent
     device.setSoftwareVersion(SOFTWARE_VERSION);  // Wersja oprogramowania
 
-    // Configure Home Assistant entities
+    // Konfiguracja przełączników pomp
     for(uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
         String pumpName = String("pump_") + String(i + 1);
-        // Tworzymy nowy przełącznik dynamicznie
         pumpSwitches[i] = new HASwitch(pumpName.c_str());
         pumpSwitches[i]->setName(pumpName.c_str());
+        pumpSwitches[i]->setIcon("mdi:water-pump");
         pumpSwitches[i]->onCommand(onPumpCommand);
+        pumpSwitches[i]->setState(false); // Początkowy stan wyłączony
     }
 
     switchSound.setName("Dźwięk");
@@ -435,7 +436,7 @@ void setupHA() {
     status.isServiceMode = false;
     switchService.setState(false, true);  // force update przy starcie
 
-    firstUpdateHA();
+    //firstUpdateHA();
 }
 
 // ** FUNKCJE ZWIĄZANE Z PINAMI **
@@ -1352,17 +1353,19 @@ void setup() {
     }
     
         // Inicjalizacja komponentów
-    setupWiFi();
-    if (!connectMQTT()) {
-        Serial.println("Błąd połączenia z MQTT, restart urządzenia.");
-        ESP.restart();
-    }
+    //setupWiFi();
+    //if (!connectMQTT()) {
+    //    Serial.println("Błąd połączenia z MQTT, restart urządzenia.");
+    //    ESP.restart();
+    //}
     
     setupPCF8574();  // Inicjalizacja PCF8574
-    setupWiFi();     // Konfiguracja WiFi
-    setupHA();       // Konfiguracja Home Assistant
+    setupWiFi();     // Konfiguracja WiFi    
     setupWebServer();// Konfiguracja serwera WWW
-    
+    connectMQTT();
+    setupHA();       // Konfiguracja Home Assistant
+    firstUpdateHA();  // Wyślij pierwsze odczyty do Home Assistant
+
     // Konfiguracja OTA
     ArduinoOTA.setHostname("AquaDoser");  // Ustaw nazwę urządzenia
     ArduinoOTA.setPassword("aquadoser");  // Ustaw hasło dla OTA
