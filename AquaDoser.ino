@@ -1,17 +1,23 @@
 // ** BIBLIOTEKI **
 
-#include <Arduino.h>                  // Podstawowa biblioteka Arduino zawierająca funkcje rdzenia
-#include <ArduinoHA.h>                // Biblioteka do integracji z Home Assistant przez protokół MQTT
-#include <ArduinoOTA.h>               // Biblioteka do aktualizacji oprogramowania przez sieć WiFi
-#include <ESP8266WiFi.h>              // Biblioteka WiFi dedykowana dla układu ESP8266
-#include <EEPROM.h>                   // Biblioteka do dostępu do pamięci nieulotnej EEPROM
-#include <WiFiManager.h>              // Biblioteka do zarządzania połączeniami WiFi
-#include <ESP8266WebServer.h>         // Biblioteka do obsługi serwera HTTP na ESP8266
-#include <WebSocketsServer.h>         // Biblioteka do obsługi serwera WebSockets na ESP8266
-#include <ESP8266HTTPUpdateServer.h>  // Biblioteka do aktualizacji oprogramowania przez HTTP
+// Biblioteki podstawowe
+#include <Arduino.h>                  // Podstawowa biblioteka Arduino - zawiera funkcje rdzenia (pinMode, digitalRead itp.)
+#include <Wire.h>                     // Biblioteka do komunikacji I2C (TWI) - wymagana do obsługi PCF8574
 
-#include <Wire.h>
-#include <PCF8574.h>
+// Biblioteki do komunikacji z Home Assistant
+#include <ArduinoHA.h>                // Integracja z Home Assistant przez MQTT - automatyzacja, sensory, przełączniki
+#include <PCF8574.h>                  // Obsługa ekspandera I/O PCF8574 - dodaje 8 wyjść cyfrowych przez I2C
+
+// Biblioteki do obsługi WiFi i aktualizacji OTA
+#include <ESP8266WiFi.h>              // Podstawowa obsługa WiFi dla ESP8266
+#include <WiFiManager.h>              // Zarządzanie WiFi - portal konfiguracyjny, automatyczne połączenie
+#include <ArduinoOTA.h>               // Aktualizacja firmware przez sieć (Over The Air)
+#include <ESP8266HTTPUpdateServer.h>  // Aktualizacja firmware przez przeglądarkę (poprzez stronę WWW)
+
+// Biblioteki do interfejsu webowego
+#include <ESP8266WebServer.h>         // Serwer HTTP - obsługa strony konfiguracyjnej
+#include <WebSocketsServer.h>         // WebSocket - komunikacja w czasie rzeczywistym ze stroną WWW
+#include <EEPROM.h>                   // Dostęp do pamięci nieulotnej - zapisywanie konfiguracji
 
 // ** DEFINICJE PINÓW **
 
@@ -33,7 +39,6 @@ const unsigned long LONG_PRESS_TIME = 1000;        // Czas długiego naciśnięc
 const unsigned long OTA_CHECK_INTERVAL = 1000;     // Sprawdzanie OTA co 1s
 const unsigned long MILLIS_OVERFLOW_THRESHOLD = 4294967295U - 60000; // ~49.7 dni
 
-
 void updateHAState(uint8_t pumpIndex);
 
 // ** KONFIGURACJA SYSTEMU **
@@ -50,7 +55,7 @@ void updateHAState(uint8_t pumpIndex);
 #endif
 
 // Zmienna przechowująca wersję oprogramowania
-const char* SOFTWARE_VERSION = "3.12.24";  // Definiowanie wersji oprogramowania
+const char* SOFTWARE_VERSION = "4.12.24";  // Definiowanie wersji oprogramowania
 
 // Struktury konfiguracyjne i statusowe
 
@@ -65,6 +70,7 @@ struct PumpConfig {
 };
 
 // Konfiguracja
+
 // Główna struktura konfiguracji
 struct Config {
     char hostname[32];                  // nazwa urządzenia w sieci
@@ -933,7 +939,7 @@ void setupPin() {
     pcf8574.begin();
     
     // Ustaw wszystkie piny jako wyjścia
-    for(int i = 0; i < 8; i++) {
+    for(int i = 0; i < NUMBER_OF_PUMPS; i++) {
         pcf8574.pinMode(i, OUTPUT);
         pcf8574.digitalWrite(i, HIGH);  // HIGH = wyłączone (logika ujemna)
     }
@@ -1049,7 +1055,7 @@ void onSoundSwitchCommand(bool state, HASwitch* sender) {
 void onPumpCommand(bool state, HASwitch* sender) {
     // Znajdź indeks pompy
     int pumpIndex = -1;
-    for(int i = 0; i < 8; i++) {
+    for(int i = 0; i < NUMBER_OF_PUMPS; i++) {
         if(sender == pumpSchedules[i]) {
             pumpIndex = i;
             break;
@@ -1393,7 +1399,7 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length
 void setup() {
     //ESP.wdtEnable(WATCHDOG_TIMEOUT);  // Aktywacja watchdoga
     Serial.begin(115200);  // Inicjalizacja portu szeregowego
-    Serial.println("\nAquaDoser Starting...");
+    Serial.println("\nStart AquaDoser...");
        
     // Wczytaj konfigurację na początku
     if (!loadConfig()) {
@@ -1430,7 +1436,7 @@ void loop() {
     server.handleClient();  // Obsługa serwera WWW
     
     // Aktualizacja stanu sensorów na podstawie PCF8574
-    for(int i = 0; i < 8; i++) {
+    for(int i = 0; i < NUMBER_OF_PUMPS; i++) {
         bool pumpState = !pcf8574.read(i);  // Negacja bo logika ujemna
         pumpStates[i]->setState(pumpState);
     }
