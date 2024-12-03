@@ -41,19 +41,14 @@ void updateHAState(uint8_t pumpIndex);
 // ** KONFIGURACJA SYSTEMU **
 
 // Makra debugowania
-#define DEBUG 1  // 0 wyłącza debug, 1 włącza debug
+// Makra debugowania
+#define DEBUG 0  // 0 wyłącza debug, 1 włącza debug
 
-// #if DEBUG
-//     #define AQUA_DEBUG_PRINT(x) Serial.println(x)
-//     #define AQUA_DEBUG_PRINTF(format, ...) Serial.printf(format, __VA_ARGS__)
-// #else
-//     #define AQUA_DEBUG_PRINT(x)
-//     #define AQUA_DEBUG_PRINTF(format, ...)
-// #endif
-
-#ifdef DEBUG
-    #define AQUA_DEBUG_PRINTF(format, ...) Serial.printf(format "\n", ##__VA_ARGS__)
+#if DEBUG
+    #define AQUA_DEBUG_PRINT(x) Serial.println(x)
+    #define AQUA_DEBUG_PRINTF(format, ...) Serial.printf(format, __VA_ARGS__)
 #else
+    #define AQUA_DEBUG_PRINT(x)
     #define AQUA_DEBUG_PRINTF(format, ...)
 #endif
 
@@ -177,7 +172,7 @@ HASwitch switchService("service_mode");  // Tryb serwisowy
 HASwitch switchSound("sound_switch");    // Dźwięki systemu
 
 HASwitch pumpSwitches[NUMBER_OF_PUMPS];  // Tablica przełączników pomp
-HASensor sensorPump(device, "pump_status");  // Sensor statusu pompy
+HASensor sensorPump("pump_status");  // Sensor statusu pompy
 
 // ** FUNKCJE I METODY SYSTEMOWE **
 
@@ -420,11 +415,13 @@ void setupHA() {
     // Configure Home Assistant entities
     for(uint8_t i = 0; i < NUM_PUMPS; i++) {
         String pumpName = String("pump_") + String(i + 1);
-        HASwitch switchPump(device, pumpName.c_str());  // Tworzymy przełącznik
-        switchPump.setName(pumpName.c_str());          // Ustawiamy nazwę - tylko jeden argument
-        switchPump.onCommand(onPumpCommand);           // Ustawiamy callback
-        // Dodaj przełącznik do tablicy jeśli potrzebujesz go później
-        pumpSwitches[i] = switchPump;
+        pumpSwitches[i] = HASwitch(pumpName.c_str());  // Tworzenie przełącznika
+        pumpSwitches[i].setName(pumpName.c_str());     // Ustawienie nazwy
+        
+        // Ustawienie callbacka z odpowiednim prototypem
+        pumpSwitches[i].onCommand([i](bool state, HASwitch* sender) {
+            onPumpCommand(state, sender, i);
+        });
     }
 
     switchSound.setName("Dźwięk");
