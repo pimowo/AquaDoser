@@ -1346,21 +1346,18 @@ void setup() {
     pinMode(BUZZER_PIN, OUTPUT);
     digitalWrite(BUZZER_PIN, LOW);
     
-    // Wczytaj konfigurację
+    // Wczytaj konfigurację na początku
     if (!loadConfig()) {
-        Serial.println("Ładowanie konfiguracji domyślnej");
+        AQUA_DEBUG_PRINTF("Błąd wczytywania konfiguracji - używam ustawień domyślnych");
+        setDefaultConfig();
+        saveConfig();  // Zapisz domyślną konfigurację do EEPROM
     }
-    
-        // Inicjalizacja komponentów
-    //setupWiFi();
-    //if (!connectMQTT()) {
-    //    Serial.println("Błąd połączenia z MQTT, restart urządzenia.");
-    //    ESP.restart();
-    //}
     
     setupPCF8574();  // Inicjalizacja PCF8574
     setupWiFi();     // Konfiguracja WiFi    
     setupWebServer();// Konfiguracja serwera WWW
+    webSocket.begin();
+    webSocket.onEvent(webSocketEvent);
     connectMQTT();
     setupHA();       // Konfiguracja Home Assistant
     firstUpdateHA();  // Wyślij pierwsze odczyty do Home Assistant
