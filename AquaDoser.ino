@@ -112,18 +112,14 @@ struct ButtonState {
 
 // Timery dla różnych operacji
 struct Timers {
-    unsigned long lastMQTTRetry;     // ostatnia próba połączenia MQTT
     unsigned long lastOTACheck;      // ostatnie sprawdzenie aktualizacji
-    unsigned long lastMQTTLoop;      // ostatnia pętla MQTT
     unsigned long lastPumpCheck;     // ostatnie sprawdzenie harmonogramu
     unsigned long lastStateUpdate;   // ostatnia aktualizacja stanu do HA
     unsigned long lastButtonCheck;   // ostatnie sprawdzenie przycisku
     
     // Konstruktor inicjalizujący wszystkie timery na 0
     Timers() : 
-        lastMQTTRetry(0), 
         lastOTACheck(0), 
-        lastMQTTLoop(0),
         lastPumpCheck(0),
         lastStateUpdate(0),
         lastButtonCheck(0) {}
@@ -889,17 +885,6 @@ void setupWiFi() {
     Serial.println(WiFi.localIP());
 }
 
-// Połączenie z serwerem MQTT
-bool connectMQTT() {   
-    if (!mqtt.begin(config.mqtt_server, 1883, config.mqtt_user, config.mqtt_password)) {
-        AQUA_DEBUG_PRINT("\nBŁĄD POŁĄCZENIA MQTT!");
-        return false;
-    }
-    
-    AQUA_DEBUG_PRINT("MQTT połączono pomyślnie!");
-    return true;
-}
-
 // Konfiguracja MQTT z Home Assistant
 void setupHA() {
     // Konfiguracja urządzenia dla Home Assistant
@@ -1404,9 +1389,7 @@ void setup() {
     //ESP.wdtEnable(WATCHDOG_TIMEOUT);  // Aktywacja watchdoga
     Serial.begin(115200);  // Inicjalizacja portu szeregowego
     Serial.println("\nAquaDoser Starting...");
-    
-    //(sizeof(Config));
-    
+       
     // Wczytaj konfigurację na początku
     if (!loadConfig()) {
         AQUA_DEBUG_PRINTF("Błąd wczytywania konfiguracji - używam ustawień domyślnych");
@@ -1418,19 +1401,14 @@ void setup() {
     pinMode(BUZZER_PIN, OUTPUT);
     digitalWrite(BUZZER_PIN, LOW);
        
-    setupPCF8574();  // Inicjalizacja PCF8574
-    setupWiFi();     // Konfiguracja WiFi    
-    setupWebServer();// Konfiguracja serwera WWW
+    setupPCF8574();  // Inicjalizacja PCF8574   
+    WiFiManager wifiManager;
+    wifiManager.autoConnect("AquaDoser");  // Samo zadba o połączenie
+    setupWebServer();
     webSocket.begin();
     webSocket.onEvent(webSocketEvent);
-
-    // Próba połączenia MQTT
-    DEBUG_PRINT("Rozpoczynam połączenie MQTT...");
-    connectMQTT();
+    setupHA();
     
-    setupHA();       // Konfiguracja Home Assistant
-    //firstUpdateHA();  // Wyślij pierwsze odczyty do Home Assistant
-
     // Konfiguracja OTA
     ArduinoOTA.setHostname("AquaDoser");  // Ustaw nazwę urządzenia
     ArduinoOTA.setPassword("aquadoser");  // Ustaw hasło dla OTA
