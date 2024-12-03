@@ -16,15 +16,14 @@
 // ** DEFINICJE PINÓW **
 
 // Przypisanie pinów do urządzeń
-const int NUMBER_OF_PUMPS = 8;
-const int BUZZER_PIN = 13;    // GPIO 13
-const int LED_PIN = 12;    // GPIO 12
+const int NUMBER_OF_PUMPS = 8;  // Ilość pomp
+const int BUZZER_PIN = 13;      // GPIO 13
+const int LED_PIN = 12;         // GPIO 12
 const int PRZYCISK_PIN = 14;    // GPIO 14
-const int SDA_PIN = 4;        // GPIO 4
-const int SCL_PIN = 5;        // GPIO 5
-//const int PCF8574_ADDRESS = 0x20;  // Adres I2C: 0x20
+const int SDA_PIN = 4;          // GPIO 4
+const int SCL_PIN = 5;          // GPIO 5
+
 PCF8574 pcf8574(0x20);
-#define NUM_PUMPS 8
 
 // ** USTAWIENIA CZASOWE **
 
@@ -65,7 +64,6 @@ struct PumpConfig {
     uint8_t pcf8574_pin;    // numer pinu na PCF8574
     uint8_t hour;               // godzina dozowania
     uint8_t minute;             // minuta dozowania
-    bool workdays_only;         // czy dozować tylko w dni robocze
 };
 
 // Konfiguracja
@@ -82,6 +80,13 @@ struct Config {
     char checksum;             // suma kontrolna konfiguracji
 };
 
+// Struktura dla pojedynczej pompy - stan bieżący
+struct Pump {
+    bool isRunning;           // czy pompa aktualnie pracuje
+    unsigned long lastDose;   // czas ostatniego dozowania
+    float totalDosed;        // całkowita ilość dozowanego płynu
+};
+
 // Struktura do przechowywania różnych stanów i parametrów systemu
 struct Status {
   unsigned long pumpStartTime;
@@ -93,17 +98,16 @@ struct Status {
   bool isPumpDelayActive;
   bool soundEnabled;
   bool pumpSafetyLock;
-  Pump pumps[NUM_PUMPS];
+  Pump pumps[NUMBER_OF_PUMPS];
 };
 
 // Stan przycisku
 struct ButtonState {
-    bool isPressed;           // czy przycisk jest obecnie wciśnięty
-    unsigned long pressedTime;  // czas początku wciśnięcia
-    unsigned long releasedTime;  // było releasedTime
-    bool wasLongPress;       // czy ostatnie wciśnięcie było długie
-    uint8_t clickCount;      // licznik szybkich kliknięć
-    unsigned long lastClickTime; // czas ostatniego kliknięcia
+    bool lastState;                   // Poprzedni stan przycisku
+    bool isInitialized = false; 
+    bool isLongPressHandled = false;  // Flaga obsłużonego długiego naciśnięcia
+    unsigned long pressedTime = 0;    // Czas wciśnięcia przycisku
+    unsigned long releasedTime = 0;   // Czas puszczenia przycisku
 };
 
 // Timery dla różnych operacji
@@ -230,27 +234,29 @@ void handleMillisOverflow() {
 
 // Ustawienia domyślne konfiguracji
 void setDefaultConfig() {
-    // Ustawienia domyślne konfiguracji
-    strcpy(config.hostname, "AquaDoser");
-    strcpy(config.mqttHost, "mqtt.example.com");
-    config.mqttPort = 1883;
-    strcpy(config.mqttUser, "user");
-    strcpy(config.mqttPassword, "password");
-    config.soundEnabled = true;
-
+    // Podstawowa konfiguracja
+    //config.version = CONFIG_VERSION;        // Ustawienie wersji konfiguracji
+    config.soundEnabled = true;             // Włączenie powiadomień dźwiękowych
+    
+    // MQTT
+    strlcpy(config.mqtt_server, "", sizeof(config.mqtt_server));
+    config.mqtt_port = 1883;
+    strlcpy(config.mqtt_user, "", sizeof(config.mqtt_user));
+    strlcpy(config.mqtt_password, "", sizeof(config.mqtt_password));
+    
     // Domyślna konfiguracja pomp
     for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
         config.pumps[i].enabled = false;  // Pompy wyłączone domyślnie
         config.pumps[i].dosage_ml = 10;   // Domyślna dawka 10ml
         config.pumps[i].hour = 8;         // Domyślna godzina dozowania 8:00
         config.pumps[i].minute = 0;       // Minuta 0
-        config.pumps[i].workdays_only = true; // Tylko dni robocze
     }
 
-    // Wersja konfiguracji
-    config.configVersion = 1;
-    // Oblicz sumę kontrolną dla domyślnej konfiguracji
-    config.checksum = calculateChecksum(config);
+    // Finalizacja
+    config.checksum = calculateChecksum(config);  // Obliczenie sumy kontrolnej
+    saveConfig();  // Zapis do EEPROM
+    
+    AQUA_DEBUG_PRINT(F("Utworzono domyślną konfigurację"));
 }
 
 // Ładowanie konfiguracji z pamięci EEPROM
@@ -305,7 +311,7 @@ void playConfirmationSound() {
 // Inicjalizacja PCF8574
 void setupPCF8574() {
     if (pcf8574.begin()) {
-        for (int i = 0; i < NUM_PUMPS; i++) {
+        for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
             pcf8574.digitalWrite(config.pumps[i].pcf8574_pin, HIGH);  // HIGH = pompa wyłączona
             status.pumps[i].isRunning = false;
             status.pumps[i].lastDose = 0;
