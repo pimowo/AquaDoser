@@ -1191,13 +1191,16 @@ void handleSave() {
     strlcpy(config.mqtt_password, server.arg("mqtt_password").c_str(), sizeof(config.mqtt_password));
 
 
+    String pumpPrefix;
+    String doseArg;
+
     // Zapisz konfigurację pomp
     for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
         pumpPrefix = String("pump") + String(i + 1);
         doseArg = pumpPrefix + "_dose";
         
-        if (webServer.hasArg(doseArg)) {  // Używamy webServer zamiast Server
-            config.pumps[i].dosage = webServer.arg(doseArg).toFloat();
+        if (server.hasArg(doseArg)) {  // Używamy webServer zamiast Server
+            config.pumps[i].dosage = server.arg(doseArg).toFloat();
         }
         
         if (server.hasArg(pumpPrefix + "_time")) {
