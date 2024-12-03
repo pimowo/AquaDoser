@@ -908,6 +908,8 @@ void setupHA() {
     device.setManufacturer("PMW");  // Producent
     device.setSoftwareVersion(SOFTWARE_VERSION);  // Wersja oprogramowania
 
+    mqtt.begin(config.mqtt_server, config.mqtt_port, config.mqtt_user, config.mqtt_password);  // Połącz z MQTT
+
     // Bezpieczna inicjalizacja przełączników
     for(int i = 0; i < NUMBER_OF_PUMPS; i++) {
         pumpSwitches[i]->setName(String("Pompa " + String(i + 1)).c_str());
@@ -923,9 +925,7 @@ void setupHA() {
     // Konfiguracja przełączników w HA
     switchService.setName("Serwis");
     switchService.setIcon("mdi:account-wrench-outline");  
-    switchService.onCommand(onServiceSwitchCommand);  // Funkcja obsługi zmiany stanu
-
-    //mqtt.begin();
+    switchService.onCommand(onServiceSwitchCommand);  // Funkcja obsługi zmiany stanu    
 }
 
 // ** FUNKCJE ZWIĄZANE Z PINAMI **
@@ -952,16 +952,16 @@ void firstUpdateHA() {
     for(uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
         updatePumpState(i, false);
     }
-    mqtt.loop();    
+    //mqtt.loop();    
 
     // Wymuś stan OFF na początku
     //sensorAlarm.setValue("OFF");
     switchSound.setState(false);  // Dodane - wymuś stan początkowy
-    mqtt.loop();
+    //mqtt.loop();
     
     // Ustawienie końcowych stanów i wysyłka do HA
     switchSound.setState(status.soundEnabled);  // Dodane - ustaw aktualny stan dźwięku
-    mqtt.loop();
+    //mqtt.loop();
 }
 
 // ** FUNKCJE ZWIĄZANE Z PRZYCISKIEM **
@@ -1067,7 +1067,7 @@ void onPumpCommand(bool state, HASwitch* sender) {
             
             // Aktualizacja stanu
             pumpSwitches[i]->setState(state);
-            mqtt.loop();
+            //mqtt.loop();
             break;
         }
     }
@@ -1348,7 +1348,7 @@ void updatePumpState(uint8_t pumpIndex, bool state) {
                           (state ? "ON" : "OFF");
         //sensorPump.setValue(statusText.c_str());
         
-        mqtt.loop(); // Wymuszenie aktualizacji
+        //mqtt.loop(); // Wymuszenie aktualizacji
     }
 }
 
@@ -1444,21 +1444,10 @@ void setup() {
 void loop() {
     unsigned long currentMillis = millis();
     
-    // Obsługa przepełnienia licznika millis()
-    handleMillisOverflow();
     
-    // Obsługa MQTT co 100ms
-    if (currentMillis - timers.lastMQTTLoop >= 100) {
-        if (!mqtt.isConnected()) {
-            AQUA_DEBUG_PRINT("Ponowne łączenie z MQTT...");
-            connectMQTT();
-        }
-        mqtt.loop();
-        timers.lastMQTTLoop = currentMillis;
-    }
-    
-    // Obsługa serwera WWW
-    server.handleClient();
+    handleMillisOverflow();  // Obsługa przepełnienia licznika millis()   
+    mqtt.loop();  // Obsługa MQTT
+    server.handleClient();  // Obsługa serwera WWW
     
     // Sprawdzenie stanu pomp i bezpieczeństwa
     for(int i = 0; i < 8; i++) {
