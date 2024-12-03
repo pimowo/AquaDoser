@@ -37,7 +37,6 @@ const unsigned long MILLIS_OVERFLOW_THRESHOLD = 4294967295U - 60000; // ~49.7 dn
 
 
 void updateHAState(uint8_t pumpIndex);
-float measureDistance();
 
 // ** KONFIGURACJA SYSTEMU **
 
@@ -316,13 +315,11 @@ void setupPCF8574() {
 
 // Włączenie pompy
 void turnOnPump(uint8_t pumpIndex) {
-    if (pumpIndex >= 8) return;
-    
-    if (pcf8574.write(pumpIndex, LOW)) {  // LOW = pompa włączona
-        status.pumps[pumpIndex].isRunning = true;
-    } else {
-        Serial.printf("Błąd włączania pompy %d\n", pumpIndex + 1);
-    }
+    #if DEBUG
+    AQUA_DEBUG_PRINTF("Turning ON pump %d\n", pumpIndex);
+    #endif
+    status.pumps[pumpIndex].isRunning = true;
+    // pcf8574.write(pumpIndex, LOW) będzie dodane później
 }
 
 // Dozowanie określonej ilości
@@ -344,13 +341,11 @@ void dosePump(uint8_t pumpIndex) {
 
 // Wyłączenie pompy
 void turnOffPump(uint8_t pumpIndex) {
-    if (pumpIndex >= 8) return;
-    
-    if (pcf8574.write(pumpIndex, HIGH)) {  // HIGH = pompa wyłączona
-        status.pumps[pumpIndex].isRunning = false;
-    } else {
-        Serial.printf("Błąd wyłączania pompy %d\n", pumpIndex + 1);
-    }
+    #if DEBUG
+    AQUA_DEBUG_PRINTF("Turning OFF pump %d\n", pumpIndex);
+    #endif
+    status.pumps[pumpIndex].isRunning = false;
+    // pcf8574.write(pumpIndex, HIGH) będzie dodane później
 }
 
 // Bezpieczne wyłączenie wszystkich pomp
@@ -459,7 +454,6 @@ void welcomeMelody() {
 
 // Wyślij pierwszą aktualizację stanu do Home Assistant
 void firstUpdateHA() {
-    float initialDistance = measureDistance();
         
     // Wymuś stan OFF na początku
     //sensorAlarm.setValue("OFF");
