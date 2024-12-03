@@ -43,11 +43,17 @@ void updateHAState(uint8_t pumpIndex);
 // Makra debugowania
 #define DEBUG 1  // 0 wyłącza debug, 1 włącza debug
 
-#if DEBUG
-    #define AQUA_DEBUG_PRINT(x) Serial.println(x)
-    #define AQUA_DEBUG_PRINTF(format, ...) Serial.printf(format, __VA_ARGS__)
+// #if DEBUG
+//     #define AQUA_DEBUG_PRINT(x) Serial.println(x)
+//     #define AQUA_DEBUG_PRINTF(format, ...) Serial.printf(format, __VA_ARGS__)
+// #else
+//     #define AQUA_DEBUG_PRINT(x)
+//     #define AQUA_DEBUG_PRINTF(format, ...)
+// #endif
+
+#ifdef DEBUG
+    #define AQUA_DEBUG_PRINTF(format, ...) Serial.printf(format "\n", ##__VA_ARGS__)
 #else
-    #define AQUA_DEBUG_PRINT(x)
     #define AQUA_DEBUG_PRINTF(format, ...)
 #endif
 
@@ -160,16 +166,18 @@ HADevice device("AquaDoser");  // Definicja urządzenia dla Home Assistant
 HAMqtt mqtt(client, device);    // Klient MQTT dla Home Assistant
 
 // Serwer HTTP i WebSockets
-ESP8266WebServer Server(80);     // Tworzenie instancji serwera HTTP na porcie 80
+ESP8266WebServer server(80);     // Tworzenie instancji serwera HTTP na porcie 80
 WebSocketsServer webSocket(81);  // Tworzenie instancji serwera WebSockets na porcie 81
 
 // Czujniki i przełączniki dla Home Assistant
 
 // Przełączniki
 HASwitch switchPumpAlarm("pump_alarm");  // Resetowania blokady pompy
-HASwitch switchPump("pump");  // Pompy
 HASwitch switchService("service_mode");  // Tryb serwisowy
 HASwitch switchSound("sound_switch");    // Dźwięki systemu
+
+HASwitch pumpSwitches[NUMBER_OF_PUMPS];  // Tablica przełączników pomp
+HASensor sensorPump(device, "pump_status");  // Sensor statusu pompy
 
 // ** FUNKCJE I METODY SYSTEMOWE **
 
@@ -410,10 +418,13 @@ void setupHA() {
     device.setSoftwareVersion(SOFTWARE_VERSION);  // Wersja oprogramowania
 
     // Configure Home Assistant entities
-    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-        String pumpName = "Pump " + String(i + 1);
-        switchPump.setName(device, pumpName.c_str());
-        pumpSwitch->onCommand(onPumpCommand, i);
+    for(uint8_t i = 0; i < NUM_PUMPS; i++) {
+        String pumpName = String("pump_") + String(i + 1);
+        HASwitch switchPump(device, pumpName.c_str());  // Tworzymy przełącznik
+        switchPump.setName(pumpName.c_str());          // Ustawiamy nazwę - tylko jeden argument
+        switchPump.onCommand(onPumpCommand);           // Ustawiamy callback
+        // Dodaj przełącznik do tablicy jeśli potrzebujesz go później
+        pumpSwitches[i] = switchPump;
     }
 
     switchSound.setName("Dźwięk");
@@ -1140,18 +1151,13 @@ void handleRoot() {
 }
 
 // Waliduje wartości konfiguracji wprowadzone przez użytkownika
-bool validateConfigValues() {
-    if (Server.arg("hostname").length() >= sizeof(config.hostname)) return false;
-    if (Server.arg("mqtt_host").length() >= sizeof(config.mqtt_host)) return false;
-    if (Server.arg("mqtt_user").length() >= sizeof(config.mqtt_user)) return false;
-    if (Server.arg("mqtt_pass").length() >= sizeof(config.mqtt_password)) return false;
-    
+bool validateConfigValues() {   
     // Walidacja ustawień pomp
     for (int i = 0; i < 8; i++) {
-        float dose = Server.arg("p" + String(i) + "_dose").toFloat();
+        float dose = server.arg("p" + String(i) + "_dose").toFloat();
         if (dose < 0 || dose > 1000) return false;  // Maksymalna dawka 1L
         
-        String timeStr = Server.arg("p" + String(i) + "_time");
+        String timeStr = server.arg("p" + String(i) + "_time");
         int hour = timeStr.substring(0, 2).toInt();
         int minute = timeStr.substring(3, 5).toInt();
         
@@ -1188,14 +1194,14 @@ void handleSave() {
     // Zapisz konfigurację pomp
     for (int i = 0; i < 8; i++) {
         String pumpPrefix = "p" + String(i);
-        config.pumps[i].enabled = Server.hasArg(pumpPrefix + "_enabled");
+        config.pumps[i].enabled = server.hasArg(pumpPrefix + "_enabled");
         
         if (Server.hasArg(pumpPrefix + "_dose")) {
-            config.pumps[i].dosage = Server.arg(pumpPrefix + "_dose").toFloat();
+            config.pumps[i].dosage = server.arg(pumpPrefix + "_dose").toFloat();
         }
         
-        if (Server.hasArg(pumpPrefix + "_time")) {
-            String timeStr = Server.arg(pumpPrefix + "_time");
+        if (server.hasArg(pumpPrefix + "_time")) {
+            String timeStr = server.arg(pumpPrefix + "_time");
             if (timeStr.length() >= 5) { // Format HH:MM
                 config.pumps[i].hour = timeStr.substring(0, 2).toInt();
                 config.pumps[i].minute = timeStr.substring(3, 5).toInt();
@@ -1377,7 +1383,7 @@ void loop() {
     mqtt.loop();
     
     // Obsługa serwera WWW
-    webServer.handleClient();
+    server.handleClient();
     
     // Sprawdzenie stanu pomp i bezpieczeństwa
     for(int i = 0; i < 8; i++) {
