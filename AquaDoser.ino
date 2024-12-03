@@ -59,32 +59,32 @@ const char* SOFTWARE_VERSION = "2.12.24";  // Definiowanie wersji oprogramowania
 
 // Struktura dla pojedynczej pompy
 struct PumpConfig {
-    bool enabled;                // czy pompa jest włączona w harmonogramie
-    uint8_t dosage;          // dawka w ml
-    float calibration;       // kalibracja (ml/min)
-    uint8_t pcf8574_pin;    // numer pinu na PCF8574
-    uint8_t hour;               // godzina dozowania
-    uint8_t minute;             // minuta dozowania
+    bool enabled;         // czy pompa jest włączona w harmonogramie
+    uint8_t dosage;       // dawka w ml
+    float calibration;    // kalibracja (ml/min)
+    uint8_t pcf8574_pin;  // numer pinu na PCF8574
+    uint8_t hour;         // godzina dozowania
+    uint8_t minute;       // minuta dozowania
 };
 
 // Konfiguracja
 // Główna struktura konfiguracji
 struct Config {
-    char hostname[32];          // nazwa urządzenia w sieci
-    char mqtt_server[64];         // adres serwera MQTT
-    int mqtt_port;              // port MQTT
-    char mqtt_user[32];         // nazwa użytkownika MQTT
-    char mqtt_password[32];     // hasło MQTT
-    bool soundEnabled;         // czy dźwięki są włączone
+    char hostname[32];                  // nazwa urządzenia w sieci
+    char mqtt_server[64];               // adres serwera MQTT
+    int mqtt_port;                      // port MQTT
+    char mqtt_user[32];                 // nazwa użytkownika MQTT
+    char mqtt_password[32];             // hasło MQTT
+    bool soundEnabled;                  // czy dźwięki są włączone
     PumpConfig pumps[NUMBER_OF_PUMPS];  // konfiguracja dla każdej pompy
-    uint8_t configVersion;     // wersja konfiguracji (dla EEPROM)
-    char checksum;             // suma kontrolna konfiguracji
+    uint8_t configVersion;              // wersja konfiguracji (dla EEPROM)
+    char checksum;                      // suma kontrolna konfiguracji
 };
 
 // Struktura dla pojedynczej pompy - stan bieżący
 struct Pump {
-    bool isRunning;           // czy pompa aktualnie pracuje
-    unsigned long lastDose;   // czas ostatniego dozowania
+    bool isRunning;          // czy pompa aktualnie pracuje
+    unsigned long lastDose;  // czas ostatniego dozowania
     float totalDosed;        // całkowita ilość dozowanego płynu
 };
 
@@ -602,7 +602,7 @@ const char CONFIG_PAGE[] PROGMEM = R"rawliteral(
     <head>
         <meta charset='UTF-8'>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>HydroSense</title>
+        <title>AquaDoser</title>
         <style>
             body { 
                 font-family: Arial, sans-serif; 
@@ -998,7 +998,7 @@ const char CONFIG_PAGE[] PROGMEM = R"rawliteral(
         </script>
     </head>
     <body>
-        <h1>HydroSense</h1>
+        <h1>AquaDoser</h1>
         
         <div class='section'>
             <h2>Status systemu</h2>
@@ -1048,7 +1048,7 @@ const char UPDATE_FORM[] PROGMEM = R"rawliteral(
 // Strona konfiguracji przechowywana w pamięci programu
 const char PAGE_FOOTER[] PROGMEM = R"rawliteral(
 <div class='footer'>
-    <a href='https://github.com/pimowo/HydroSense' target='_blank'>Project by PMW</a>
+    <a href='https://github.com/pimowo/AquaDoser' target='_blank'>Project by PMW</a>
 </div>
 )rawliteral";
 
