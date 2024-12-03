@@ -166,8 +166,8 @@ WebSocketsServer webSocket(81);  // Tworzenie instancji serwera WebSockets na po
 // Czujniki i przełączniki dla Home Assistant
 
 // Przełączniki
-HASwitch* pumpSwitches[NUMBER_OF_PUMPS];  // Tablica przełączników pomp
-HASwitch switchPumpAlarm("pump_alarm");  // Resetowania blokady pompy
+HASwitch* pumpSwitches[NUMBER_OF_PUMPS] = {nullptr};  // Tablica przełączników pomp
+//HASwitch switchPumpAlarm("pump_alarm");  // Resetowania blokady pompy
 HASwitch switchService("service_mode");  // Tryb serwisowy
 HASwitch switchSound("sound_switch");    // Dźwięki systemu
 
@@ -310,11 +310,14 @@ void setupPCF8574() {
 
 // Włączenie pompy
 void turnOnPump(uint8_t pumpIndex) {
-    #if DEBUG
-    AQUA_DEBUG_PRINTF("Turning ON pump %d\n", pumpIndex);
-    #endif
-    pcf8574.digitalWrite(config.pumps[pumpIndex].pcf8574_pin, LOW);  // LOW = pompa włączona
-    status.pumps[pumpIndex].isRunning = true;
+    if (pumpIndex < NUMBER_OF_PUMPS) {
+        #if DEBUG
+        AQUA_DEBUG_PRINTF("Turning ON pump %d\n", pumpIndex);
+        #endif
+        pcf8574.digitalWrite(config.pumps[pumpIndex].pcf8574_pin, LOW);  // LOW = pompa włączona
+        status.pumps[pumpIndex].isRunning = true;
+              updatePumpState(pumpIndex, true);
+    }  
 }
 
 // Dozowanie określonej ilości
@@ -336,11 +339,14 @@ void dosePump(uint8_t pumpIndex) {
 
 // Wyłączenie pompy
 void turnOffPump(uint8_t pumpIndex) {
-    #if DEBUG
-    AQUA_DEBUG_PRINTF("Turning OFF pump %d\n", pumpIndex);
-    #endif
-    pcf8574.digitalWrite(config.pumps[pumpIndex].pcf8574_pin, HIGH);  // HIGH = pompa wyłączona
-    status.pumps[pumpIndex].isRunning = false;
+    if (pumpIndex < NUMBER_OF_PUMPS) {
+        #if DEBUG
+        AQUA_DEBUG_PRINTF("Turning OFF pump %d\n", pumpIndex);
+        #endif
+        pcf8574.digitalWrite(config.pumps[pumpIndex].pcf8574_pin, HIGH);  // HIGH = pompa wyłączona
+        status.pumps[pumpIndex].isRunning = false;
+                updatePumpState(pumpIndex, false);
+    }
 }
 
 // Bezpieczne wyłączenie wszystkich pomp
@@ -411,31 +417,45 @@ void setupHA() {
     device.setManufacturer("PMW");  // Producent
     device.setSoftwareVersion(SOFTWARE_VERSION);  // Wersja oprogramowania
 
-    // Konfiguracja przełączników pomp
+    // Bezpieczna inicjalizacja przełączników
     for(uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
-        String pumpName = String("pump_") + String(i + 1);
-        pumpSwitches[i] = new HASwitch(pumpName.c_str());
-        pumpSwitches[i]->setName(pumpName.c_str());
+        if (pumpSwitches[i] != nullptr) {
+            delete pumpSwitches[i];  // Usuń poprzednią instancję jeśli istnieje
+            pumpSwitches[i] = nullptr;
+        }
+
+        char uniqueId[32];
+        snprintf(uniqueId, sizeof(uniqueId), "pump_%d", i + 1);
+        
+        pumpSwitches[i] = new HASwitch(uniqueId);
+        if (pumpSwitches[i] == nullptr) {
+            Serial.printf("Błąd: Nie można utworzyć przełącznika dla pompy %d\n", i + 1);
+            continue;
+        }
+
+        pumpSwitches[i]->setName(String("Pompa " + String(i + 1)).c_str());
         pumpSwitches[i]->setIcon("mdi:water-pump");
         pumpSwitches[i]->onCommand(onPumpCommand);
-        pumpSwitches[i]->setState(false); // Początkowy stan wyłączony
+        pumpSwitches[i]->setState(false);
     }
 
     switchSound.setName("Dźwięk");
     switchSound.setIcon("mdi:volume-high");        // Ikona głośnika
     switchSound.onCommand(onSoundSwitchCommand);   // Funkcja obsługi zmiany stanu
-    switchSound.setState(status.soundEnabled);      // Stan początkowy
 
     // Konfiguracja przełączników w HA
     switchService.setName("Serwis");
     switchService.setIcon("mdi:account-wrench-outline");            
     switchService.onCommand(onServiceSwitchCommand);  // Funkcja obsługi zmiany stanu
-    switchService.setState(status.isServiceMode);  // Stan początkowy
-    // Inicjalizacja stanu - domyślnie wyłączony
-    status.isServiceMode = false;
-    switchService.setState(false, true);  // force update przy starcie
 
-    //firstUpdateHA();
+    // Konfiguracja sensora statusu
+    sensorPump.setName("Status pomp");
+    sensorPump.setIcon("mdi:information");
+
+    // Inicjalizacja MQTT
+    if (mqtt.begin(config.mqtt_server, 1883, config.mqtt_user, config.mqtt_password)) {  
+        AQUA_DEBUG_PRINT("MQTT zainicjalizowane");
+    }
 }
 
 // ** FUNKCJE ZWIĄZANE Z PINAMI **
@@ -459,7 +479,11 @@ void welcomeMelody() {
 
 // Wyślij pierwszą aktualizację stanu do Home Assistant
 void firstUpdateHA() {
-        
+    for(uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
+        updatePumpState(i, false);
+    }
+    mqtt.loop();    
+
     // Wymuś stan OFF na początku
     //sensorAlarm.setValue("OFF");
     switchSound.setState(false);  // Dodane - wymuś stan początkowy
@@ -554,13 +578,30 @@ void onSoundSwitchCommand(bool state, HASwitch* sender) {
 
 // Deklaracja funkcji callback bez parametru int
 void onPumpCommand(bool state, HASwitch* sender) {
-    // Znajdź indeks pompy na podstawie sender
+    if (sender == nullptr) {
+        Serial.println("Błąd: null sender w onPumpCommand");
+        return;
+    }
+
     for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        if (pumpSwitches[i] == nullptr) continue;
+        
         if (sender == pumpSwitches[i]) {
-            if (!state) {
-                sensorPump.setValue("OFF");
+            Serial.printf("Komenda dla pompy %d: %s\n", i + 1, state ? "ON" : "OFF");
+            
+            if (state) {
+                turnOnPump(i);
+            } else {
+                turnOffPump(i);
             }
-            // Tu możesz dodać specyficzną logikę dla konkretnej pompy
+            
+            // Aktualizacja stanu
+            try {
+                pumpSwitches[i]->setState(state);
+                mqtt.loop();  // Wymuś aktualizację
+            } catch (...) {
+                Serial.println("Błąd podczas aktualizacji stanu");
+            }
             break;
         }
     }
@@ -1288,6 +1329,19 @@ void handleDoUpdate() {
     }
 }
 
+void updatePumpState(uint8_t pumpIndex, bool state) {
+    if (pumpIndex < NUMBER_OF_PUMPS && pumpSwitches[pumpIndex] != nullptr) {
+        pumpSwitches[pumpIndex]->setState(state, true); // force update
+        
+        // Aktualizacja sensora statusu
+        String statusText = "Pompa " + String(pumpIndex + 1) + 
+                          (state ? " włączona" : " wyłączona");
+        sensorPump.setValue(statusText.c_str());
+        
+        mqtt.loop(); // Wymuszenie aktualizacji
+    }
+}
+
 // Obsługa wyniku procesu aktualizacji oprogramowania
 void handleUpdateResult() {
     if (Update.hasError()) {
@@ -1378,11 +1432,15 @@ void loop() {
     // Obsługa przepełnienia licznika millis()
     handleMillisOverflow();
     
-    // Obsługa MQTT
-    if (!mqtt.isConnected()) {
-        connectMQTT();
+    // Obsługa MQTT co 100ms
+    if (currentMillis - timers.lastMQTTLoop >= 100) {
+        if (!mqtt.isConnected()) {
+            AQUA_DEBUG_PRINT("Ponowne łączenie z MQTT...");
+            connectMQTT();
+        }
+        mqtt.loop();
+        timers.lastMQTTLoop = currentMillis;
     }
-    mqtt.loop();
     
     // Obsługa serwera WWW
     server.handleClient();
