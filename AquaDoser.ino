@@ -59,7 +59,7 @@ const char* SOFTWARE_VERSION = "2.12.24";  // Definiowanie wersji oprogramowania
 // Struktura dla pojedynczej pompy
 struct PumpConfig {
     bool enabled;                // czy pompa jest włączona w harmonogramie
-    uint8_t dosage_ml;          // dawka w ml
+    uint8_t dosage;          // dawka w ml
     float calibration;       // kalibracja (ml/min)
     uint8_t pcf8574_pin;    // numer pinu na PCF8574
     uint8_t hour;               // godzina dozowania
@@ -156,32 +156,18 @@ float waterLevelBeforePump = 0;     // Poziom wody przed uruchomieniem pompy
 
 // Wi-Fi, MQTT i Home Assistant
 WiFiClient client;              // Klient połączenia WiFi
-HADevice device("HydroSense");  // Definicja urządzenia dla Home Assistant
+HADevice device("AquaDoser");  // Definicja urządzenia dla Home Assistant
 HAMqtt mqtt(client, device);    // Klient MQTT dla Home Assistant
 
 // Serwer HTTP i WebSockets
-ESP8266WebServer webServer(80);
-//ESP8266WebServer server(80);     // Tworzenie instancji serwera HTTP na porcie 80
+ESP8266WebServer Server(80);     // Tworzenie instancji serwera HTTP na porcie 80
 WebSocketsServer webSocket(81);  // Tworzenie instancji serwera WebSockets na porcie 81
 
 // Czujniki i przełączniki dla Home Assistant
 
-// Sensory pomiarowe
-HASensor sensorDistance("water_level");         // Odległość od lustra wody (w mm)
-HASensor sensorLevel("water_level_percent");    // Poziom wody w zbiorniku (w procentach)
-HASensor sensorVolume("water_volume");          // Objętość wody (w litrach)
-HASensor sensorPumpWorkTime("pump_work_time");  // Czas pracy pompy
-
-// Sensory statusu
-HASensor sensorPump("pump");    // Praca pompy (ON/OFF)
-HASensor sensorWater("water");  // Czujnik poziomu w akwarium (ON=niski/OFF=ok)
-
-// Sensory alarmowe
-HASensor sensorAlarm("water_alarm");      // Brak wody w zbiorniku dolewki
-HASensor sensorReserve("water_reserve");  // Rezerwa w zbiorniku dolewki
-
 // Przełączniki
 HASwitch switchPumpAlarm("pump_alarm");  // Resetowania blokady pompy
+HASwitch switchPump("pump");  // Pompy
 HASwitch switchService("service_mode");  // Tryb serwisowy
 HASwitch switchSound("sound_switch");    // Dźwięki systemu
 
@@ -247,7 +233,7 @@ void setDefaultConfig() {
     // Domyślna konfiguracja pomp
     for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
         config.pumps[i].enabled = false;  // Pompy wyłączone domyślnie
-        config.pumps[i].dosage_ml = 10;   // Domyślna dawka 10ml
+        config.pumps[i].dosage = 10;   // Domyślna dawka 10ml
         config.pumps[i].hour = 8;         // Domyślna godzina dozowania 8:00
         config.pumps[i].minute = 0;       // Minuta 0
     }
@@ -405,16 +391,13 @@ void setupWiFi() {
 }
 
 // Połączenie z serwerem MQTT
-bool connectMQTT() {
-    mqtt.setServer(config.mqttHost, config.mqttPort);
-    mqtt.setCredentials(config.mqttUser, config.mqttPassword);
-
-    if (!mqtt.connect()) {
-        Serial.println("MQTT connection failed");
+bool connectMQTT() {   
+    if (!mqtt.begin(config.mqtt_server, 1883, config.mqtt_user, config.mqtt_password)) {
+        AQUA_DEBUG_PRINT("\nBŁĄD POŁĄCZENIA MQTT!");
         return false;
     }
-
-    Serial.println("Connected to MQTT");
+    
+    AQUA_DEBUG_PRINT("MQTT połączono pomyślnie!");
     return true;
 }
 
@@ -429,15 +412,23 @@ void setupHA() {
     // Configure Home Assistant entities
     for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
         String pumpName = "Pump " + String(i + 1);
-        HADeviceSwitch* pumpSwitch = new HADeviceSwitch(device, pumpName.c_str());
+        switchPump.setName(device, pumpName.c_str());
         pumpSwitch->onCommand(onPumpCommand, i);
     }
 
-    //HASwitch switchSound("sound");
-    soundSwitch.onCommand(onSoundSwitchCommand);
+    switchSound.setName("Dźwięk");
+    switchSound.setIcon("mdi:volume-high");        // Ikona głośnika
+    switchSound.onCommand(onSoundSwitchCommand);   // Funkcja obsługi zmiany stanu
+    switchSound.setState(status.soundEnabled);      // Stan początkowy
 
-    //HASwitch serviceSwitch(device, "Service Mode");
-    serviceSwitch.onCommand(onServiceSwitchCommand);
+    // Konfiguracja przełączników w HA
+    switchService.setName("Serwis");
+    switchService.setIcon("mdi:account-wrench-outline");            
+    switchService.onCommand(onServiceSwitchCommand);  // Funkcja obsługi zmiany stanu
+    switchService.setState(status.isServiceMode);  // Stan początkowy
+    // Inicjalizacja stanu - domyślnie wyłączony
+    status.isServiceMode = false;
+    switchService.setState(false, true);  // force update przy starcie
 
     firstUpdateHA();
 }
@@ -1150,17 +1141,17 @@ void handleRoot() {
 
 // Waliduje wartości konfiguracji wprowadzone przez użytkownika
 bool validateConfigValues() {
-    if (webServer.arg("hostname").length() >= sizeof(config.hostname)) return false;
-    if (webServer.arg("mqtt_host").length() >= sizeof(config.mqttHost)) return false;
-    if (webServer.arg("mqtt_user").length() >= sizeof(config.mqttUser)) return false;
-    if (webServer.arg("mqtt_pass").length() >= sizeof(config.mqttPass)) return false;
+    if (Server.arg("hostname").length() >= sizeof(config.hostname)) return false;
+    if (Server.arg("mqtt_host").length() >= sizeof(config.mqtt_host)) return false;
+    if (Server.arg("mqtt_user").length() >= sizeof(config.mqtt_user)) return false;
+    if (Server.arg("mqtt_pass").length() >= sizeof(config.mqtt_password)) return false;
     
     // Walidacja ustawień pomp
     for (int i = 0; i < 8; i++) {
-        float dose = webServer.arg("p" + String(i) + "_dose").toFloat();
+        float dose = Server.arg("p" + String(i) + "_dose").toFloat();
         if (dose < 0 || dose > 1000) return false;  // Maksymalna dawka 1L
         
-        String timeStr = webServer.arg("p" + String(i) + "_time");
+        String timeStr = Server.arg("p" + String(i) + "_time");
         int hour = timeStr.substring(0, 2).toInt();
         int minute = timeStr.substring(3, 5).toInt();
         
@@ -1172,8 +1163,8 @@ bool validateConfigValues() {
 
 // Obsługa zapisania konfiguracji po jej wprowadzeniu przez użytkownika
 void handleSave() {
-    if (webServer.method() != HTTP_POST) {
-        webServer.send(405, "text/plain", "Method Not Allowed");
+    if (server.method() != HTTP_POST) {
+        server.send(405, "text/plain", "Method Not Allowed");
         return;
     }
 
@@ -1182,40 +1173,29 @@ void handleSave() {
     bool needMqttReconnect = false;
 
     // Zapisz poprzednie wartości MQTT do porównania
-    String oldHost = config.mqttHost;
-    int oldPort = config.mqttPort;
-    String oldUser = config.mqttUser;
-    String oldPass = config.mqttPass;
+    String oldServer = config.mqtt_server;
+    int oldPort = config.mqtt_port;
+    String oldUser = config.mqtt_user;
+    String oldPassword = config.mqtt_password;
 
-    // Zapisz podstawowe ustawienia
-    if (webServer.hasArg("hostname")) {
-        strlcpy(config.hostname, webServer.arg("hostname").c_str(), sizeof(config.hostname));
-    }
-    if (webServer.hasArg("mqtt_host")) {
-        strlcpy(config.mqttHost, webServer.arg("mqtt_host").c_str(), sizeof(config.mqttHost));
-    }
-    if (webServer.hasArg("mqtt_port")) {
-        config.mqttPort = webServer.arg("mqtt_port").toInt();
-    }
-    if (webServer.hasArg("mqtt_user")) {
-        strlcpy(config.mqttUser, webServer.arg("mqtt_user").c_str(), sizeof(config.mqttUser));
-    }
-    if (webServer.hasArg("mqtt_pass")) {
-        strlcpy(config.mqttPass, webServer.arg("mqtt_pass").c_str(), sizeof(config.mqttPass));
-    }
-    config.soundEnabled = webServer.hasArg("sound_enabled");
+    // Zapisz ustawienia MQTT
+    strlcpy(config.mqtt_server, server.arg("mqtt_server").c_str(), sizeof(config.mqtt_server));
+    config.mqtt_port = server.arg("mqtt_port").toInt();
+    strlcpy(config.mqtt_user, server.arg("mqtt_user").c_str(), sizeof(config.mqtt_user));
+    strlcpy(config.mqtt_password, server.arg("mqtt_password").c_str(), sizeof(config.mqtt_password));
+
 
     // Zapisz konfigurację pomp
     for (int i = 0; i < 8; i++) {
         String pumpPrefix = "p" + String(i);
-        config.pumps[i].enabled = webServer.hasArg(pumpPrefix + "_enabled");
+        config.pumps[i].enabled = Server.hasArg(pumpPrefix + "_enabled");
         
-        if (webServer.hasArg(pumpPrefix + "_dose")) {
-            config.pumps[i].dosage = webServer.arg(pumpPrefix + "_dose").toFloat();
+        if (Server.hasArg(pumpPrefix + "_dose")) {
+            config.pumps[i].dosage = Server.arg(pumpPrefix + "_dose").toFloat();
         }
         
-        if (webServer.hasArg(pumpPrefix + "_time")) {
-            String timeStr = webServer.arg(pumpPrefix + "_time");
+        if (Server.hasArg(pumpPrefix + "_time")) {
+            String timeStr = Server.arg(pumpPrefix + "_time");
             if (timeStr.length() >= 5) { // Format HH:MM
                 config.pumps[i].hour = timeStr.substring(0, 2).toInt();
                 config.pumps[i].minute = timeStr.substring(3, 5).toInt();
@@ -1226,15 +1206,16 @@ void handleSave() {
     // Sprawdź poprawność wartości
     if (!validateConfigValues()) {
         config = oldConfig; // Przywróć poprzednie wartości
-        webServer.send(400, "text/plain", "Invalid configuration values! Please check your input.");
+        //webSocket.broadcastTXT("save:error:Nieprawidłowe wartości! Sprawdź wprowadzone dane.");
+        server.send(204); // Nie przekierowuj strony
         return;
     }
 
     // Sprawdź czy dane MQTT się zmieniły
-    if (oldHost != config.mqttHost ||
-        oldPort != config.mqttPort ||
-        oldUser != config.mqttUser ||
-        oldPass != config.mqttPass) {
+    if (oldServer != config.mqtt_server ||
+        oldPort != config.mqtt_port ||
+        oldUser != config.mqtt_user ||
+        oldPassword != config.mqtt_password) {
         needMqttReconnect = true;
     }
 
@@ -1249,13 +1230,9 @@ void handleSave() {
         connectMQTT();
     }
 
-    // Potwierdź zapisanie i zagraj dźwięk potwierdzenia jeśli włączony
-    if (config.soundEnabled) {
-        playConfirmationSound();
-    }
-
-    webServer.sendHeader("Location", "/");
-    webServer.send(303);
+    // Wyślij informację o sukcesie przez WebSocket
+    //webSocket.broadcastTXT("save:success:Zapisano ustawienia!");
+    server.send(204); // Nie przekierowuj strony
 }
 
 // Obsługa aktualizacji oprogramowania przez HTTP
