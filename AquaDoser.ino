@@ -810,23 +810,45 @@ void syncTimeFromNTP() {
     }
 }
 
+// CustomTimeStatus getCustomTimeStatus() {
+//     CustomTimeStatus status;
+//     DateTime now = rtc.now();
+//     time_t localTime = CE.toLocal(now.unixtime());
+    
+//     // Format czasu GG:MM
+//     char timeStr[6];
+//     sprintf(timeStr, "%02d:%02d", hour(localTime), minute(localTime));
+//     status.time = String(timeStr);
+    
+//     // Format daty DD/MM/RRRR
+//     char dateStr[11];
+//     sprintf(dateStr, "%02d/%02d/%04d", day(localTime), month(localTime), year(localTime));
+//     status.date = String(dateStr);
+    
+//     // Sprawdzenie czy jest czas letni
+//     status.season = CE.locIsDST(now.unixtime()) ? "LATO" : "ZIMA";
+    
+//     return status;
+// }
+
+struct CustomTimeStatus {
+    String time;
+    String date;
+    String season;
+};
+
 CustomTimeStatus getCustomTimeStatus() {
     CustomTimeStatus status;
-    DateTime now = rtc.now();
-    time_t localTime = CE.toLocal(now.unixtime());
-    
-    // Format czasu GG:MM
-    char timeStr[6];
-    sprintf(timeStr, "%02d:%02d", hour(localTime), minute(localTime));
-    status.time = String(timeStr);
-    
-    // Format daty DD/MM/RRRR
-    char dateStr[11];
-    sprintf(dateStr, "%02d/%02d/%04d", day(localTime), month(localTime), year(localTime));
-    status.date = String(dateStr);
-    
-    // Sprawdzenie czy jest czas letni
-    status.season = CE.locIsDST(now.unixtime()) ? "LATO" : "ZIMA";
+    // Pobierz aktualny czas
+    status.time = String(hour()) + ":" + String(minute()) + ":" + String(second());
+    // Pobierz aktualną datę
+    status.date = String(day()) + "/" + String(month()) + "/" + String(year());
+    // Ustaw sezon (możesz dostosować logikę)
+    int currentMonth = month();
+    if (currentMonth >= 3 && currentMonth <= 5) status.season = "Wiosna";
+    else if (currentMonth >= 6 && currentMonth <= 8) status.season = "Lato";
+    else if (currentMonth >= 9 && currentMonth <= 11) status.season = "Jesień";
+    else status.season = "Zima";
     
     return status;
 }
@@ -1353,7 +1375,7 @@ String getConfigPage() {
     configForms += F("'></td></tr>"
                      "<tr><td>Hasło</td><td><input type='password' name='mqtt_password' value='");
     configForms += config.mqtt_password;
-    configForms += F("'></td></tr>"
+    configForms += F("'></td></tr>");
         
     CustomTimeStatus currentStatus = getCustomTimeStatus();
 
@@ -1698,7 +1720,7 @@ void updatePumpState(uint8_t pumpIndex, bool state) {
     //pumps[pumpIndex].state = state;
     //pumps[pumpIndex].haSwitch->setState(state); // Aktualizuj stan w HA
 
-    if (pumpIndex < NUMBER_OF_PUMPS && pumpSwitches[pumpIndex] != nullptr) {
+    if (pumpIndex < NUMBER_OF_PUMPS && pumpStates[pumpIndex] != nullptr) {
         pumpSwitches[pumpIndex]->setState(state, true); // force update
         
         // Aktualizacja sensora statusu
