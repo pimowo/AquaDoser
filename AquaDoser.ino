@@ -24,6 +24,9 @@
 #include <TimeLib.h>
 #include <Timezone.h>    // dla obsługi czasu letniego/zimowego
 
+// Pozostałe
+#include <Adafruit_NeoPixel.h>  // Sterowanie LED
+
 // ** DEFINICJE PINÓW **
 
 // Przypisanie pinów do urządzeń
@@ -35,6 +38,19 @@ const int SDA_PIN = 4;          // GPIO 4
 const int SCL_PIN = 5;          // GPIO 5
 
 PCF8574 pcf8574(0x20);
+
+// --- Kolory LED
+#define COLOR_OFF 0xFF0000        // Czerwony - pompa wyłączona
+#define COLOR_ON 0x00FF00         // Zielony - pompa włączona
+#define COLOR_WORKING 0x0000FF    // Niebieski - pompa pracuje
+#define COLOR_SERVICE 0xFFFF00    // Żółty - tryb serwisowy
+
+#define COLOR_RAINBOW_1 strip.Color(255, 0, 0)      // Czerwony
+#define COLOR_RAINBOW_2 strip.Color(255, 127, 0)    // Pomarańczowy
+#define COLOR_RAINBOW_3 strip.Color(255, 255, 0)    // Żółty
+#define COLOR_RAINBOW_4 strip.Color(0, 255, 0)      // Zielony
+#define COLOR_RAINBOW_5 strip.Color(0, 0, 255)      // Niebieski
+#define COLOR_RAINBOW_6 strip.Color(139, 0, 255)    // Fioletowy
 
 // ** USTAWIENIA CZASOWE **
 
@@ -831,12 +847,6 @@ void syncTimeFromNTP() {
 //     return status;
 // }
 
-struct CustomTimeStatus {
-    String time;
-    String date;
-    String season;
-};
-
 CustomTimeStatus getCustomTimeStatus() {
     CustomTimeStatus status;
     // Pobierz aktualny czas
@@ -1167,6 +1177,34 @@ void setupPin() {
     for(int i = 0; i < NUMBER_OF_PUMPS; i++) {
         pcf8574.pinMode(i, OUTPUT);
         pcf8574.digitalWrite(i, HIGH);  // HIGH = wyłączone (logika ujemna)
+    }
+}
+
+// Efekt powitalny
+void playWelcomeEffect() {
+    // Efekt 1: Przebiegające światło (1s)
+    for(int j = 0; j < 2; j++) {  // Dwa przebiegi
+        for(int i = 0; i < NUMBER_OF_PUMPS; i++) {
+            strip.setPixelColor(i, COLOR_RAINBOW_1);
+            if(i > 0) strip.setPixelColor(i-1, COLOR_OFF);
+            strip.show();
+            delay(100);
+        }
+        strip.setPixelColor(NUMBER_OF_PUMPS-1, COLOR_OFF);
+        strip.show();
+    }
+    
+    // Efekt 2: Tęczowa fala (1s)
+    for(int j = 0; j < 2; j++) {  // Dwa przebiegi
+        uint32_t colors[] = {COLOR_RAINBOW_1, COLOR_RAINBOW_2, COLOR_RAINBOW_3, 
+                           COLOR_RAINBOW_4, COLOR_RAINBOW_5, COLOR_RAINBOW_6};
+        for(int c = 0; c < 6; c++) {
+            for(int i = 0; i < NUMBER_OF_PUMPS; i++) {
+                strip.setPixelColor(i, colors[(i + c) % 6]);
+            }
+            strip.show();
+            delay(160);
+        }
     }
 }
 
@@ -1721,7 +1759,7 @@ void updatePumpState(uint8_t pumpIndex, bool state) {
     //pumps[pumpIndex].haSwitch->setState(state); // Aktualizuj stan w HA
 
     if (pumpIndex < NUMBER_OF_PUMPS && pumpStates[pumpIndex] != nullptr) {
-        pumpSwitches[pumpIndex]->setState(state, true); // force update
+        pumpStates[pumpIndex]->setState(state, true);
         
         // Aktualizacja sensora statusu
         String statusText = "Pompa_" + String(pumpIndex + 1) + 
@@ -1853,7 +1891,14 @@ void setup() {
     ArduinoOTA.setPassword("aquadoser");  // Ustaw hasło dla OTA
     ArduinoOTA.begin();  // Uruchom OTA   
 
-    //welcomeMelody();
+    // LED
+    strip.begin();
+    strip.show();
+    initializeLEDs();
+
+    // Efekty startowe
+    playWelcomeEffect();
+    welcomeMelody();
 }
 
 // ** Funkcja loop - główny cykl pracy urządzenia **
@@ -1864,6 +1909,7 @@ void loop() {
     handleMillisOverflow();  // Obsługa przepełnienia licznika millis()   
     mqtt.loop();  // Obsługa MQTT
     server.handleClient();  // Obsługa serwera WWW
+    updateLEDs();                  // Aktualizacja diod LED
     
     // Aktualizacja stanu sensorów na podstawie PCF8574
     for(int i = 0; i < NUMBER_OF_PUMPS; i++) {
@@ -1895,4 +1941,6 @@ void loop() {
     if (millis() - lastNTPSync >= NTP_SYNC_INTERVAL) {
         syncTimeFromNTP();
     }
+
+    yield();    // Obsługa zadań systemowych ESP8266
 }
