@@ -216,7 +216,8 @@ const unsigned long NTP_SYNC_INTERVAL = 24UL * 60UL * 60UL * 1000UL; // 24h w mi
 
 #if DEBUG
     #define AQUA_DEBUG_PRINT(x) Serial.println(x)
-    #define AQUA_DEBUG_PRINTF(format, ...) Serial.printf(format, __VA_ARGS__)
+    #define AQUA_DEBUG_PRINTF(format, ...) Serial.printf(format "\n", ##__VA_ARGS__)
+
 #else
     #define AQUA_DEBUG_PRINT(x)
     #define AQUA_DEBUG_PRINTF(format, ...)
