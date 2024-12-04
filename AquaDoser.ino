@@ -769,8 +769,18 @@ const char CONFIG_PAGE[] PROGMEM = R"rawliteral(
             </table>
         </div>
 
-        %BUTTONS%
+        // %BUTTONS%
+        // %CONFIG_FORMS%
+        // %UPDATE_FORM%
+        // %FOOTER%
+
+        %MQTT_STATUS%
+        %MQTT_STATUS_CLASS%
+        %SOUND_STATUS%
+        %SOUND_STATUS_CLASS%
+        %SOFTWARE_VERSION%
         %CONFIG_FORMS%
+        %BUTTONS%
         %UPDATE_FORM%
         %FOOTER%
 
@@ -1436,7 +1446,8 @@ void onServiceSwitchCommand(bool state, HASwitch* sender) {
 // Zwraca zawartość strony konfiguracji jako ciąg znaków
 String getConfigPage() {
     String html = FPSTR(CONFIG_PAGE);
-    
+    String configForms = "";  // Inicjalizuj pusty string dla formularzy
+
     // Przygotuj wszystkie wartości przed zastąpieniem
     bool mqttConnected = client.connected();
     String mqttStatus = mqttConnected ? "Połączony" : "Rozłączony";
@@ -1455,19 +1466,36 @@ String getConfigPage() {
     );
 
     // Zastąp wszystkie placeholdery
-    html.replace("%MQTT_SERVER%", config.mqtt_server);
-    html.replace("%MQTT_PORT%", String(config.mqtt_port));
-    html.replace("%MQTT_USER%", config.mqtt_user);
-    html.replace("%MQTT_PASSWORD%", config.mqtt_password);
-    html.replace("%MQTT_STATUS%", mqttStatus);
-    html.replace("%MQTT_STATUS_CLASS%", mqttStatusClass);
-    html.replace("%SOUND_STATUS%", soundStatus);
-    html.replace("%SOUND_STATUS_CLASS%", soundStatusClass);
+    // html.replace("%MQTT_SERVER%", config.mqtt_server);
+    // html.replace("%MQTT_PORT%", String(config.mqtt_port));
+    // html.replace("%MQTT_USER%", config.mqtt_user);
+    // html.replace("%MQTT_PASSWORD%", config.mqtt_password);
+    // html.replace("%MQTT_STATUS%", mqttStatus);
+    // html.replace("%MQTT_STATUS_CLASS%", mqttStatusClass);
+    // html.replace("%SOUND_STATUS%", soundStatus);
+    // html.replace("%SOUND_STATUS_CLASS%", soundStatusClass);
+    // html.replace("%SOFTWARE_VERSION%", SOFTWARE_VERSION);
+    // html.replace("%BUTTONS%", buttons);
+    // html.replace("%UPDATE_FORM%", FPSTR(UPDATE_FORM));
+    // html.replace("%FOOTER%", FPSTR(PAGE_FOOTER));
+    // html.replace("%MESSAGE%", "");
+    // Zastąp wszystkie placeholdery
+    html.replace("%MQTT_STATUS%", client.connected() ? "Połączony" : "Rozłączony");
+    html.replace("%MQTT_STATUS_CLASS%", client.connected() ? "success" : "error");
+    html.replace("%SOUND_STATUS%", config.soundEnabled ? "Włączony" : "Wyłączony");
+    html.replace("%SOUND_STATUS_CLASS%", config.soundEnabled ? "success" : "error");
     html.replace("%SOFTWARE_VERSION%", SOFTWARE_VERSION);
-    html.replace("%BUTTONS%", buttons);
+    html.replace("%CONFIG_FORMS%", configForms);
+    html.replace("%BUTTONS%", F(
+        "<div class='section'>"
+        "<div class='buttons-container'>"
+        "<button class='btn btn-blue' onclick='rebootDevice()'>Restart urządzenia</button>"
+        "<button class='btn btn-red' onclick='factoryReset()'>Przywróć ustawienia fabryczne</button>"
+        "</div>"
+        "</div>"
+    ));
     html.replace("%UPDATE_FORM%", FPSTR(UPDATE_FORM));
     html.replace("%FOOTER%", FPSTR(PAGE_FOOTER));
-    html.replace("%MESSAGE%", "");
 
     // Przygotuj formularze konfiguracyjne
     String configForms = F("<form method='POST' action='/save'>");
@@ -1500,7 +1528,7 @@ String getConfigPage() {
     
     configForms += F("<tr><td>Data</td><td>");
     configForms += currentStatus.date;
-    configForms += F("</td></tr>");    
+    configForms += F("</td></tr>"
                      "</table></div>");
 
     // Sekcja pomp
@@ -1584,9 +1612,7 @@ String getConfigPage() {
         configForms += String(i);
         configForms += F("'>Test pompy</button></td></tr>");
     
-        configForms += F("</table></div>\n");
-
-        return configForms;
+        configForms += F("</table></div>");
     }
 
     // W sekcji pompy
