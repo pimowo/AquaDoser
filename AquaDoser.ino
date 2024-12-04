@@ -769,11 +769,6 @@ const char CONFIG_PAGE[] PROGMEM = R"rawliteral(
             </table>
         </div>
 
-        // %BUTTONS%
-        // %CONFIG_FORMS%
-        // %UPDATE_FORM%
-        // %FOOTER%
-
         %MQTT_STATUS%
         %MQTT_STATUS_CLASS%
         %SOUND_STATUS%
@@ -1448,8 +1443,8 @@ String getConfigPage() {
     String html = FPSTR(CONFIG_PAGE);
 
     // Inicjalizacja zmiennych przed użyciem +=
-    String configForms = "";
-    String buttons = "";
+    //String configForms = "";
+    //String buttons = "";
 
     // Przygotuj wszystkie wartości przed zastąpieniem
     bool mqttConnected = client.connected();
@@ -1458,6 +1453,9 @@ String getConfigPage() {
     String soundStatus = config.soundEnabled ? "Włączony" : "Wyłączony";
     String soundStatusClass = config.soundEnabled ? "success" : "error";
     
+    // Przygotuj formularze konfiguracyjne
+    String configForms = F("<form method='POST' action='/save'>");
+
     // Sekcja przycisków - zmieniona na String zamiast PROGMEM
     String buttons = F(
         "<div class='section'>"
@@ -1474,12 +1472,9 @@ String getConfigPage() {
     html.replace("%SOUND_STATUS_CLASS%", config.soundEnabled ? "success" : "error");
     html.replace("%SOFTWARE_VERSION%", SOFTWARE_VERSION);
     html.replace("%CONFIG_FORMS%", configForms);
-    html.replace("%BUTTONS%", buttons);
     html.replace("%UPDATE_FORM%", FPSTR(UPDATE_FORM));
+    html.replace("%BUTTONS%", buttons);
     html.replace("%FOOTER%", FPSTR(PAGE_FOOTER));
-
-    // Przygotuj formularze konfiguracyjne
-    String configForms += F("<form method='POST' action='/save'>");
     
     // MQTT
     configForms += F("<div class='section'>"
