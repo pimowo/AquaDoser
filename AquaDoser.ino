@@ -258,524 +258,738 @@ HASwitch switchSound("sound_switch");    // Dźwięki systemu
 // ** STRONA KONFIGURACYJNA **
 
 // Strona konfiguracji przechowywana w pamięci programu
-const char CONFIG_PAGE[] PROGMEM = R"rawliteral(
-  <!DOCTYPE html>
-  <html>
-    <head>
-        <meta charset='UTF-8'>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>AquaDoser</title>
-        <style>
-            body { 
-                font-family: Arial, sans-serif; 
-                margin: 0; 
-                padding: 20px; 
-                background-color: #1a1a1a;
-                color: #ffffff;
-            }
+// const char CONFIG_PAGE[] PROGMEM = R"rawliteral(
+//   <!DOCTYPE html>
+//   <html>
+//     <head>
+//         <meta charset='UTF-8'>
+//         <meta name="viewport" content="width=device-width, initial-scale=1.0">
+//         <title>AquaDoser</title>
+//         <style>
+//             body { 
+//                 font-family: Arial, sans-serif; 
+//                 margin: 0; 
+//                 padding: 20px; 
+//                 background-color: #1a1a1a;
+//                 color: #ffffff;
+//             }
 
-            .buttons-container {
-                display: flex;
-                justify-content: space-between;
-                margin: -5px;
-            }
+//             .buttons-container {
+//                 display: flex;
+//                 justify-content: space-between;
+//                 margin: -5px;
+//             }
 
-            .container { 
-                max-width: 800px; 
-                margin: 0 auto; 
-                padding: 0 15px;
-            }
+//             .container { 
+//                 max-width: 800px; 
+//                 margin: 0 auto; 
+//                 padding: 0 15px;
+//             }
 
-            .section {
-                background-color: #2a2a2a;
-                padding: 20px;
-                margin-bottom: 20px;
-                border-radius: 8px;
-                width: 100%;
-                box-sizing: border-box;
-            }
+//             .section {
+//                 background-color: #2a2a2a;
+//                 padding: 20px;
+//                 margin-bottom: 20px;
+//                 border-radius: 8px;
+//                 width: 100%;
+//                 box-sizing: border-box;
+//             }
 
-            h1 { 
-                color: #ffffff; 
-                text-align: center;
-                margin-bottom: 30px;
-                font-size: 2.5em;
-                background-color: #2d2d2d;
-                padding: 20px;
-                border-radius: 8px;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-            }
+//             h1 { 
+//                 color: #ffffff; 
+//                 text-align: center;
+//                 margin-bottom: 30px;
+//                 font-size: 2.5em;
+//                 background-color: #2d2d2d;
+//                 padding: 20px;
+//                 border-radius: 8px;
+//                 box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+//             }
 
-            h2 { 
-                color: #2196F3;
-                margin-top: 0;
-                font-size: 1.5em;
-            }
+//             h2 { 
+//                 color: #2196F3;
+//                 margin-top: 0;
+//                 font-size: 1.5em;
+//             }
 
-            table { 
-                width: 100%; 
-                border-collapse: collapse;
-            }
+//             table { 
+//                 width: 100%; 
+//                 border-collapse: collapse;
+//             }
 
-            td { 
-                padding: 12px 8px;
-                border-bottom: 1px solid #3d3d3d;
-            }
+//             td { 
+//                 padding: 12px 8px;
+//                 border-bottom: 1px solid #3d3d3d;
+//             }
 
-            .config-table td {
-                padding: 8px;
-            }
+//             .config-table td {
+//                 padding: 8px;
+//             }
 
-            .config-table {
-                width: 100%;
-                border-collapse: collapse;
-                table-layout: fixed;
-            }
+//             .config-table {
+//                 width: 100%;
+//                 border-collapse: collapse;
+//                 table-layout: fixed;
+//             }
 
-            .config-table td:first-child {
-                width: 65%;
-            }
+//             .config-table td:first-child {
+//                 width: 65%;
+//             }
 
-            .config-table td:last-child {
-                width: 35%;
-            }
-            .config-table input[type="text"],
-            .config-table input[type="password"],
-            .config-table input[type="number"] {
-                width: 100%;
-                padding: 8px;
-                border: 1px solid #3d3d3d;
-                border-radius: 4px;
-                background-color: #1a1a1a;
-                color: #ffffff;
-                box-sizing: border-box;
-            }
+//             .config-table td:last-child {
+//                 width: 35%;
+//             }
+//             .config-table input[type="text"],
+//             .config-table input[type="password"],
+//             .config-table input[type="number"] {
+//                 width: 100%;
+//                 padding: 8px;
+//                 border: 1px solid #3d3d3d;
+//                 border-radius: 4px;
+//                 background-color: #1a1a1a;
+//                 color: #ffffff;
+//                 box-sizing: border-box;
+//             }
 
-            input[type="text"],
-            input[type="password"],
-            input[type="number"] {
-                width: 100%;
-                padding: 8px;
-                border: 1px solid #3d3d3d;
-                border-radius: 4px;
-                background-color: #1a1a1a;
-                color: #ffffff;
-                box-sizing: border-box;
-                text-align: left;
-            }
+//             input[type="text"],
+//             input[type="password"],
+//             input[type="number"] {
+//                 width: 100%;
+//                 padding: 8px;
+//                 border: 1px solid #3d3d3d;
+//                 border-radius: 4px;
+//                 background-color: #1a1a1a;
+//                 color: #ffffff;
+//                 box-sizing: border-box;
+//                 text-align: left;
+//             }
 
-            input[type="submit"] { 
-                background-color: #4CAF50; 
-                color: white; 
-                padding: 12px 24px; 
-                border: none; 
-                border-radius: 4px; 
-                cursor: pointer;
-                width: 100%;
-                font-size: 16px;
-            }
+//             input[type="submit"] { 
+//                 background-color: #4CAF50; 
+//                 color: white; 
+//                 padding: 12px 24px; 
+//                 border: none; 
+//                 border-radius: 4px; 
+//                 cursor: pointer;
+//                 width: 100%;
+//                 font-size: 16px;
+//             }
 
-            input[type="submit"]:hover { 
-                background-color: #45a049; 
-            }
+//             input[type="submit"]:hover { 
+//                 background-color: #45a049; 
+//             }
 
-            input[type="file"] {
-                background-color: #1a1a1a;
-                color: #ffffff;
-                padding: 8px;
-                border: 1px solid #3d3d3d;
-                border-radius: 4px;
-                width: 100%;
-                cursor: pointer;
-            }
+//             input[type="file"] {
+//                 background-color: #1a1a1a;
+//                 color: #ffffff;
+//                 padding: 8px;
+//                 border: 1px solid #3d3d3d;
+//                 border-radius: 4px;
+//                 width: 100%;
+//                 cursor: pointer;
+//             }
 
-            input[type="file"]::-webkit-file-upload-button {
-                background-color: #2196F3;
-                color: white;
-                padding: 8px 16px;
-                border: none;
-                border-radius: 4px;
-                cursor: pointer;
-                margin-right: 10px;
-            }
+//             input[type="file"]::-webkit-file-upload-button {
+//                 background-color: #2196F3;
+//                 color: white;
+//                 padding: 8px 16px;
+//                 border: none;
+//                 border-radius: 4px;
+//                 cursor: pointer;
+//                 margin-right: 10px;
+//             }
 
-            input[type="file"]::-webkit-file-upload-button:hover {
-                background-color: #1976D2;
-            }
+//             input[type="file"]::-webkit-file-upload-button:hover {
+//                 background-color: #1976D2;
+//             }
 
-            .success { 
-                color: #4CAF50; 
-            }
+//             .success { 
+//                 color: #4CAF50; 
+//             }
 
-            .error { 
-                color: #F44336;
-            }
+//             .error { 
+//                 color: #F44336;
+//             }
 
-            .alert { 
-                padding: 15px; 
-                margin-bottom: 20px; 
-                border-radius: 0;
-                position: fixed;
-                top: 0;
-                left: 0;
-                right: 0;
-                width: 100%;
-                z-index: 1000;
-                text-align: center;
-                animation: fadeOut 0.5s ease-in-out 5s forwards;
-            }
-            .alert.success { 
-                background-color: #4CAF50;
-                color: white;
-                border: none;
-                box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-            }
+//             .alert { 
+//                 padding: 15px; 
+//                 margin-bottom: 20px; 
+//                 border-radius: 0;
+//                 position: fixed;
+//                 top: 0;
+//                 left: 0;
+//                 right: 0;
+//                 width: 100%;
+//                 z-index: 1000;
+//                 text-align: center;
+//                 animation: fadeOut 0.5s ease-in-out 5s forwards;
+//             }
+//             .alert.success { 
+//                 background-color: #4CAF50;
+//                 color: white;
+//                 border: none;
+//                 box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+//             }
 
-            .btn {
-                padding: 12px 24px;
-                border: none;
-                border-radius: 4px;
-                cursor: pointer;
-                font-size: 14px;
-                width: calc(50% - 10px);
-                display: inline-block;
-                margin: 5px;
-                text-align: center;
-            }
+//             .btn {
+//                 padding: 12px 24px;
+//                 border: none;
+//                 border-radius: 4px;
+//                 cursor: pointer;
+//                 font-size: 14px;
+//                 width: calc(50% - 10px);
+//                 display: inline-block;
+//                 margin: 5px;
+//                 text-align: center;
+//             }
 
-            .btn-blue { 
-                background-color: #2196F3;
-                color: white; 
-            }
+//             .btn-blue { 
+//                 background-color: #2196F3;
+//                 color: white; 
+//             }
 
-            .btn-red { 
-                background-color: #F44336;
-                color: white; 
-            }
+//             .btn-red { 
+//                 background-color: #F44336;
+//                 color: white; 
+//             }
 
-            .btn-orange {
-                background-color: #FF9800 !important;
-                color: white !important;
-            }
+//             .btn-orange {
+//                 background-color: #FF9800 !important;
+//                 color: white !important;
+//             }
 
-            .btn-orange:hover {
-                background-color: #F57C00 !important;
-            }
+//             .btn-orange:hover {
+//                 background-color: #F57C00 !important;
+//             }
 
-            .console {
-                background-color: #1a1a1a;
-                color: #ffffff;
-                padding: 15px;
-                border-radius: 4px;
-                font-family: monospace;
-                height: 200px;
-                overflow-y: auto;
-                margin-top: 10px;
-                border: 1px solid #3d3d3d;
-            }
+//             .console {
+//                 background-color: #1a1a1a;
+//                 color: #ffffff;
+//                 padding: 15px;
+//                 border-radius: 4px;
+//                 font-family: monospace;
+//                 height: 200px;
+//                 overflow-y: auto;
+//                 margin-top: 10px;
+//                 border: 1px solid #3d3d3d;
+//             }
 
-            .footer {
-                background-color: #2d2d2d;
-                padding: 20px;
-                margin-top: 20px;
-                border-radius: 8px;
-                text-align: center;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-            }
+//             .footer {
+//                 background-color: #2d2d2d;
+//                 padding: 20px;
+//                 margin-top: 20px;
+//                 border-radius: 8px;
+//                 text-align: center;
+//                 box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+//             }
 
-            .footer a {
-                display: inline-block;
-                background-color: #2196F3;
-                color: white;
-                text-decoration: underline;
-                padding: 12px 24px;
-                border-radius: 4px;
-                font-weight: normal;
-                transition: background-color 0.3s;
-                width: 100%;
-                box-sizing: border-box;
-            }
+//             .footer a {
+//                 display: inline-block;
+//                 background-color: #2196F3;
+//                 color: white;
+//                 text-decoration: underline;
+//                 padding: 12px 24px;
+//                 border-radius: 4px;
+//                 font-weight: normal;
+//                 transition: background-color 0.3s;
+//                 width: 100%;
+//                 box-sizing: border-box;
+//             }
 
-            .footer a:hover {
-                background-color: #1976D2;
-            }
+//             .footer a:hover {
+//                 background-color: #1976D2;
+//             }
 
-            .progress {
-                width: 100%;
-                background-color: #1a1a1a;
-                border: 1px solid #3d3d3d;
-                border-radius: 4px;
-                padding: 3px;
-                margin-top: 15px;
-            }
-            .progress-bar {
-                width: 0%;
-                height: 20px;
-                background-color: #4CAF50;
-                border-radius: 2px;
-                transition: width 0.3s ease-in-out;
-                text-align: center;
-                color: white;
-                line-height: 20px;
-            }
+//             .progress {
+//                 width: 100%;
+//                 background-color: #1a1a1a;
+//                 border: 1px solid #3d3d3d;
+//                 border-radius: 4px;
+//                 padding: 3px;
+//                 margin-top: 15px;
+//             }
+//             .progress-bar {
+//                 width: 0%;
+//                 height: 20px;
+//                 background-color: #4CAF50;
+//                 border-radius: 2px;
+//                 transition: width 0.3s ease-in-out;
+//                 text-align: center;
+//                 color: white;
+//                 line-height: 20px;
+//             }
 
-            .message {
-                position: fixed;
-                top: 20px;
-                left: 50%;
-                transform: translateX(-50%);
-                padding: 15px 30px;
-                border-radius: 5px;
-                color: white;
-                opacity: 0;
-                transition: opacity 0.3s ease-in-out;
-                z-index: 1000;
-            }
+//             .message {
+//                 position: fixed;
+//                 top: 20px;
+//                 left: 50%;
+//                 transform: translateX(-50%);
+//                 padding: 15px 30px;
+//                 border-radius: 5px;
+//                 color: white;
+//                 opacity: 0;
+//                 transition: opacity 0.3s ease-in-out;
+//                 z-index: 1000;
+//             }
 
-            .message.success {
-                background-color: #4CAF50;
-                box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-            }
+//             .message.success {
+//                 background-color: #4CAF50;
+//                 box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+//             }
 
-            .message.error {
-                background-color: #f44336;
-                box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-            }
+//             .message.error {
+//                 background-color: #f44336;
+//                 box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+//             }
 
-            @media (max-width: 600px) {
-                body {
-                    padding: 10px;
-                }
-                .container {
-                    padding: 0;
-                }
-                .section {
-                    padding: 15px;
-                    margin-bottom: 15px;
-                }
-                .console {
-                    height: 150px;
-                }
-                .pump-section {
-                    background-color: #2d2d2d;
-                    padding: 15px;
-                    margin-bottom: 15px;
-                    border-radius: 4px;
-                }
+//             @media (max-width: 600px) {
+//                 body {
+//                     padding: 10px;
+//                 }
+//                 .container {
+//                     padding: 0;
+//                 }
+//                 .section {
+//                     padding: 15px;
+//                     margin-bottom: 15px;
+//                 }
+//                 .console {
+//                     height: 150px;
+//                 }
+//                 .pump-section {
+//                     background-color: #2d2d2d;
+//                     padding: 15px;
+//                     margin-bottom: 15px;
+//                     border-radius: 4px;
+//                 }
                 
-                .pump-section h3 {
-                    color: #2196F3;
-                    margin-top: 0;
-                    margin-bottom: 15px;
-                }
+//                 .pump-section h3 {
+//                     color: #2196F3;
+//                     margin-top: 0;
+//                     margin-bottom: 15px;
+//                 }
                 
-                .weekdays {
-                    display: grid;
-                    grid-template-columns: repeat(7, auto);
-                    gap: 5px;
-                    justify-content: start;
-                }
+//                 .weekdays {
+//                     display: grid;
+//                     grid-template-columns: repeat(7, auto);
+//                     gap: 5px;
+//                     justify-content: start;
+//                 }
                 
-                .weekdays label {
-                    background-color: #1a1a1a;
-                    padding: 5px 8px;
-                    border-radius: 4px;
-                    cursor: pointer;
-                    transition: background-color 0.3s;
-                }
+//                 .weekdays label {
+//                     background-color: #1a1a1a;
+//                     padding: 5px 8px;
+//                     border-radius: 4px;
+//                     cursor: pointer;
+//                     transition: background-color 0.3s;
+//                 }
                 
-                .weekdays label:hover {
-                    background-color: #2d2d2d;
-                }
+//                 .weekdays label:hover {
+//                     background-color: #2d2d2d;
+//                 }
                 
-                .weekdays input[type="checkbox"]:checked + span {
-                    color: #2196F3;
-                }
-                input[type="number"] {
-                    width: 80px;
-                    text-align: right;
-                    -moz-appearance: textfield;
-                }
+//                 .weekdays input[type="checkbox"]:checked + span {
+//                     color: #2196F3;
+//                 }
+//                 input[type="number"] {
+//                     width: 80px;
+//                     text-align: right;
+//                     -moz-appearance: textfield;
+//                 }
                 
-                input[type="number"]::-webkit-outer-spin-button,
-                input[type="number"]::-webkit-inner-spin-button {
-                    -webkit-appearance: none;
-                    margin: 0;
-                }
+//                 input[type="number"]::-webkit-outer-spin-button,
+//                 input[type="number"]::-webkit-inner-spin-button {
+//                     -webkit-appearance: none;
+//                     margin: 0;
+//                 }
                 
-                .time-input {
-                    width: 60px;
-                }
-                .pump-status {
-                    padding: 4px 8px;
-                    border-radius: 4px;
-                    font-size: 0.9em;
-                }
+//                 .time-input {
+//                     width: 60px;
+//                 }
+//                 .pump-status {
+//                     padding: 4px 8px;
+//                     border-radius: 4px;
+//                     font-size: 0.9em;
+//                 }
                 
-                .pump-status.active {
-                    background-color: #4CAF50;
-                    color: white;
-                }
+//                 .pump-status.active {
+//                     background-color: #4CAF50;
+//                     color: white;
+//                 }
                 
-                .pump-status.inactive {
-                    background-color: #666;
-                    color: white;
-                }
+//                 .pump-status.inactive {
+//                     background-color: #666;
+//                     color: white;
+//                 }
                 
-                .time-info { 
-                    font-weight: bold; 
-                }
-                .season-info { 
-                    margin-left: 10px; font-size: 0.9em; 
-                }
-            }
-        </style>
-        <script>
-            // Potwierdzenie zapisu formularza
-            document.querySelector('form').addEventListener('submit', function(e) {
-                if (!confirm('Czy na pewno chcesz zapisać zmiany w konfiguracji pomp?')) {
-                    e.preventDefault();
-                }
-            });
+//                 .time-info { 
+//                     font-weight: bold; 
+//                 }
+//                 .season-info { 
+//                     margin-left: 10px; font-size: 0.9em; 
+//                 }
+//             }
+//         </style>
+//         <script>
+//             // Potwierdzenie zapisu formularza
+//             document.querySelector('form').addEventListener('submit', function(e) {
+//                 if (!confirm('Czy na pewno chcesz zapisać zmiany w konfiguracji pomp?')) {
+//                     e.preventDefault();
+//                 }
+//             });
     
-            // Obsługa przycisku testowego pompy
-            document.querySelectorAll('.test-pump').forEach(button => {
-                button.addEventListener('click', function() {
-                    const pumpId = this.dataset.pump;
-                    if (confirm('Czy chcesz wykonać test pompy ' + (parseInt(pumpId) + 1) + '?')) {
-                        // Wysłanie przez WebSocket komendy testu
-                        socket.send('test_pump:' + pumpId);
-                    }
-                });
-            });
-            function confirmReset() {
-                return confirm('Czy na pewno chcesz przywrócić ustawienia fabryczne? Spowoduje to utratę wszystkich ustawień.');
-            }
+//             // Obsługa przycisku testowego pompy
+//             document.querySelectorAll('.test-pump').forEach(button => {
+//                 button.addEventListener('click', function() {
+//                     const pumpId = this.dataset.pump;
+//                     if (confirm('Czy chcesz wykonać test pompy ' + (parseInt(pumpId) + 1) + '?')) {
+//                         // Wysłanie przez WebSocket komendy testu
+//                         socket.send('test_pump:' + pumpId);
+//                     }
+//                 });
+//             });
+//             function confirmReset() {
+//                 return confirm('Czy na pewno chcesz przywrócić ustawienia fabryczne? Spowoduje to utratę wszystkich ustawień.');
+//             }
 
-            function rebootDevice() {
-                if(confirm('Czy na pewno chcesz zrestartować urządzenie?')) {
-                    fetch('/reboot', {method: 'POST'}).then(() => {
-                        showMessage('Urządzenie zostanie zrestartowane...', 'success');
-                        setTimeout(() => { window.location.reload(); }, 3000);
-                    });
-                }
-            }
+//             function rebootDevice() {
+//                 if(confirm('Czy na pewno chcesz zrestartować urządzenie?')) {
+//                     fetch('/reboot', {method: 'POST'}).then(() => {
+//                         showMessage('Urządzenie zostanie zrestartowane...', 'success');
+//                         setTimeout(() => { window.location.reload(); }, 3000);
+//                     });
+//                 }
+//             }
 
-            function factoryReset() {
-                if(confirmReset()) {
-                    fetch('/factory-reset', {method: 'POST'}).then(() => {
-                        showMessage('Przywracanie ustawień fabrycznych...', 'success');
-                        setTimeout(() => { window.location.reload(); }, 3000);
-                    });
-                }
-            }
-            function showMessage(text, type) {
-                var oldMessages = document.querySelectorAll('.message');
-                oldMessages.forEach(function(msg) {
-                    msg.remove();
-                });
+//             function factoryReset() {
+//                 if(confirmReset()) {
+//                     fetch('/factory-reset', {method: 'POST'}).then(() => {
+//                         showMessage('Przywracanie ustawień fabrycznych...', 'success');
+//                         setTimeout(() => { window.location.reload(); }, 3000);
+//                     });
+//                 }
+//             }
+//             function showMessage(text, type) {
+//                 var oldMessages = document.querySelectorAll('.message');
+//                 oldMessages.forEach(function(msg) {
+//                     msg.remove();
+//                 });
                 
-                var messageBox = document.createElement('div');
-                messageBox.className = 'message ' + type;
-                messageBox.innerHTML = text;
-                document.body.appendChild(messageBox);
+//                 var messageBox = document.createElement('div');
+//                 messageBox.className = 'message ' + type;
+//                 messageBox.innerHTML = text;
+//                 document.body.appendChild(messageBox);
                 
-                setTimeout(function() {
-                    messageBox.style.opacity = '1';
-                }, 10);
+//                 setTimeout(function() {
+//                     messageBox.style.opacity = '1';
+//                 }, 10);
                 
-                setTimeout(function() {
-                    messageBox.style.opacity = '0';
-                    setTimeout(function() {
-                        messageBox.remove();
-                    }, 300);
-                }, 3000);
-            }
+//                 setTimeout(function() {
+//                     messageBox.style.opacity = '0';
+//                     setTimeout(function() {
+//                         messageBox.remove();
+//                     }, 300);
+//                 }, 3000);
+//             }
 
-            var socket;
-            window.onload = function() {
-                document.querySelector('form[action="/save"]').addEventListener('submit', function(e) {
-                    e.preventDefault();
+//             var socket;
+//             window.onload = function() {
+//                 document.querySelector('form[action="/save"]').addEventListener('submit', function(e) {
+//                     e.preventDefault();
                     
-                    var formData = new FormData(this);
-                    fetch('/save', {
-                        method: 'POST',
-                        body: formData
-                    }).then(response => {
-                        if (!response.ok) {
-                            throw new Error('Network response was not ok');
-                        }
-                    }).catch(error => {
-                        showMessage('Błąd podczas zapisywania!', 'error');
-                    });
-                });
+//                     var formData = new FormData(this);
+//                     fetch('/save', {
+//                         method: 'POST',
+//                         body: formData
+//                     }).then(response => {
+//                         if (!response.ok) {
+//                             throw new Error('Network response was not ok');
+//                         }
+//                     }).catch(error => {
+//                         showMessage('Błąd podczas zapisywania!', 'error');
+//                     });
+//                 });
 
-                socket = new WebSocket('ws://' + window.location.hostname + ':81/');
-                socket.onmessage = function(event) {
-                    var message = event.data;
+//                 socket = new WebSocket('ws://' + window.location.hostname + ':81/');
+//                 socket.onmessage = function(event) {
+//                     var message = event.data;
                     
-                    if (message.startsWith('update:')) {
-                        if (message.startsWith('update:error:')) {
-                            document.getElementById('update-progress').style.display = 'none';
-                            showMessage(message.split(':')[2], 'error');
-                            return;
-                        }
-                        var percentage = message.split(':')[1];
-                        document.getElementById('update-progress').style.display = 'block';
-                        document.getElementById('progress-bar').style.width = percentage + '%';
-                        document.getElementById('progress-bar').textContent = percentage + '%';
+//                     if (message.startsWith('update:')) {
+//                         if (message.startsWith('update:error:')) {
+//                             document.getElementById('update-progress').style.display = 'none';
+//                             showMessage(message.split(':')[2], 'error');
+//                             return;
+//                         }
+//                         var percentage = message.split(':')[1];
+//                         document.getElementById('update-progress').style.display = 'block';
+//                         document.getElementById('progress-bar').style.width = percentage + '%';
+//                         document.getElementById('progress-bar').textContent = percentage + '%';
                         
-                        if (percentage == '100') {
-                            document.getElementById('update-progress').style.display = 'none';
-                            showMessage('Aktualizacja zakończona pomyślnie! Trwa restart urządzenia...', 'success');
-                            setTimeout(function() {
-                                window.location.reload();
-                            }, 3000);
-                        }
-                    } 
-                    else if (message.startsWith('save:')) {
-                        var parts = message.split(':');
-                        var type = parts[1];
-                        var text = parts[2];
-                        showMessage(text, type);
-                    }
-                    else {
-                        var console = document.getElementById('console');
-                        console.innerHTML += message + '<br>';
-                        console.scrollTop = console.scrollHeight;
-                    }
-                };
-            };
-        </script>
-    </head>
-    <body>
-        <h1>AquaDoser</h1>
+//                         if (percentage == '100') {
+//                             document.getElementById('update-progress').style.display = 'none';
+//                             showMessage('Aktualizacja zakończona pomyślnie! Trwa restart urządzenia...', 'success');
+//                             setTimeout(function() {
+//                                 window.location.reload();
+//                             }, 3000);
+//                         }
+//                     } 
+//                     else if (message.startsWith('save:')) {
+//                         var parts = message.split(':');
+//                         var type = parts[1];
+//                         var text = parts[2];
+//                         showMessage(text, type);
+//                     }
+//                     else {
+//                         var console = document.getElementById('console');
+//                         console.innerHTML += message + '<br>';
+//                         console.scrollTop = console.scrollHeight;
+//                     }
+//                 };
+//             };
+//         </script>
+//     </head>
+//     <body>
+//         <h1>AquaDoser</h1>
         
-        <div class='section'>
-            <h2>Status systemu</h2>
-            <table class='config-table'>
-                <tr>
-                    <td>Status MQTT</td>
-                    <td><span class='status %MQTT_STATUS_CLASS%'>%MQTT_STATUS%</span></td>
-                </tr>
-                <tr>
-                    <td>Status dźwięku</td>
-                    <td><span class='status %SOUND_STATUS_CLASS%'>%SOUND_STATUS%</span></td>
-                </tr>
-                <tr>
-                    <td>Wersja oprogramowania</td>
-                    <td>%SOFTWARE_VERSION%</td>
-                </tr>
-            </table>
-        </div>
+//         <div class='section'>
+//             <h2>Status systemu</h2>
+//             <table class='config-table'>
+//                 <tr>
+//                     <td>Status MQTT</td>
+//                     <td><span class='status %MQTT_STATUS_CLASS%'>%MQTT_STATUS%</span></td>
+//                 </tr>
+//                 <tr>
+//                     <td>Status dźwięku</td>
+//                     <td><span class='status %SOUND_STATUS_CLASS%'>%SOUND_STATUS%</span></td>
+//                 </tr>
+//                 <tr>
+//                     <td>Wersja oprogramowania</td>
+//                     <td>%SOFTWARE_VERSION%</td>
+//                 </tr>
+//             </table>
+//         </div>
 
+//         %CONFIG_FORMS%
+//         %BUTTONS%
+//         %UPDATE_FORM%
+//         %FOOTER%
+
+//     </body>
+//   </html>
+// )rawliteral";
+
+const char CONFIG_PAGE[] PROGMEM = R"rawliteral(
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset='UTF-8'>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AquaDoser</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 0; 
+            padding: 20px; 
+            background-color: #1a1a1a;
+            color: #ffffff;
+        }
+        .buttons-container {
+            display: flex;
+            justify-content: space-between;
+            margin: -5px;
+        }
+        .container { 
+            max-width: 800px; 
+            margin: 0 auto; 
+            padding: 0 15px;
+        }
+        .section {
+            background-color: #2a2a2a;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        h1 { 
+            color: #ffffff; 
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            background-color: #2d2d2d;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        h2 { 
+            color: #2196F3;
+            margin-top: 0;
+            font-size: 1.5em;
+        }
+        table { 
+            width: 100%; 
+            border-collapse: collapse;
+        }
+        td { 
+            padding: 12px 8px;
+            border-bottom: 1px solid #3d3d3d;
+        }
+        .config-table td {
+            padding: 8px;
+        }
+        .config-table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+        }
+        .config-table td:first-child {
+            width: 65%;
+        }
+        .config-table td:last-child {
+            width: 35%;
+        }
+        .config-table input[type="text"],
+        .config-table input[type="password"],
+        .config-table input[type="number"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #3d3d3d;
+            border-radius: 4px;
+            background-color: #1a1a1a;
+            color: #ffffff;
+            box-sizing: border-box;
+        }
+        input[type="text"],
+        input[type="password"],
+        input[type="number"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #3d3d3d;
+            border-radius: 4px;
+            background-color: #1a1a1a;
+            color: #ffffff;
+            box-sizing: border-box;
+            text-align: left;
+        }
+        input[type="submit"] { 
+            background-color: #4CAF50; 
+            color: white; 
+            padding: 12px 24px; 
+            border: none; 
+            border-radius: 4px; 
+            cursor: pointer;
+            width: 100%;
+            font-size: 16px;
+        }
+        .btn {
+            padding: 10px 20px;
+            margin: 5px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+            flex: 1;
+            text-align: center;
+        }
+        .btn-blue { background-color: #2196F3; color: white; }
+        .btn-blue:hover { background-color: #1976D2; }
+        .btn-red { background-color: #f44336; color: white; }
+        .btn-red:hover { background-color: #d32f2f; }
+        .btn-orange { background-color: #FF9800; color: white; }
+        .btn-orange:hover { background-color: #F57C00; }
+        .success { color: #4CAF50; }
+        .error { color: #f44336; }
+        .weekdays {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+        .weekdays label {
+            display: flex;
+            align-items: center;
+            margin-right: 10px;
+        }
+        .weekdays input[type="checkbox"] {
+            margin-right: 5px;
+        }
+        .pump-section {
+            background-color: #333;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+        }
+        .pump-section h3 {
+            margin-top: 0;
+            color: #2196F3;
+        }
+        .pump-status {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 3px;
+            font-weight: bold;
+        }
+        .pump-status.active {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .pump-status.inactive {
+            background-color: #f44336;
+            color: white;
+        }
+        .progress {
+            width: 100%;
+            height: 20px;
+            background-color: #333;
+            border-radius: 10px;
+            margin-top: 10px;
+            overflow: hidden;
+        }
+        .progress-bar {
+            height: 100%;
+            background-color: #2196F3;
+            transition: width 0.3s ease-in-out;
+            text-align: center;
+            line-height: 20px;
+            color: white;
+        }
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+        .footer a {
+            color: #2196F3;
+            text-decoration: none;
+        }
+        .footer a:hover {
+            text-decoration: underline;
+        }
+        @media (max-width: 600px) {
+            body { padding: 10px; }
+            .buttons-container { flex-direction: column; }
+            .btn { margin: 5px 0; }
+        }
+    </style>
+</head>
+<body>
+    <h1>AquaDoser</h1>
+    <div class='section'>
+        <h2>Status systemu</h2>
+        <table class='config-table'>
+            <tr><td>Status MQTT</td><td><span class='%MQTT_STATUS_CLASS%'>%MQTT_STATUS%</span></td></tr>
+            <tr><td>Status dźwięku</td><td><span class='%SOUND_STATUS_CLASS%'>%SOUND_STATUS%</span></td></tr>
+            <tr><td>Wersja oprogramowania</td><td>%SOFTWARE_VERSION%</td></tr>
+        </table>
+    </div>
+    <div id='mainContent'>
         %CONFIG_FORMS%
         %BUTTONS%
         %UPDATE_FORM%
-        %FOOTER%
-
-    </body>
-  </html>
+    </div>
+    %FOOTER%
+</body>
+</html>
 )rawliteral";
 
 // Formularz do aktualizacji firmware przechowywany w pamięci programu
@@ -1627,27 +1841,19 @@ void onServiceSwitchCommand(bool state, HASwitch* sender) {
 String getConfigPage() {
     String html = FPSTR(CONFIG_PAGE);
     String configForms = "";
-    String buttons = "";
     
-    // Przygotuj wszystkie wartości przed zastąpieniem
-    bool mqttConnected = client.connected();
-    String mqttStatus = mqttConnected ? "Połączony" : "Rozłączony";
-    String mqttStatusClass = mqttConnected ? "success" : "error";
-    String soundStatus = config.soundEnabled ? "Włączony" : "Wyłączony";
-    String soundStatusClass = config.soundEnabled ? "success" : "error";
+    // Przygotuj buttons
+    String buttons = F("<div class='section'>"
+                      "<div class='buttons-container'>"
+                      "<button class='btn btn-blue' onclick='rebootDevice()'>Restart urządzenia</button>"
+                      "<button class='btn btn-red' onclick='factoryReset()'>Przywróć ustawienia fabryczne</button>"
+                      "</div>"
+                      "</div>");
 
-    // Przypisz treść buttons
-    buttons = F("<div class='section'>"
-                "<div class='buttons-container'>"
-                "<button class='btn btn-blue' onclick='rebootDevice()'>Restart urządzenia</button>"
-                "<button class='btn btn-red' onclick='factoryReset()'>Przywróć ustawienia fabryczne</button>"
-                "</div>"
-                "</div>");
-
-    // Rozpocznij budowanie configForms
+    // Rozpocznij formularz
     configForms = F("<form method='POST' action='/save'>");
     
-    // MQTT sekcja
+    // Sekcja MQTT
     configForms += F("<div class='section'>"
                      "<h2>Konfiguracja MQTT</h2>"
                      "<table class='config-table'>"
@@ -1662,19 +1868,7 @@ String getConfigPage() {
     configForms += F("'></td></tr>"
                      "<tr><td>Hasło</td><td><input type='password' name='mqtt_password' value='");
     configForms += config.mqtt_password;
-    configForms += F("'></td></tr>");
-
-    // Dodaj informacje o czasie
-    CustomTimeStatus currentStatus = getCustomTimeStatus();
-    configForms += F("<tr><td>Czas</td><td>");
-    configForms += currentStatus.time;
-    configForms += F(" (");
-    configForms += currentStatus.season;
-    configForms += F(")</td></tr>");
-    
-    configForms += F("<tr><td>Data</td><td>");
-    configForms += currentStatus.date;
-    configForms += F("</td></tr></table></div>");
+    configForms += F("'></td></tr></table></div>");
 
     // Sekcja pomp
     configForms += F("<div class='section'>"
@@ -1683,31 +1877,31 @@ String getConfigPage() {
     // Dla każdej pompy
     for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
         configForms += F("<div class='pump-section'>"
-                         "<h3>Pompa "); 
+                        "<h3>Pompa ");
         configForms += String(i + 1);
         configForms += F("</h3>"
-                         "<table class='config-table'>");
-    
+                        "<table class='config-table'>");
+        
         // Nazwa pompy
         configForms += F("<tr><td>Nazwa</td><td><input type='text' name='p");
         configForms += String(i);
         configForms += F("_name' value='");
         configForms += config.pumps[i].name[0] ? String(config.pumps[i].name) : String("Pompa ") + String(i + 1);
         configForms += F("'></td></tr>");
-    
+        
         // Aktywna
         configForms += F("<tr><td>Aktywna</td><td><input type='checkbox' name='p");
         configForms += String(i);
         configForms += F("_enabled' ");
         configForms += config.pumps[i].enabled ? F("checked") : F("");
         configForms += F("></td></tr>");
-    
+        
         // Kalibracja
         configForms += F("<tr><td>Kalibracja (ml/min)</td><td><input type='number' step='0.1' name='p");
         configForms += String(i);
         configForms += F("_calibration' value='");
         configForms += String(config.pumps[i].calibration);
-        configForms += F("' title='Ilość ml/min pompowana przez pompę'></td></tr>");
+        configForms += F("'></td></tr>");
         
         // Dozowanie
         configForms += F("<tr><td>Dozowanie (ml)</td><td><input type='number' name='p");
@@ -1715,7 +1909,7 @@ String getConfigPage() {
         configForms += F("_dosage' value='");
         configForms += String(config.pumps[i].dosage);
         configForms += F("'></td></tr>");
-    
+        
         // Godzina i minuta
         configForms += F("<tr><td>Godzina dozowania</td><td><input type='number' min='0' max='23' name='p");
         configForms += String(i);
@@ -1728,7 +1922,7 @@ String getConfigPage() {
         configForms += F("_minute' value='");
         configForms += String(config.pumps[i].minute);
         configForms += F("'></td></tr>");
-    
+        
         // Dni tygodnia
         configForms += F("<tr><td>Dni tygodnia</td><td class='weekdays'>");
         const char* days[] = {"Pn", "Wt", "Śr", "Cz", "Pt", "Sb", "Nd"};
@@ -1745,14 +1939,14 @@ String getConfigPage() {
         }
         configForms += F("</td></tr>");
 
-        // Status
+        // Status pompy
         configForms += F("<tr><td>Status</td><td><span class='pump-status ");
         configForms += config.pumps[i].enabled ? F("active") : F("inactive");
         configForms += F("'>");
         configForms += config.pumps[i].enabled ? F("Aktywna") : F("Nieaktywna");
         configForms += F("</span></td></tr>");
 
-        // Test pompy
+        // Przycisk testowy
         configForms += F("<tr><td colspan='2'><button type='button' class='btn btn-blue test-pump' data-pump='");
         configForms += String(i);
         configForms += F("'>Test pompy</button></td></tr>");
@@ -1764,14 +1958,13 @@ String getConfigPage() {
     configForms += F("<div class='section'>"
                      "<h2>Historia kalibracji</h2>"
                      "<table class='config-table'>");
-
+    
     for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
         configForms += F("<tr><td>Pompa ");
         configForms += String(i + 1);
         configForms += F("</td><td>");
         
-        if (config.pumps[i].lastCalibration.timestamp > 0) {  // jeśli była kalibracja
-            // Konwersja timestamp na czytelną datę
+        if (config.pumps[i].lastCalibration.timestamp > 0) {
             char dateStr[20];
             time_t ts = config.pumps[i].lastCalibration.timestamp;
             strftime(dateStr, sizeof(dateStr), "%d.%m.%Y %H:%M", localtime(&ts));
@@ -1790,32 +1983,26 @@ String getConfigPage() {
         }
         configForms += F("</td></tr>");
     }
-
-    configForms += F("</table></div>");
     
+    configForms += F("</table></div>");
+
     // Przycisk zapisu
     configForms += F("<div class='section'>"
                      "<input type='submit' value='Zapisz ustawienia' class='btn btn-blue'>"
                      "</div></form>");
 
-    // Zastąp wszystkie placeholdery - DOPIERO PO ZBUDOWANIU CAŁEGO configForms
-    html.replace("%MQTT_STATUS%", mqttStatus);
-    html.replace("%MQTT_STATUS_CLASS%", mqttStatusClass);
-    html.replace("%SOUND_STATUS%", soundStatus);
-    html.replace("%SOUND_STATUS_CLASS%", soundStatusClass);
-    html.replace("%SOFTWARE_VERSION%", SOFTWARE_VERSION);
-    html.replace("%CONFIG_FORMS%", configForms);
-    html.replace("%BUTTONS%", buttons);
-    html.replace("%UPDATE_FORM%", FPSTR(UPDATE_FORM));
-    html.replace("%FOOTER%", FPSTR(PAGE_FOOTER));
-    
-    // Debug - sprawdź czy wszystkie placeholdery zostały zastąpione
-    if (html.indexOf('%') != -1) {
-        AQUA_DEBUG_PRINTF("Uwaga: Niektóre znaczniki nie zostały zastąpione!");
-        int pos = html.indexOf('%');
-        AQUA_DEBUG_PRINTF(html.substring(pos - 20, pos + 20).c_str());
-    }
-    
+    // Zamień wszystkie placeholdery
+    html.replace(F("%MQTT_STATUS%"), client.connected() ? F("Połączony") : F("Rozłączony"));
+    html.replace(F("%MQTT_STATUS_CLASS%"), client.connected() ? F("success") : F("error"));
+    html.replace(F("%SOUND_STATUS%"), config.soundEnabled ? F("Włączony") : F("Wyłączony"));
+    html.replace(F("%SOUND_STATUS_CLASS%"), config.soundEnabled ? F("success") : F("error"));
+    String softwareVersion = SOFTWARE_VERSION;
+    html.replace(F("%SOFTWARE_VERSION%"), softwareVersion);
+    html.replace(F("%CONFIG_FORMS%"), configForms);
+    html.replace(F("%BUTTONS%"), buttons);
+    html.replace(F("%UPDATE_FORM%"), FPSTR(UPDATE_FORM));
+    html.replace(F("%FOOTER%"), FPSTR(PAGE_FOOTER));
+
     return html;
 }
 
