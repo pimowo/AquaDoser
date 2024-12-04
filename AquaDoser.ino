@@ -19,6 +19,11 @@
 #include <WebSocketsServer.h>         // WebSocket - komunikacja w czasie rzeczywistym ze stroną WWW
 #include <EEPROM.h>                   // Dostęp do pamięci nieulotnej - zapisywanie konfiguracji
 
+// Zegar
+#include <RTClib.h>
+#include <TimeLib.h>
+#include <Timezone.h>    // dla obsługi czasu letniego/zimowego
+
 // ** DEFINICJE PINÓW **
 
 // Przypisanie pinów do urządzeń
