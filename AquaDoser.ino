@@ -43,6 +43,10 @@ PCF8574 pcf8574(0x20);
 // Definicja paska LED
 Adafruit_NeoPixel strip(NUMBER_OF_PUMPS, LED_PIN, NEO_GRB + NEO_KHZ800);
 
+#define LED_UPDATE_INTERVAL 50  // ms
+#define PULSE_MAX_BRIGHTNESS 255
+#define PULSE_MIN_BRIGHTNESS 50
+
 #define COLOR_OFF 0xFF0000        // Czerwony - pompa wyłączona
 #define COLOR_ON 0x00FF00         // Zielony - pompa włączona
 #define COLOR_WORKING 0x0000FF    // Niebieski - pompa pracuje
@@ -183,10 +187,27 @@ struct Timers {
         lastButtonCheck(0) {}
 };
 
+CustomTimeStatus currentStatus = getCustomTimeStatus();
+
 struct CustomTimeStatus {
     String time;
     String date;
     String season;
+};
+
+// Stan LED
+struct LEDState {
+    uint32_t currentColor;
+    uint32_t targetColor;
+    unsigned long lastUpdateTime;
+    bool immediate;
+    uint8_t brightness;
+    bool pulsing;
+    int8_t pulseDirection;
+    
+    LEDState() : currentColor(0), targetColor(0), lastUpdateTime(0), 
+                 immediate(false), brightness(255), pulsing(false), 
+                 pulseDirection(1) {}
 };
 
 // Globalne instancje struktur
@@ -194,7 +215,9 @@ Config config;
 Status status;
 ButtonState buttonState;
 Timers timers;
-CustomTimeStatus currentStatus = getCustomTimeStatus();
+
+LEDState ledStates[NUMBER_OF_PUMPS];  // Stan diod LED
+unsigned long lastLedUpdate = 0;
 
 // ** INSTANCJE URZĄDZEŃ I USŁUG **
 
@@ -829,36 +852,109 @@ void syncTimeFromNTP() {
     }
 }
 
-// CustomTimeStatus getCustomTimeStatus() {
-//     CustomTimeStatus status;
-//     DateTime now = rtc.now();
-//     time_t localTime = CE.toLocal(now.unixtime());
-    
-//     // Format czasu GG:MM
-//     char timeStr[6];
-//     sprintf(timeStr, "%02d:%02d", hour(localTime), minute(localTime));
-//     status.time = String(timeStr);
-    
-//     // Format daty DD/MM/RRRR
-//     char dateStr[11];
-//     sprintf(dateStr, "%02d/%02d/%04d", day(localTime), month(localTime), year(localTime));
-//     status.date = String(dateStr);
-    
-//     // Sprawdzenie czy jest czas letni
-//     status.season = CE.locIsDST(now.unixtime()) ? "LATO" : "ZIMA";
-    
-//     return status;
-// }
+// Stałe dla LED
+#define LED_UPDATE_INTERVAL 50  // ms
+#define PULSE_MAX_BRIGHTNESS 255
+#define PULSE_MIN_BRIGHTNESS 50
 
+// Struktura stanu LED
+struct LEDState {
+    uint32_t currentColor;
+    uint8_t brightness;
+    bool pulseUp;
+    // dodaj inne potrzebne pola
+};
+
+// Tablica stanów LED
+LEDState ledStates[NUMBER_OF_PUMPS];
+unsigned long lastLedUpdate = 0;
+
+// Funkcje pomocnicze dla LED
+uint32_t interpolateColor(uint32_t color1, uint32_t color2, float ratio) {
+    uint8_t r1, g1, b1, r2, g2, b2;
+    colorToRGB(color1, r1, g1, b1);
+    colorToRGB(color2, r2, g2, b2);
+    
+    uint8_t r = r1 + (r2 - r1) * ratio;
+    uint8_t g = g1 + (g2 - g1) * ratio;
+    uint8_t b = b1 + (b2 - b1) * ratio;
+    
+    return strip.Color(r, g, b);
+}
+
+void colorToRGB(uint32_t color, uint8_t &r, uint8_t &g, uint8_t &b) {
+    r = (color >> 16) & 0xFF;
+    g = (color >> 8) & 0xFF;
+    b = color & 0xFF;
+}
+
+void initializeLEDs() {
+    for(int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        ledStates[i] = {
+            .currentColor = strip.Color(0, 0, 0),
+            .brightness = PULSE_MIN_BRIGHTNESS,
+            .pulseUp = true
+        };
+    }
+    strip.begin();
+    strip.show();
+}
+
+void updateLEDs() {
+    unsigned long currentMillis = millis();
+    if (currentMillis - lastLedUpdate < LED_UPDATE_INTERVAL) {
+        return;
+    }
+    lastLedUpdate = currentMillis;
+
+    for(int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        LEDState &state = ledStates[i];
+        
+        // Aktualizacja jasności dla efektu pulsowania
+        if (state.pulseUp) {
+            state.brightness += 5;
+            if (state.brightness >= PULSE_MAX_BRIGHTNESS) {
+                state.brightness = PULSE_MAX_BRIGHTNESS;
+                state.pulseUp = false;
+            }
+        } else {
+            state.brightness -= 5;
+            if (state.brightness <= PULSE_MIN_BRIGHTNESS) {
+                state.brightness = PULSE_MIN_BRIGHTNESS;
+                state.pulseUp = true;
+            }
+        }
+
+        // Zastosuj jasność do koloru
+        uint8_t r, g, b;
+        colorToRGB(state.currentColor, r, g, b);
+        float brightnessRatio = state.brightness / 255.0;
+        strip.setPixelColor(i, strip.Color(
+            r * brightnessRatio,
+            g * brightnessRatio,
+            b * brightnessRatio
+        ));
+    }
+    strip.show();
+}
+
+// Funkcja getCustomTimeStatus
 CustomTimeStatus getCustomTimeStatus() {
     CustomTimeStatus status;
-    status.time = String(hour()) + ":" + String(minute()) + ":" + String(second());
-    status.date = String(day()) + "/" + String(month()) + "/" + String(year());
+    time_t now = time(nullptr);
+    struct tm *timeinfo = localtime(&now);
     
-    int currentMonth = month();
-    if (currentMonth >= 3 && currentMonth <= 5) status.season = "Wiosna";
-    else if (currentMonth >= 6 && currentMonth <= 8) status.season = "Lato";
-    else if (currentMonth >= 9 && currentMonth <= 11) status.season = "Jesień";
+    status.time = String(timeinfo->tm_hour) + ":" + 
+                 String(timeinfo->tm_min) + ":" + 
+                 String(timeinfo->tm_sec);
+                 
+    status.date = String(timeinfo->tm_mday) + "/" + 
+                 String(timeinfo->tm_mon + 1) + "/" + 
+                 String(timeinfo->tm_year + 1900);
+                 
+    if (timeinfo->tm_mon >= 2 && timeinfo->tm_mon <= 4) status.season = "Wiosna";
+    else if (timeinfo->tm_mon >= 5 && timeinfo->tm_mon <= 7) status.season = "Lato";
+    else if (timeinfo->tm_mon >= 8 && timeinfo->tm_mon <= 10) status.season = "Jesień";
     else status.season = "Zima";
     
     return status;
@@ -1182,6 +1278,41 @@ void setupPin() {
 }
 
 // --- Funkcje obsługi LED
+
+uint32_t interpolateColor(uint32_t color1, uint32_t color2, float ratio) {
+    uint8_t r1 = (color1 >> 16) & 0xFF;
+    uint8_t g1 = (color1 >> 8) & 0xFF;
+    uint8_t b1 = color1 & 0xFF;
+    
+    uint8_t r2 = (color2 >> 16) & 0xFF;
+    uint8_t g2 = (color2 >> 8) & 0xFF;
+    uint8_t b2 = color2 & 0xFF;
+    
+    uint8_t r = r1 + ((r2 - r1) * ratio);
+    uint8_t g = g1 + ((g2 - g1) * ratio);
+    uint8_t b = b1 + ((b2 - b1) * ratio);
+    
+    return (r << 16) | (g << 8) | b;
+}
+
+void colorToRGB(uint32_t color, uint8_t &r, uint8_t &g, uint8_t &b) {
+    r = (color >> 16) & 0xFF;
+    g = (color >> 8) & 0xFF;
+    b = color & 0xFF;
+}
+
+void setLEDColor(uint8_t index, uint32_t color, bool immediate) {
+    if (index >= NUMBER_OF_PUMPS) return;
+    
+    LEDState &state = ledStates[index];
+    if (immediate) {
+        state.currentColor = color;
+        state.targetColor = color;
+    } else {
+        state.targetColor = color;
+    }
+}
+
 // Aktualizacja wszystkich LED
 void updateLEDs() {
     unsigned long currentMillis = millis();
@@ -1417,6 +1548,8 @@ void onServiceSwitchCommand(bool state, HASwitch* sender) {
 // Zwraca zawartość strony konfiguracji jako ciąg znaków
 String getConfigPage() {
     String html = FPSTR(CONFIG_PAGE);
+
+    String configForms = "";  // Zainicjuj pusty string
     
     // Przygotuj wszystkie wartości przed zastąpieniem
     bool mqttConnected = client.connected();
@@ -1565,12 +1698,12 @@ String getConfigPage() {
         configForms += String(i);
         configForms += F("'>Test pompy</button></td></tr>");
     
-        configForms += F("</table></div>");
+        configForms += F("</table></div>\n");
     }
 
     // W sekcji pompy
-    configForms += F("<tr><td colspan='2' class='calibration-history'>");
-    configForms += F("<strong>Ostatnia kalibracja:</strong><br>");
+    configForms += F("<tr><td colspan='2' class='calibration-history'>\n");
+    configForms += F("<strong>Ostatnia kalibracja:</strong><br>\n");
 
     for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
         if (config.pumps[i].lastCalibration.timestamp > 0) {  // jeśli była kalibracja
