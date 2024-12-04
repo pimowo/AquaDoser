@@ -1446,7 +1446,7 @@ void onServiceSwitchCommand(bool state, HASwitch* sender) {
 // Zwraca zawartość strony konfiguracji jako ciąg znaków
 String getConfigPage() {
     String html = FPSTR(CONFIG_PAGE);
-    String configForms = "";  // Inicjalizuj pusty string dla formularzy
+    String configForms = "";  // Deklaracja na początku funkcji
 
     // Przygotuj wszystkie wartości przed zastąpieniem
     bool mqttConnected = client.connected();
@@ -1486,14 +1486,15 @@ String getConfigPage() {
     html.replace("%SOUND_STATUS_CLASS%", config.soundEnabled ? "success" : "error");
     html.replace("%SOFTWARE_VERSION%", SOFTWARE_VERSION);
     html.replace("%CONFIG_FORMS%", configForms);
-    html.replace("%BUTTONS%", F(
-        "<div class='section'>"
-        "<div class='buttons-container'>"
-        "<button class='btn btn-blue' onclick='rebootDevice()'>Restart urządzenia</button>"
-        "<button class='btn btn-red' onclick='factoryReset()'>Przywróć ustawienia fabryczne</button>"
-        "</div>"
-        "</div>"
-    ));
+    // html.replace("%BUTTONS%", F(
+    //     "<div class='section'>"
+    //     "<div class='buttons-container'>"
+    //     "<button class='btn btn-blue' onclick='rebootDevice()'>Restart urządzenia</button>"
+    //     "<button class='btn btn-red' onclick='factoryReset()'>Przywróć ustawienia fabryczne</button>"
+    //     "</div>"
+    //     "</div>"
+    // ));
+    html.replace("%BUTTONS%", buttons);
     html.replace("%UPDATE_FORM%", FPSTR(UPDATE_FORM));
     html.replace("%FOOTER%", FPSTR(PAGE_FOOTER));
 
