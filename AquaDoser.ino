@@ -1446,7 +1446,10 @@ void onServiceSwitchCommand(bool state, HASwitch* sender) {
 // Zwraca zawartość strony konfiguracji jako ciąg znaków
 String getConfigPage() {
     String html = FPSTR(CONFIG_PAGE);
-    String configForms = "";  // Deklaracja na początku funkcji
+
+    // Inicjalizacja zmiennych przed użyciem +=
+    String configForms = "";
+    String buttons = "";
 
     // Przygotuj wszystkie wartości przed zastąpieniem
     bool mqttConnected = client.connected();
@@ -1456,7 +1459,7 @@ String getConfigPage() {
     String soundStatusClass = config.soundEnabled ? "success" : "error";
     
     // Sekcja przycisków - zmieniona na String zamiast PROGMEM
-    String buttons += F(
+    String buttons = F(
         "<div class='section'>"
         "<div class='buttons-container'>"
         "<button class='btn btn-blue' onclick='rebootDevice()'>Restart urządzenia</button>"
@@ -1465,35 +1468,13 @@ String getConfigPage() {
         "</div>"
     );
 
-    // Zastąp wszystkie placeholdery
-    // html.replace("%MQTT_SERVER%", config.mqtt_server);
-    // html.replace("%MQTT_PORT%", String(config.mqtt_port));
-    // html.replace("%MQTT_USER%", config.mqtt_user);
-    // html.replace("%MQTT_PASSWORD%", config.mqtt_password);
-    // html.replace("%MQTT_STATUS%", mqttStatus);
-    // html.replace("%MQTT_STATUS_CLASS%", mqttStatusClass);
-    // html.replace("%SOUND_STATUS%", soundStatus);
-    // html.replace("%SOUND_STATUS_CLASS%", soundStatusClass);
-    // html.replace("%SOFTWARE_VERSION%", SOFTWARE_VERSION);
-    // html.replace("%BUTTONS%", buttons);
-    // html.replace("%UPDATE_FORM%", FPSTR(UPDATE_FORM));
-    // html.replace("%FOOTER%", FPSTR(PAGE_FOOTER));
-    // html.replace("%MESSAGE%", "");
-    // Zastąp wszystkie placeholdery
     html.replace("%MQTT_STATUS%", client.connected() ? "Połączony" : "Rozłączony");
     html.replace("%MQTT_STATUS_CLASS%", client.connected() ? "success" : "error");
     html.replace("%SOUND_STATUS%", config.soundEnabled ? "Włączony" : "Wyłączony");
     html.replace("%SOUND_STATUS_CLASS%", config.soundEnabled ? "success" : "error");
     html.replace("%SOFTWARE_VERSION%", SOFTWARE_VERSION);
     html.replace("%CONFIG_FORMS%", configForms);
-    html.replace("%BUTTONS%", F(
-        "<div class='section'>"
-        "<div class='buttons-container'>"
-        "<button class='btn btn-blue' onclick='rebootDevice()'>Restart urządzenia</button>"
-        "<button class='btn btn-red' onclick='factoryReset()'>Przywróć ustawienia fabryczne</button>"
-        "</div>"
-        "</div>"
-    ));
+    html.replace("%BUTTONS%", buttons);
     html.replace("%UPDATE_FORM%", FPSTR(UPDATE_FORM));
     html.replace("%FOOTER%", FPSTR(PAGE_FOOTER));
 
