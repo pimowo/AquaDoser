@@ -769,11 +769,6 @@ const char CONFIG_PAGE[] PROGMEM = R"rawliteral(
             </table>
         </div>
 
-        %MQTT_STATUS%
-        %MQTT_STATUS_CLASS%
-        %SOUND_STATUS%
-        %SOUND_STATUS_CLASS%
-        %SOFTWARE_VERSION%
         %CONFIG_FORMS%
         %BUTTONS%
         %UPDATE_FORM%
@@ -1439,44 +1434,220 @@ void onServiceSwitchCommand(bool state, HASwitch* sender) {
 }
 
 // Zwraca zawartość strony konfiguracji jako ciąg znaków
+// String getConfigPage() {
+//     String html = FPSTR(CONFIG_PAGE);
+
+//     // Przygotuj wszystkie wartości przed zastąpieniem
+//     bool mqttConnected = client.connected();
+//     String mqttStatus = mqttConnected ? "Połączony" : "Rozłączony";
+//     String mqttStatusClass = mqttConnected ? "success" : "error";
+//     String soundStatus = config.soundEnabled ? "Włączony" : "Wyłączony";
+//     String soundStatusClass = config.soundEnabled ? "success" : "error";
+    
+//     // Przygotuj formularze konfiguracyjne
+//     String configForms = F("<form method='POST' action='/save'>");
+
+//     // Sekcja przycisków - zmieniona na String zamiast PROGMEM
+//     String buttons = F(
+//         "<div class='section'>"
+//         "<div class='buttons-container'>"
+//         "<button class='btn btn-blue' onclick='rebootDevice()'>Restart urządzenia</button>"
+//         "<button class='btn btn-red' onclick='factoryReset()'>Przywróć ustawienia fabryczne</button>"
+//         "</div>"
+//         "</div>"
+//     );
+
+//     html.replace("%MQTT_STATUS%", client.connected() ? "Połączony" : "Rozłączony");
+//     html.replace("%MQTT_STATUS_CLASS%", client.connected() ? "success" : "error");
+//     html.replace("%SOUND_STATUS%", config.soundEnabled ? "Włączony" : "Wyłączony");
+//     html.replace("%SOUND_STATUS_CLASS%", config.soundEnabled ? "success" : "error");
+//     html.replace("%SOFTWARE_VERSION%", SOFTWARE_VERSION);
+//     html.replace("%CONFIG_FORMS%", configForms);
+//     html.replace("%UPDATE_FORM%", FPSTR(UPDATE_FORM));
+//     html.replace("%BUTTONS%", buttons);
+//     html.replace("%FOOTER%", FPSTR(PAGE_FOOTER));
+    
+//     // MQTT
+//     configForms += F("<div class='section'>"
+//                      "<h2>Konfiguracja MQTT</h2>"
+//                      "<table class='config-table'>"
+//                      "<tr><td>Serwer</td><td><input type='text' name='mqtt_server' value='");
+//     configForms += config.mqtt_server;
+//     configForms += F("'></td></tr>"
+//                      "<tr><td>Port</td><td><input type='number' name='mqtt_port' value='");
+//     configForms += String(config.mqtt_port);
+//     configForms += F("'></td></tr>"
+//                      "<tr><td>Użytkownik</td><td><input type='text' name='mqtt_user' value='");
+//     configForms += config.mqtt_user;
+//     configForms += F("'></td></tr>"
+//                      "<tr><td>Hasło</td><td><input type='password' name='mqtt_password' value='");
+//     configForms += config.mqtt_password;
+//     configForms += F("'></td></tr>");
+        
+//     CustomTimeStatus currentStatus = getCustomTimeStatus();
+
+//     // Dodaj informacje o czasie
+//     configForms += F("<tr><td>Czas</td><td>");
+//     configForms += currentStatus.time;
+//     configForms += F(" (");
+//     configForms += currentStatus.season;
+//     configForms += F(")</td></tr>");
+    
+//     configForms += F("<tr><td>Data</td><td>");
+//     configForms += currentStatus.date;
+//     configForms += F("</td></tr>"
+//                      "</table></div>");
+
+//     // Sekcja pomp
+//     configForms += F("<div class='section'>"
+//                      "<h2>Konfiguracja pomp</h2>");
+    
+//     // Dla każdej pompy
+//     for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+//         configForms += F("<div class='pump-section'>"
+//                          "<h3>Pompa "); 
+//         configForms += String(i + 1);
+//         configForms += F("</h3>"
+//                          "<table class='config-table'>");
+    
+//         // Nazwa pompy
+//         configForms += F("<tr><td>Nazwa</td><td><input type='text' name='p");
+//         configForms += String(i);
+//         configForms += F("_name' value='");
+//         configForms += config.pumps[i].name[0] ? String(config.pumps[i].name) : String("Pompa ") + String(i + 1);
+//         configForms += F("'></td></tr>");
+    
+//         // Aktywna
+//         configForms += F("<tr><td>Aktywna</td><td><input type='checkbox' name='p");
+//         configForms += String(i);
+//         configForms += F("_enabled' ");
+//         configForms += config.pumps[i].enabled ? F("checked") : F("");
+//         configForms += F("></td></tr>");
+    
+//         // Kalibracja
+//         configForms += F("<tr><td>Kalibracja (ml/min)</td><td><input type='number' step='0.1' name='p");
+//         configForms += String(i);
+//         configForms += F("_calibration' value='");
+//         configForms += String(config.pumps[i].calibration);
+//         configForms += F("' title='Ilość ml/min pompowana przez pompę'></td></tr>");
+        
+//         // Dozowanie
+//         configForms += F("<tr><td>Dozowanie (ml)</td><td><input type='number' name='p");
+//         configForms += String(i);
+//         configForms += F("_dosage' value='");
+//         configForms += String(config.pumps[i].dosage);
+//         configForms += F("'></td></tr>");
+    
+//         // Godzina i minuta
+//         configForms += F("<tr><td>Godzina dozowania</td><td><input type='number' min='0' max='23' name='p");
+//         configForms += String(i);
+//         configForms += F("_hour' value='");
+//         configForms += String(config.pumps[i].hour);
+//         configForms += F("'></td></tr>");
+        
+//         configForms += F("<tr><td>Minuta dozowania</td><td><input type='number' min='0' max='59' name='p");
+//         configForms += String(i);
+//         configForms += F("_minute' value='");
+//         configForms += String(config.pumps[i].minute);
+//         configForms += F("'></td></tr>");
+    
+//         // Dni tygodnia
+//         configForms += F("<tr><td>Dni tygodnia</td><td class='weekdays'>");
+//         const char* days[] = {"Pn", "Wt", "Śr", "Cz", "Pt", "Sb", "Nd"};
+//         for (int day = 0; day < 7; day++) {
+//             configForms += F("<label><input type='checkbox' name='p");
+//             configForms += String(i);
+//             configForms += F("_day");
+//             configForms += String(day);
+//             configForms += F("' ");
+//             configForms += (config.pumps[i].weekDays & (1 << day)) ? F("checked") : F("");
+//             configForms += F(">");
+//             configForms += days[day];
+//             configForms += F("</label>");
+//         }
+//         configForms += F("</td></tr>");
+
+//         // Status
+//         configForms += F("<tr><td>Status</td><td><span class='pump-status ");
+//         configForms += config.pumps[i].enabled ? F("active") : F("inactive");
+//         configForms += F("'>");
+//         configForms += config.pumps[i].enabled ? F("Aktywna") : F("Nieaktywna");
+//         configForms += F("</span></td></tr>");
+
+//         // Test pompy
+//         configForms += F("<tr><td colspan='2'><button type='button' class='btn btn-blue test-pump' data-pump='");
+//         configForms += String(i);
+//         configForms += F("'>Test pompy</button></td></tr>");
+    
+//         configForms += F("</table></div>");
+//     }
+
+//     // W sekcji pompy
+//     configForms += F("<tr><td colspan='2' class='calibration-history'>\n");
+//     configForms += F("<strong>Ostatnia kalibracja:</strong><br>\n");
+
+//     for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+//         if (config.pumps[i].lastCalibration.timestamp > 0) {  // jeśli była kalibracja
+//             // Konwersja timestamp na czytelną datę
+//             char dateStr[20];
+//             time_t ts = config.pumps[i].lastCalibration.timestamp;
+//             strftime(dateStr, sizeof(dateStr), "%d.%m.%Y %H:%M", localtime(&ts));
+            
+//             configForms += String(dateStr);
+//             configForms += F("<br>Czas: ");
+//             configForms += String(config.pumps[i].lastCalibration.time);
+//             configForms += F("s<br>Objętość: ");
+//             configForms += String(config.pumps[i].lastCalibration.volume);
+//             configForms += F("ml<br>Wydajność: ");
+//             configForms += String(config.pumps[i].lastCalibration.flowRate);
+//             configForms += F(" ml/min");
+//         } else {
+//             configForms += F("Brak kalibracji");
+//         }
+//     }
+
+//     configForms += F("</td></tr>");
+    
+//     configForms += F("<div class='section'>"
+//                      "<input type='submit' value='Zapisz ustawienia' class='btn btn-blue'>"
+//                      "</div></form>");
+    
+//     html.replace("%CONFIG_FORMS%", configForms);
+    
+//     // Sprawdź, czy wszystkie znaczniki zostały zastąpione
+//     if (html.indexOf('%') != -1) {
+//         AQUA_DEBUG_PRINTF("Uwaga: Niektóre znaczniki nie zostały zastąpione!");
+//         int pos = html.indexOf('%');
+//         AQUA_DEBUG_PRINTF(html.substring(pos - 20, pos + 20));
+//     }
+    
+//     return html;
+// }
+
 String getConfigPage() {
     String html = FPSTR(CONFIG_PAGE);
-
-    // Inicjalizacja zmiennych przed użyciem +=
-    //String configForms = "";
-    //String buttons = "";
-
+    String configForms = "";
+    String buttons = "";
+    
     // Przygotuj wszystkie wartości przed zastąpieniem
     bool mqttConnected = client.connected();
     String mqttStatus = mqttConnected ? "Połączony" : "Rozłączony";
     String mqttStatusClass = mqttConnected ? "success" : "error";
     String soundStatus = config.soundEnabled ? "Włączony" : "Wyłączony";
     String soundStatusClass = config.soundEnabled ? "success" : "error";
-    
-    // Przygotuj formularze konfiguracyjne
-    String configForms = F("<form method='POST' action='/save'>");
 
-    // Sekcja przycisków - zmieniona na String zamiast PROGMEM
-    String buttons = F(
-        "<div class='section'>"
-        "<div class='buttons-container'>"
-        "<button class='btn btn-blue' onclick='rebootDevice()'>Restart urządzenia</button>"
-        "<button class='btn btn-red' onclick='factoryReset()'>Przywróć ustawienia fabryczne</button>"
-        "</div>"
-        "</div>"
-    );
+    // Przypisz treść buttons
+    buttons = F("<div class='section'>"
+                "<div class='buttons-container'>"
+                "<button class='btn btn-blue' onclick='rebootDevice()'>Restart urządzenia</button>"
+                "<button class='btn btn-red' onclick='factoryReset()'>Przywróć ustawienia fabryczne</button>"
+                "</div>"
+                "</div>");
 
-    html.replace("%MQTT_STATUS%", client.connected() ? "Połączony" : "Rozłączony");
-    html.replace("%MQTT_STATUS_CLASS%", client.connected() ? "success" : "error");
-    html.replace("%SOUND_STATUS%", config.soundEnabled ? "Włączony" : "Wyłączony");
-    html.replace("%SOUND_STATUS_CLASS%", config.soundEnabled ? "success" : "error");
-    html.replace("%SOFTWARE_VERSION%", SOFTWARE_VERSION);
-    html.replace("%CONFIG_FORMS%", configForms);
-    html.replace("%UPDATE_FORM%", FPSTR(UPDATE_FORM));
-    html.replace("%BUTTONS%", buttons);
-    html.replace("%FOOTER%", FPSTR(PAGE_FOOTER));
+    // Rozpocznij budowanie configForms
+    configForms = F("<form method='POST' action='/save'>");
     
-    // MQTT
+    // MQTT sekcja
     configForms += F("<div class='section'>"
                      "<h2>Konfiguracja MQTT</h2>"
                      "<table class='config-table'>"
@@ -1492,10 +1663,9 @@ String getConfigPage() {
                      "<tr><td>Hasło</td><td><input type='password' name='mqtt_password' value='");
     configForms += config.mqtt_password;
     configForms += F("'></td></tr>");
-        
-    CustomTimeStatus currentStatus = getCustomTimeStatus();
 
     // Dodaj informacje o czasie
+    CustomTimeStatus currentStatus = getCustomTimeStatus();
     configForms += F("<tr><td>Czas</td><td>");
     configForms += currentStatus.time;
     configForms += F(" (");
@@ -1504,8 +1674,7 @@ String getConfigPage() {
     
     configForms += F("<tr><td>Data</td><td>");
     configForms += currentStatus.date;
-    configForms += F("</td></tr>"
-                     "</table></div>");
+    configForms += F("</td></tr></table></div>");
 
     // Sekcja pomp
     configForms += F("<div class='section'>"
@@ -1570,9 +1739,9 @@ String getConfigPage() {
             configForms += String(day);
             configForms += F("' ");
             configForms += (config.pumps[i].weekDays & (1 << day)) ? F("checked") : F("");
-            configForms += F(">");
+            configForms += F("><span>");
             configForms += days[day];
-            configForms += F("</label>");
+            configForms += F("</span></label>");
         }
         configForms += F("</td></tr>");
 
@@ -1587,21 +1756,27 @@ String getConfigPage() {
         configForms += F("<tr><td colspan='2'><button type='button' class='btn btn-blue test-pump' data-pump='");
         configForms += String(i);
         configForms += F("'>Test pompy</button></td></tr>");
-    
+        
         configForms += F("</table></div>");
     }
 
-    // W sekcji pompy
-    configForms += F("<tr><td colspan='2' class='calibration-history'>\n");
-    configForms += F("<strong>Ostatnia kalibracja:</strong><br>\n");
+    // Historia kalibracji
+    configForms += F("<div class='section'>"
+                     "<h2>Historia kalibracji</h2>"
+                     "<table class='config-table'>");
 
     for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        configForms += F("<tr><td>Pompa ");
+        configForms += String(i + 1);
+        configForms += F("</td><td>");
+        
         if (config.pumps[i].lastCalibration.timestamp > 0) {  // jeśli była kalibracja
             // Konwersja timestamp na czytelną datę
             char dateStr[20];
             time_t ts = config.pumps[i].lastCalibration.timestamp;
             strftime(dateStr, sizeof(dateStr), "%d.%m.%Y %H:%M", localtime(&ts));
             
+            configForms += F("Data: ");
             configForms += String(dateStr);
             configForms += F("<br>Czas: ");
             configForms += String(config.pumps[i].lastCalibration.time);
@@ -1613,21 +1788,32 @@ String getConfigPage() {
         } else {
             configForms += F("Brak kalibracji");
         }
+        configForms += F("</td></tr>");
     }
 
-    configForms += F("</td></tr>");
+    configForms += F("</table></div>");
     
+    // Przycisk zapisu
     configForms += F("<div class='section'>"
                      "<input type='submit' value='Zapisz ustawienia' class='btn btn-blue'>"
                      "</div></form>");
-    
+
+    // Zastąp wszystkie placeholdery - DOPIERO PO ZBUDOWANIU CAŁEGO configForms
+    html.replace("%MQTT_STATUS%", mqttStatus);
+    html.replace("%MQTT_STATUS_CLASS%", mqttStatusClass);
+    html.replace("%SOUND_STATUS%", soundStatus);
+    html.replace("%SOUND_STATUS_CLASS%", soundStatusClass);
+    html.replace("%SOFTWARE_VERSION%", SOFTWARE_VERSION);
     html.replace("%CONFIG_FORMS%", configForms);
+    html.replace("%BUTTONS%", buttons);
+    html.replace("%UPDATE_FORM%", FPSTR(UPDATE_FORM));
+    html.replace("%FOOTER%", FPSTR(PAGE_FOOTER));
     
-    // Sprawdź, czy wszystkie znaczniki zostały zastąpione
+    // Debug - sprawdź czy wszystkie placeholdery zostały zastąpione
     if (html.indexOf('%') != -1) {
         AQUA_DEBUG_PRINTF("Uwaga: Niektóre znaczniki nie zostały zastąpione!");
         int pos = html.indexOf('%');
-        AQUA_DEBUG_PRINTF(html.substring(pos - 20, pos + 20));
+        AQUA_DEBUG_PRINTF(html.substring(pos - 20, pos + 20).c_str());
     }
     
     return html;
