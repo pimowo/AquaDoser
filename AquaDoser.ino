@@ -41,6 +41,11 @@ const unsigned long MILLIS_OVERFLOW_THRESHOLD = 4294967295U - 60000; // ~49.7 dn
 
 void updateHAState(uint8_t pumpIndex);
 
+// zmienne globalne do śledzenia testu pompy
+
+unsigned long pumpTestEndTime = 0;
+int8_t testingPumpId = -1;
+
 // ** KONFIGURACJA SYSTEMU **
 
 // Makra debugowania
@@ -61,12 +66,14 @@ const char* SOFTWARE_VERSION = "4.12.24";  // Definiowanie wersji oprogramowania
 
 // Struktura dla pojedynczej pompy
 struct PumpConfig {
-    bool enabled;         // czy pompa jest włączona w harmonogramie
-    uint8_t dosage;       // dawka w ml
-    float calibration;    // kalibracja (ml/min)
-    uint8_t pcf8574_pin;  // numer pinu na PCF8574
-    uint8_t hour;         // godzina dozowania
-    uint8_t minute;       // minuta dozowania
+    bool enabled;           // czy pompa jest włączona w harmonogramie
+    char name[32];         // nazwa pompy (max 31 znaków + null terminator)
+    uint8_t dosage;        // dawka w ml
+    float calibration;     // kalibracja (ml/min)
+    uint8_t pcf8574_pin;   // numer pinu na PCF8574
+    uint8_t hour;          // godzina dozowania
+    uint8_t minute;        // minuta dozowania
+    uint8_t weekDays;      // dni tygodnia (bitmapa: 0b0PWTŚCPSN)
 };
 
 // Konfiguracja
@@ -138,19 +145,19 @@ Timers timers;
 // ** FILTROWANIE I POMIARY **
 
 // Parametry czujnika ultradźwiękowego i obliczeń
-const int HYSTERESIS = 10;  // Histereza przy zmianach poziomu (mm)
-const int SENSOR_MIN_RANGE = 20;    // Minimalny zakres czujnika (mm)
-const int SENSOR_MAX_RANGE = 1020;  // Maksymalny zakres czujnika (mm)
-const float EMA_ALPHA = 0.2f;       // Współczynnik wygładzania dla średniej wykładniczej (0-1)
-const int SENSOR_AVG_SAMPLES = 3;   // Liczba próbek do uśrednienia pomiaru
+// const int HYSTERESIS = 10;  // Histereza przy zmianach poziomu (mm)
+// const int SENSOR_MIN_RANGE = 20;    // Minimalny zakres czujnika (mm)
+// const int SENSOR_MAX_RANGE = 1020;  // Maksymalny zakres czujnika (mm)
+// const float EMA_ALPHA = 0.2f;       // Współczynnik wygładzania dla średniej wykładniczej (0-1)
+// const int SENSOR_AVG_SAMPLES = 3;   // Liczba próbek do uśrednienia pomiaru
 
-float lastFilteredDistance = 0;     // Dla filtra EMA (Exponential Moving Average)
-float lastReportedDistance = 0;     // Ostatnia zgłoszona wartość odległości
-unsigned long lastMeasurement = 0;  // Ostatni czas pomiaru
-float currentDistance = 0;          // Bieżąca odległość od powierzchni wody (mm)
-float volume = 0;                   // Objętość wody w akwarium (l)
-unsigned long pumpStartTime = 0;    // Czas rozpoczęcia pracy pompy
-float waterLevelBeforePump = 0;     // Poziom wody przed uruchomieniem pompy
+// float lastFilteredDistance = 0;     // Dla filtra EMA (Exponential Moving Average)
+// float lastReportedDistance = 0;     // Ostatnia zgłoszona wartość odległości
+// unsigned long lastMeasurement = 0;  // Ostatni czas pomiaru
+// float currentDistance = 0;          // Bieżąca odległość od powierzchni wody (mm)
+// float volume = 0;                   // Objętość wody w akwarium (l)
+// unsigned long pumpStartTime = 0;    // Czas rozpoczęcia pracy pompy
+// float waterLevelBeforePump = 0;     // Poziom wody przed uruchomieniem pompy
 
 // ** INSTANCJE URZĄDZEŃ I USŁUG **
 
@@ -472,9 +479,91 @@ const char CONFIG_PAGE[] PROGMEM = R"rawliteral(
                 .console {
                     height: 150px;
                 }
+                .pump-section {
+                    background-color: #2d2d2d;
+                    padding: 15px;
+                    margin-bottom: 15px;
+                    border-radius: 4px;
+                }
+                
+                .pump-section h3 {
+                    color: #2196F3;
+                    margin-top: 0;
+                    margin-bottom: 15px;
+                }
+                
+                .weekdays {
+                    display: grid;
+                    grid-template-columns: repeat(7, auto);
+                    gap: 5px;
+                    justify-content: start;
+                }
+                
+                .weekdays label {
+                    background-color: #1a1a1a;
+                    padding: 5px 8px;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    transition: background-color 0.3s;
+                }
+                
+                .weekdays label:hover {
+                    background-color: #2d2d2d;
+                }
+                
+                .weekdays input[type="checkbox"]:checked + span {
+                    color: #2196F3;
+                }
+                input[type="number"] {
+                    width: 80px;
+                    text-align: right;
+                    -moz-appearance: textfield;
+                }
+                
+                input[type="number"]::-webkit-outer-spin-button,
+                input[type="number"]::-webkit-inner-spin-button {
+                    -webkit-appearance: none;
+                    margin: 0;
+                }
+                
+                .time-input {
+                    width: 60px;
+                }
+                .pump-status {
+                    padding: 4px 8px;
+                    border-radius: 4px;
+                    font-size: 0.9em;
+                }
+                
+                .pump-status.active {
+                    background-color: #4CAF50;
+                    color: white;
+                }
+                
+                .pump-status.inactive {
+                    background-color: #666;
+                    color: white;
+                }
             }
         </style>
         <script>
+            // Potwierdzenie zapisu formularza
+            document.querySelector('form').addEventListener('submit', function(e) {
+                if (!confirm('Czy na pewno chcesz zapisać zmiany w konfiguracji pomp?')) {
+                    e.preventDefault();
+                }
+            });
+    
+            // Obsługa przycisku testowego pompy
+            document.querySelectorAll('.test-pump').forEach(button => {
+                button.addEventListener('click', function() {
+                    const pumpId = this.dataset.pump;
+                    if (confirm('Czy chcesz wykonać test pompy ' + (parseInt(pumpId) + 1) + '?')) {
+                        // Wysłanie przez WebSocket komendy testu
+                        socket.send('test_pump:' + pumpId);
+                    }
+                });
+            });
             function confirmReset() {
                 return confirm('Czy na pewno chcesz przywrócić ustawienia fabryczne? Spowoduje to utratę wszystkich ustawień.');
             }
@@ -853,6 +942,14 @@ void stopAllPumps() {
     }
 }
 
+void testPump(uint8_t pumpId) {
+    // Kod testujący pompę
+    // Na przykład: włącz pompę na 5 sekund
+    digitalWrite(config.pumps[pumpId].pcf8574_pin, HIGH);
+    delay(5000);
+    digitalWrite(config.pumps[pumpId].pcf8574_pin, LOW);
+}
+
 // ** FUNKCJE WI-FI I MQTT **
 
 // Reset ustawień Wi-Fi
@@ -1138,24 +1235,90 @@ String getConfigPage() {
     configForms += config.mqtt_password;
     configForms += F("'></td></tr>"
                      "</table></div>");
+
+    // Sekcja pomp
+    configForms += F("<div class='section'>"
+                     "<h2>Konfiguracja pomp</h2>");
     
-    // // Zbiornik
-    // configForms += F("<div class='section'>"
-    //                  "<h2>Ustawienia zbiornika</h2>"
-    //                  "<table class='config-table'>");
-    // configForms += "<tr><td>Odległość przy pustym [mm]</td><td><input type='number' name='tank_empty' value='" + String(config.tank_empty) + "'></td></tr>";
-    // configForms += "<tr><td>Odległość przy pełnym [mm]</td><td><input type='number' name='tank_full' value='" + String(config.tank_full) + "'></td></tr>";
-    // configForms += "<tr><td>Odległość przy rezerwie [mm]</td><td><input type='number' name='reserve_level' value='" + String(config.reserve_level) + "'></td></tr>";
-    // configForms += "<tr><td>Średnica zbiornika [mm]</td><td><input type='number' name='tank_diameter' value='" + String(config.tank_diameter) + "'></td></tr>";
-    // configForms += F("</table></div>");
+    // Dla każdej pompy
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        configForms += F("<div class='pump-section'>"
+                         "<h3>Pompa "); 
+        configForms += String(i + 1);
+        configForms += F("</h3>"
+                         "<table class='config-table'>");
     
-    // // Pompa
-    // configForms += F("<div class='section'>"
-    //                  "<h2>Ustawienia pompy</h2>"
-    //                  "<table class='config-table'>");
-    // configForms += "<tr><td>Opóźnienie załączenia pompy [s]</td><td><input type='number' name='pump_delay' value='" + String(config.pump_delay) + "'></td></tr>";
-    // configForms += "<tr><td>Czas pracy pompy [s]</td><td><input type='number' name='pump_work_time' value='" + String(config.pump_work_time) + "'></td></tr>";
-    // configForms += F("</table></div>");
+        // Nazwa pompy
+        configForms += F("<tr><td>Nazwa</td><td><input type='text' name='p");
+        configForms += String(i);
+        configForms += F("_name' value='");
+        configForms += config.pumps[i].name[0] ? String(config.pumps[i].name) : String("Pompa ") + String(i + 1);
+        configForms += F("'></td></tr>");
+    
+        // Aktywna
+        configForms += F("<tr><td>Aktywna</td><td><input type='checkbox' name='p");
+        configForms += String(i);
+        configForms += F("_enabled' ");
+        configForms += config.pumps[i].enabled ? F("checked") : F("");
+        configForms += F("></td></tr>");
+    
+        // Kalibracja
+        configForms += F("<tr><td>Kalibracja (ml/min)</td><td><input type='number' step='0.1' name='p");
+        configForms += String(i);
+        configForms += F("_calibration' value='");
+        configForms += String(config.pumps[i].calibration);
+        configForms += F("' title='Ilość ml/min pompowana przez pompę'></td></tr>");
+        
+        // Dozowanie
+        configForms += F("<tr><td>Dozowanie (ml)</td><td><input type='number' name='p");
+        configForms += String(i);
+        configForms += F("_dosage' value='");
+        configForms += String(config.pumps[i].dosage);
+        configForms += F("'></td></tr>");
+    
+        // Godzina i minuta
+        configForms += F("<tr><td>Godzina dozowania</td><td><input type='number' min='0' max='23' name='p");
+        configForms += String(i);
+        configForms += F("_hour' value='");
+        configForms += String(config.pumps[i].hour);
+        configForms += F("'></td></tr>");
+        
+        configForms += F("<tr><td>Minuta dozowania</td><td><input type='number' min='0' max='59' name='p");
+        configForms += String(i);
+        configForms += F("_minute' value='");
+        configForms += String(config.pumps[i].minute);
+        configForms += F("'></td></tr>");
+    
+        // Dni tygodnia
+        configForms += F("<tr><td>Dni tygodnia</td><td class='weekdays'>");
+        const char* days[] = {"Pn", "Wt", "Śr", "Cz", "Pt", "Sb", "Nd"};
+        for (int day = 0; day < 7; day++) {
+            configForms += F("<label><input type='checkbox' name='p");
+            configForms += String(i);
+            configForms += F("_day");
+            configForms += String(day);
+            configForms += F("' ");
+            configForms += (config.pumps[i].weekDays & (1 << day)) ? F("checked") : F("");
+            configForms += F(">");
+            configForms += days[day];
+            configForms += F("</label>");
+        }
+        configForms += F("</td></tr>");
+
+        // Status
+        configForms += F("<tr><td>Status</td><td><span class='pump-status ");
+        configForms += config.pumps[i].enabled ? F("active") : F("inactive");
+        configForms += F("'>");
+        configForms += config.pumps[i].enabled ? F("Aktywna") : F("Nieaktywna");
+        configForms += F("</span></td></tr>");
+
+        // Test pompy
+        configForms += F("<tr><td colspan='2'><button type='button' class='btn btn-blue test-pump' data-pump='");
+        configForms += String(i);
+        configForms += F("'>Test pompy</button></td></tr>");
+    
+        configForms += F("</table></div>");
+    }
     
     configForms += F("<div class='section'>"
                      "<input type='submit' value='Zapisz ustawienia' class='btn btn-blue'>"
@@ -1181,19 +1344,37 @@ void handleRoot() {
 }
 
 // Waliduje wartości konfiguracji wprowadzone przez użytkownika
-bool validateConfigValues() {   
-    // Walidacja ustawień pomp
-    for (int i = 0; i < 8; i++) {
-        float dose = server.arg("p" + String(i) + "_dose").toFloat();
-        if (dose < 0 || dose > 1000) return false;  // Maksymalna dawka 1L
-        
-        String timeStr = server.arg("p" + String(i) + "_time");
-        int hour = timeStr.substring(0, 2).toInt();
-        int minute = timeStr.substring(3, 5).toInt();
-        
-        if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return false;
+// W validateConfigValues():
+bool validateConfigValues() {
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        // Sprawdź kalibrację (nie może być 0 lub ujemna)
+        float calibration = server.arg("p" + String(i) + "_calibration").toFloat();
+        if (calibration <= 0) {
+            webSocket.broadcastTXT("save:error:Kalibracja pompy " + String(i+1) + " musi być większa od 0");
+            return false;
+        }
+
+        // Sprawdź dozowanie (nie może być ujemne)
+        int dosage = server.arg("p" + String(i) + "_dosage").toInt();
+        if (dosage < 0) {
+            webSocket.broadcastTXT("save:error:Dozowanie pompy " + String(i+1) + " nie może być ujemne");
+            return false;
+        }
+
+        // Sprawdź godzinę (0-23)
+        int hour = server.arg("p" + String(i) + "_hour").toInt();
+        if (hour < 0 || hour > 23) {
+            webSocket.broadcastTXT("save:error:Nieprawidłowa godzina dla pompy " + String(i+1));
+            return false;
+        }
+
+        // Sprawdź minutę (0-59)
+        int minute = server.arg("p" + String(i) + "_minute").toInt();
+        if (minute < 0 || minute > 59) {
+            webSocket.broadcastTXT("save:error:Nieprawidłowa minuta dla pompy " + String(i+1));
+            return false;
+        }
     }
-    
     return true;
 }
 
@@ -1237,20 +1418,40 @@ void handleSave() {
 
     // Zapisz konfigurację pomp
     for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-        pumpPrefix = String("pump") + String(i + 1);
-        doseArg = pumpPrefix + "_dose";
-        
-        if (server.hasArg(doseArg)) {  // Używamy webServer zamiast Server
-            config.pumps[i].dosage = server.arg(doseArg).toFloat();
-        }
-        
-        if (server.hasArg(pumpPrefix + "_time")) {
-            String timeStr = server.arg(pumpPrefix + "_time");
-            if (timeStr.length() >= 5) { // Format HH:MM
-                config.pumps[i].hour = timeStr.substring(0, 2).toInt();
-                config.pumps[i].minute = timeStr.substring(3, 5).toInt();
+        // Nazwa
+        String pumpName = server.arg("p" + String(i) + "_name");
+        strlcpy(config.pumps[i].name, pumpName.c_str(), sizeof(config.pumps[i].name));
+
+        // Aktywna
+        config.pumps[i].enabled = server.hasArg("p" + String(i) + "_enabled");
+
+        // Kalibracja
+        config.pumps[i].calibration = server.arg("p" + String(i) + "_calibration").toFloat();
+
+        // Dozowanie
+        config.pumps[i].dosage = server.arg("p" + String(i) + "_dosage").toInt();
+
+        // Godzina i minuta
+        config.pumps[i].hour = server.arg("p" + String(i) + "_hour").toInt();
+        config.pumps[i].minute = server.arg("p" + String(i) + "_minute").toInt();
+
+        // Dni tygodnia
+        uint8_t weekDays = 0;
+        for (int day = 0; day < 7; day++) {
+            if (server.hasArg("p" + String(i) + "_day" + String(day))) {
+                weekDays |= (1 << day);
             }
         }
+        config.pumps[i].weekDays = weekDays;
+
+        // Debug
+        AQUA_DEBUG_PRINTF("Zapisano konfigurację pompy %d:\n", i + 1);
+        AQUA_DEBUG_PRINTF("  Nazwa: %s\n", config.pumps[i].name);
+        AQUA_DEBUG_PRINTF("  Aktywna: %d\n", config.pumps[i].enabled);
+        AQUA_DEBUG_PRINTF("  Kalibracja: %.1f\n", config.pumps[i].calibration);
+        AQUA_DEBUG_PRINTF("  Dozowanie: %d\n", config.pumps[i].dosage);
+        AQUA_DEBUG_PRINTF("  Czas: %02d:%02d\n", config.pumps[i].hour, config.pumps[i].minute);
+        AQUA_DEBUG_PRINTF("  Dni: 0b%08b\n", config.pumps[i].weekDays);
     }
 
     // Sprawdź poprawność wartości
@@ -1384,10 +1585,40 @@ void setupWebServer() {
 
 // ** WEBSOCKET I KOMUNIKACJA W SIECI **
 
+// void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
+//     // Obsługujemy tylko połączenie - reszta nie jest potrzebna
+//     if (type == WStype_CONNECTED) {
+//         Serial.printf("[%u] Connected\n", num);
+//     }
+// }
+
 void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
-    // Obsługujemy tylko połączenie - reszta nie jest potrzebna
-    if (type == WStype_CONNECTED) {
-        Serial.printf("[%u] Connected\n", num);
+    switch (type) {
+        case WStype_CONNECTED:
+            Serial.printf("[%u] Connected\n", num);
+            break;
+            
+        case WStype_TEXT:
+            {
+                String message = String((char*)payload);
+                
+                if (message.startsWith("test_pump:")) {
+                    int pumpId = message.substring(10).toInt();
+                    if (pumpId >= 0 && pumpId < NUMBER_OF_PUMPS) {
+                        // Włącz pompę
+                        pcf8574.write(config.pumps[pumpId].pcf8574_pin, HIGH);
+                        Serial.printf("Rozpoczęto test pompy %d\n", pumpId + 1);
+                        
+                        // Zaplanuj wyłączenie pompy za 5 sekund
+                        pumpTestEndTime = millis() + 5000;
+                        testingPumpId = pumpId;
+                        
+                        // Wyślij potwierdzenie do przeglądarki
+                        webSocket.broadcastTXT("pump_test:started:" + String(pumpId));
+                    }
+                }
+            }
+            break;
     }
 }
 
@@ -1436,6 +1667,13 @@ void loop() {
     for(int i = 0; i < NUMBER_OF_PUMPS; i++) {
         bool pumpState = !pcf8574.read(i);  // Negacja bo logika ujemna
         pumpStates[i]->setState(pumpState);
+    }
+
+    // Sprawdź czy należy zakończyć test pompy
+    if (testingPumpId >= 0 && millis() >= pumpTestEndTime) {
+        pcf8574.write(config.pumps[testingPumpId].pcf8574_pin, LOW);
+        webSocket.broadcastTXT("pump_test:finished:" + String(testingPumpId));
+        testingPumpId = -1;
     }
     
     // Dodatkowe zabezpieczenie - wyłącz wszystkie pompy w trybie serwisowym
