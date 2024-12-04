@@ -981,6 +981,7 @@ const char CONFIG_PAGE[] PROGMEM = R"rawliteral(
             <tr><td>Status MQTT</td><td><span class='%MQTT_STATUS_CLASS%'>%MQTT_STATUS%</span></td></tr>
             <tr><td>Status dźwięku</td><td><span class='%SOUND_STATUS_CLASS%'>%SOUND_STATUS%</span></td></tr>
             <tr><td>Wersja oprogramowania</td><td>%SOFTWARE_VERSION%</td></tr>
+            "<tr><td>Data i czas</td><td>%CURRENT_TIME%</td></tr>"
         </table>
     </div>
     <div id='mainContent'>
@@ -1081,6 +1082,15 @@ void syncTimeFromNTP() {
         lastNTPSync = millis();
         AQUA_DEBUG_PRINT(F("Zsynchronizowano czas z NTP"));
     }
+}
+
+String getFormattedDateTime() {
+    time_t local = CE.toLocal(now());
+    char buffer[25];
+    sprintf(buffer, "%04d-%02d-%02d %02d:%02d:%02d",
+        year(local), month(local), day(local),
+        hour(local), minute(local), second(local));
+    return String(buffer);
 }
 
 // Funkcje pomocnicze dla LED
@@ -1999,6 +2009,7 @@ String getConfigPage() {
     html.replace(F("%SOUND_STATUS_CLASS%"), config.soundEnabled ? F("success") : F("error"));
     String softwareVersion = SOFTWARE_VERSION;
     html.replace(F("%SOFTWARE_VERSION%"), softwareVersion);
+    page.replace(F("%CURRENT_TIME%"), getFormattedDateTime());
     html.replace(F("%CONFIG_FORMS%"), configForms);
     html.replace(F("%BUTTONS%"), buttons);
     html.replace(F("%UPDATE_FORM%"), FPSTR(UPDATE_FORM));
@@ -2325,9 +2336,6 @@ void setup() {
     webSocket.begin();
     webSocket.onEvent(webSocketEvent);
     setupHA();
-
-    // Inicjalizacja NTP
-    configTime(0, 0, "pool.ntp.org"); // Ustawiamy strefę na UTC (offset 0)
     
     // Inicjalizacja RTC
     if (!initRTC()) {
@@ -2335,6 +2343,19 @@ void setup() {
         AQUA_DEBUG_PRINT(F("Błąd inicjalizacji RTC!"));
     }
     
+    // Po inicjalizacji WiFi
+    configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+    delay(2000);
+
+    // Poczekaj na synchronizację czasu
+    time_t now = time(nullptr);
+    while (now < 24 * 3600) {
+        delay(500);
+        now = time(nullptr);
+    }
+
+    //debugPrint("Czas zsynchronizowany");
+
     // Wysyłamy zapisane daty kalibracji do HA
     for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
         publishCalibrationDate(i);
