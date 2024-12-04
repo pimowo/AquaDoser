@@ -175,6 +175,7 @@ Config config;
 Status status;
 ButtonState buttonState;
 Timers timers;
+TimeStatus timeStatus = getCurrentTimeStatus();
 
 // ** INSTANCJE URZĄDZEŃ I USŁUG **
 
@@ -1103,7 +1104,9 @@ void setupHA() {
         sprintf(uniqueId, "pompa_%d", i + 1);
         
         pumpSchedules[i] = new HASwitch(uniqueId);
-        pumpSchedules[i]->setName(String("Pompa ") + String(i + 1));
+        //pumpSchedules[i]->setName(String("Pompa ") + String(i + 1));
+        String nazwaPompy = String("Pompa ") + String(i + 1);
+        pumpSchedules[i]->setName(nazwaPompy.c_str());
         pumpSchedules[i]->onCommand(onPumpCommand);
     }
 
@@ -1454,22 +1457,24 @@ String getConfigPage() {
     configForms += F("<tr><td colspan='2' class='calibration-history'>");
     configForms += F("<strong>Ostatnia kalibracja:</strong><br>");
 
-    if (config.pumps[i].lastCalibration.timestamp > 0) {  // jeśli była kalibracja
-        // Konwersja timestamp na czytelną datę
-        char dateStr[20];
-        time_t ts = config.pumps[i].lastCalibration.timestamp;
-        strftime(dateStr, sizeof(dateStr), "%d.%m.%Y %H:%M", localtime(&ts));
-        
-        configForms += String(dateStr);
-        configForms += F("<br>Czas: ");
-        configForms += String(config.pumps[i].lastCalibration.time);
-        configForms += F("s<br>Objętość: ");
-        configForms += String(config.pumps[i].lastCalibration.volume);
-        configForms += F("ml<br>Wydajność: ");
-        configForms += String(config.pumps[i].lastCalibration.flowRate);
-        configForms += F(" ml/min");
-    } else {
-        configForms += F("Brak kalibracji");
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        if (config.pumps[i].lastCalibration.timestamp > 0) {  // jeśli była kalibracja
+            // Konwersja timestamp na czytelną datę
+            char dateStr[20];
+            time_t ts = config.pumps[i].lastCalibration.timestamp;
+            strftime(dateStr, sizeof(dateStr), "%d.%m.%Y %H:%M", localtime(&ts));
+            
+            configForms += String(dateStr);
+            configForms += F("<br>Czas: ");
+            configForms += String(config.pumps[i].lastCalibration.time);
+            configForms += F("s<br>Objętość: ");
+            configForms += String(config.pumps[i].lastCalibration.volume);
+            configForms += F("ml<br>Wydajność: ");
+            configForms += String(config.pumps[i].lastCalibration.flowRate);
+            configForms += F(" ml/min");
+        } else {
+            configForms += F("Brak kalibracji");
+        }
     }
 
     configForms += F("</td></tr>");
@@ -1504,7 +1509,9 @@ bool validateConfigValues() {
         // Sprawdź kalibrację (nie może być 0 lub ujemna)
         float calibration = server.arg("p" + String(i) + "_calibration").toFloat();
         if (calibration <= 0) {
-            webSocket.broadcastTXT("save:error:Kalibracja pompy " + String(i+1) + " musi być większa od 0");
+            //webSocket.broadcastTXT("save:error:Kalibracja pompy " + //String(i+1) + " musi być większa od 0");
+            String wiadomosc = "save:error:Kalibracja pompy " + String(i+1) + " musi być większa od 0";
+            webSocket.broadcastTXT(wiadomosc);
             return false;
         }
 
@@ -1628,12 +1635,12 @@ void handleSave() {
     saveConfig();
 
     // Jeśli dane MQTT się zmieniły, zrestartuj połączenie
-    if (needMqttReconnect) {
-        if (mqtt.isConnected()) {
-            mqtt.disconnect();
-        }
-        connectMQTT();
-    }
+    // if (needMqttReconnect) {
+    //     if (mqtt.isConnected()) {
+    //         mqtt.disconnect();
+    //     }
+    //     connectMQTT();
+    // }
 
     // Wyślij informację o sukcesie przez WebSocket
     //webSocket.broadcastTXT("save:success:Zapisano ustawienia!");
@@ -1833,7 +1840,8 @@ void loop() {
     
     // Aktualizacja stanu sensorów na podstawie PCF8574
     for(int i = 0; i < NUMBER_OF_PUMPS; i++) {
-        bool pumpState = !pcf8574.read(i);  // Negacja bo logika ujemna
+        //bool pumpState = !pcf8574.read(i);  // Negacja bo logika ujemna
+        bool pumpState = !pcf8574.digitalRead(i); 
         pumpStates[i]->setState(pumpState);
     }
 
