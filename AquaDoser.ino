@@ -27,105 +27,6 @@
 // Pozostałe
 #include <Adafruit_NeoPixel.h>  // Sterowanie LED
 
-
-// Definicja struktury
-struct CustomTimeStatus {
-    String time;
-    String date;
-    String season;
-};
-
-// Deklaracja funkcji
-static CustomTimeStatus getCustomTimeStatus() {
-    CustomTimeStatus status;
-    status.time = String(hour()) + ":" + String(minute()) + ":" + String(second());
-    status.date = String(day()) + "/" + String(month()) + "/" + String(year());
-    
-    int currentMonth = month();
-    if (currentMonth >= 3 && currentMonth <= 5) status.season = "Wiosna";
-    else if (currentMonth >= 6 && currentMonth <= 8) status.season = "Lato";
-    else if (currentMonth >= 9 && currentMonth <= 11) status.season = "Jesień";
-    else status.season = "Zima";
-    
-    return status;
-}
-
-// ** DEFINICJE PINÓW **
-
-// Przypisanie pinów do urządzeń
-const uint8_t NUMBER_OF_PUMPS = 8;  // Ilość pomp
-const int BUZZER_PIN = 13;      // GPIO 13
-const int LED_PIN = 12;         // GPIO 12
-const int BUTTON_PIN = 14;    // GPIO 14
-const int SDA_PIN = 4;          // GPIO 4
-const int SCL_PIN = 5;          // GPIO 5
-
-PCF8574 pcf8574(0x20);
-
-// LED
-// Definicja paska LED
-Adafruit_NeoPixel strip(NUMBER_OF_PUMPS, LED_PIN, NEO_GRB + NEO_KHZ800);
-
-#define LED_UPDATE_INTERVAL 50  // ms
-#define PULSE_MAX_BRIGHTNESS 255
-#define PULSE_MIN_BRIGHTNESS 50
-
-#define COLOR_OFF 0xFF0000        // Czerwony - pompa wyłączona
-#define COLOR_ON 0x00FF00         // Zielony - pompa włączona
-#define COLOR_WORKING 0x0000FF    // Niebieski - pompa pracuje
-#define COLOR_SERVICE 0xFFFF00    // Żółty - tryb serwisowy
-
-#define COLOR_RAINBOW_1 strip.Color(255, 0, 0)      // Czerwony
-#define COLOR_RAINBOW_2 strip.Color(255, 127, 0)    // Pomarańczowy
-#define COLOR_RAINBOW_3 strip.Color(255, 255, 0)    // Żółty
-#define COLOR_RAINBOW_4 strip.Color(0, 255, 0)      // Zielony
-#define COLOR_RAINBOW_5 strip.Color(0, 0, 255)      // Niebieski
-#define COLOR_RAINBOW_6 strip.Color(139, 0, 255)    // Fioletowy
-
-// ** USTAWIENIA CZASOWE **
-
-// Konfiguracja timeoutów i interwałów
-const unsigned long WATCHDOG_TIMEOUT = 8000;       // Timeout dla watchdoga
-const unsigned long LONG_PRESS_TIME = 1000;        // Czas długiego naciśnięcia przycisku
-const unsigned long OTA_CHECK_INTERVAL = 1000;     // Sprawdzanie OTA co 1s
-const unsigned long MILLIS_OVERFLOW_THRESHOLD = 4294967295U - 60000; // ~49.7 dni
-
-void updateHAState(uint8_t pumpIndex);
-
-// zmienne globalne do śledzenia testu pompy
-
-unsigned long pumpTestEndTime = 0;
-int8_t testingPumpId = -1;
-
-// RTC
-RTC_DS3231 rtc;
-
-// Reguły dla czasu letniego w Polsce
-// Ostatnia niedziela marca o 2:00 -> 3:00
-// Ostatnia niedziela października o 3:00 -> 2:00
-TimeChangeRule CEST = {"CEST", Last, Sun, Mar, 2, 120};  // UTC + 2h
-TimeChangeRule CET = {"CET", Last, Sun, Oct, 3, 60};     // UTC + 1h
-Timezone CE(CEST, CET);
-
-unsigned long lastNTPSync = 0;
-const unsigned long NTP_SYNC_INTERVAL = 24UL * 60UL * 60UL * 1000UL; // 24h w milisekundach
-
-// ** KONFIGURACJA SYSTEMU **
-
-// Makra debugowania
-#define DEBUG 0  // 0 wyłącza debug, 1 włącza debug
-
-#if DEBUG
-    #define AQUA_DEBUG_PRINT(x) Serial.println(x)
-    #define AQUA_DEBUG_PRINTF(format, ...) Serial.printf(format, __VA_ARGS__)
-#else
-    #define AQUA_DEBUG_PRINT(x)
-    #define AQUA_DEBUG_PRINTF(format, ...)
-#endif
-
-// Zmienna przechowująca wersję oprogramowania
-const char* SOFTWARE_VERSION = "4.12.24";  // Definiowanie wersji oprogramowania
-
 // Struktury konfiguracyjne i statusowe
 
 struct CalibrationHistory {
@@ -231,6 +132,97 @@ struct LEDState {
                  immediate(false), brightness(255), pulsing(false), 
                  pulseDirection(1) {}
 };
+
+// Deklaracja funkcji
+static CustomTimeStatus getCustomTimeStatus() {
+    CustomTimeStatus status;
+    status.time = String(hour()) + ":" + String(minute()) + ":" + String(second());
+    status.date = String(day()) + "/" + String(month()) + "/" + String(year());
+    
+    int currentMonth = month();
+    if (currentMonth >= 3 && currentMonth <= 5) status.season = "Wiosna";
+    else if (currentMonth >= 6 && currentMonth <= 8) status.season = "Lato";
+    else if (currentMonth >= 9 && currentMonth <= 11) status.season = "Jesień";
+    else status.season = "Zima";
+    
+    return status;
+}
+
+// ** DEFINICJE PINÓW **
+
+// Przypisanie pinów do urządzeń
+const uint8_t NUMBER_OF_PUMPS = 8;  // Ilość pomp
+const int BUZZER_PIN = 13;      // GPIO 13
+const int LED_PIN = 12;         // GPIO 12
+const int BUTTON_PIN = 14;    // GPIO 14
+const int SDA_PIN = 4;          // GPIO 4
+const int SCL_PIN = 5;          // GPIO 5
+
+PCF8574 pcf8574(0x20);
+
+// LED
+// Definicja paska LED
+Adafruit_NeoPixel strip(NUMBER_OF_PUMPS, LED_PIN, NEO_GRB + NEO_KHZ800);
+
+#define LED_UPDATE_INTERVAL 50  // ms
+#define PULSE_MAX_BRIGHTNESS 255
+#define PULSE_MIN_BRIGHTNESS 50
+
+#define COLOR_OFF 0xFF0000        // Czerwony - pompa wyłączona
+#define COLOR_ON 0x00FF00         // Zielony - pompa włączona
+#define COLOR_WORKING 0x0000FF    // Niebieski - pompa pracuje
+#define COLOR_SERVICE 0xFFFF00    // Żółty - tryb serwisowy
+
+#define COLOR_RAINBOW_1 strip.Color(255, 0, 0)      // Czerwony
+#define COLOR_RAINBOW_2 strip.Color(255, 127, 0)    // Pomarańczowy
+#define COLOR_RAINBOW_3 strip.Color(255, 255, 0)    // Żółty
+#define COLOR_RAINBOW_4 strip.Color(0, 255, 0)      // Zielony
+#define COLOR_RAINBOW_5 strip.Color(0, 0, 255)      // Niebieski
+#define COLOR_RAINBOW_6 strip.Color(139, 0, 255)    // Fioletowy
+
+// ** USTAWIENIA CZASOWE **
+
+// Konfiguracja timeoutów i interwałów
+const unsigned long WATCHDOG_TIMEOUT = 8000;       // Timeout dla watchdoga
+const unsigned long LONG_PRESS_TIME = 1000;        // Czas długiego naciśnięcia przycisku
+const unsigned long OTA_CHECK_INTERVAL = 1000;     // Sprawdzanie OTA co 1s
+const unsigned long MILLIS_OVERFLOW_THRESHOLD = 4294967295U - 60000; // ~49.7 dni
+
+void updateHAState(uint8_t pumpIndex);
+
+// zmienne globalne do śledzenia testu pompy
+
+unsigned long pumpTestEndTime = 0;
+int8_t testingPumpId = -1;
+
+// RTC
+RTC_DS3231 rtc;
+
+// Reguły dla czasu letniego w Polsce
+// Ostatnia niedziela marca o 2:00 -> 3:00
+// Ostatnia niedziela października o 3:00 -> 2:00
+TimeChangeRule CEST = {"CEST", Last, Sun, Mar, 2, 120};  // UTC + 2h
+TimeChangeRule CET = {"CET", Last, Sun, Oct, 3, 60};     // UTC + 1h
+Timezone CE(CEST, CET);
+
+unsigned long lastNTPSync = 0;
+const unsigned long NTP_SYNC_INTERVAL = 24UL * 60UL * 60UL * 1000UL; // 24h w milisekundach
+
+// ** KONFIGURACJA SYSTEMU **
+
+// Makra debugowania
+#define DEBUG 0  // 0 wyłącza debug, 1 włącza debug
+
+#if DEBUG
+    #define AQUA_DEBUG_PRINT(x) Serial.println(x)
+    #define AQUA_DEBUG_PRINTF(format, ...) Serial.printf(format, __VA_ARGS__)
+#else
+    #define AQUA_DEBUG_PRINT(x)
+    #define AQUA_DEBUG_PRINTF(format, ...)
+#endif
+
+// Zmienna przechowująca wersję oprogramowania
+const char* SOFTWARE_VERSION = "4.12.24";  // Definiowanie wersji oprogramowania
 
 // Globalne instancje struktur
 //CustomTimeStatus currentStatus = getCustomTimeStatus();
