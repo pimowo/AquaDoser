@@ -171,8 +171,6 @@ HASwitch* pumpSchedules[NUMBER_OF_PUMPS];  // Przełączniki do aktywacji/deakty
 HASwitch switchService("service_mode");  // Tryb serwisowy
 HASwitch switchSound("sound_switch");    // Dźwięki systemu
 
-//HASensor sensorPump("pump_status");  // Sensor statusu pompy
-
 // ** STRONA KONFIGURACYJNA **
 
 // Strona konfiguracji przechowywana w pamięci programu
@@ -720,6 +718,16 @@ bool loadConfig() {
     }
     
     EEPROM.end();
+
+    // Debug - wyświetl wartości przed sprawdzeniem sumy kontrolnej
+    AQUA_DEBUG_PRINT("Wczytane dane z EEPROM:");
+    AQUA_DEBUG_PRINT("MQTT Server: " + String(tempConfig.mqtt_server));
+    AQUA_DEBUG_PRINT("MQTT Port: " + String(tempConfig.mqtt_port));
+    AQUA_DEBUG_PRINT("MQTT User: " + String(tempConfig.mqtt_user));
+    
+    char calculatedChecksum = calculateChecksum(tempConfig);
+    AQUA_DEBUG_PRINT("Checksum stored: " + String(tempConfig.checksum));
+    AQUA_DEBUG_PRINT("Checksum calculated: " + String(calculatedChecksum));
     
     // Sprawdź sumę kontrolną
     char calculatedChecksum = calculateChecksum(tempConfig);
@@ -840,7 +848,7 @@ void turnOffPump(uint8_t pumpIndex) {
 
 // Bezpieczne wyłączenie wszystkich pomp
 void stopAllPumps() {
-    for(int i = 0; i < 8; i++) {
+    for(int i = 0; i < NUMBER_OF_PUMPS; i++) {
         turnOffPump(i);
     }
 }
@@ -863,28 +871,6 @@ void resetWiFiSettings() {
     
     AQUA_DEBUG_PRINT(F("Ustawienia WiFi zostały skasowane"));
     delay(100);
-}
-
-// Konfiguracja połączenia Wi-Fi
-void setupWiFi() {
-    WiFiManager wifiManager;
-
-    // Reset WiFi settings if the button is pressed
-    if (digitalRead(BUTTON_PIN) == LOW) {
-        wifiManager.resetSettings();
-        delay(1000);
-    }
-
-    wifiManager.autoConnect(config.hostname);
-
-    if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("Failed to connect to WiFi");
-        ESP.restart();
-    }
-
-    Serial.println("Connected to WiFi");
-    Serial.print("IP Address: ");
-    Serial.println(WiFi.localIP());
 }
 
 // Konfiguracja MQTT z Home Assistant
@@ -1218,6 +1204,12 @@ void handleSave() {
         return;
     }
 
+    // Debug - pokaż otrzymane dane
+    AQUA_DEBUG_PRINT("Otrzymane dane z formularza:");
+    AQUA_DEBUG_PRINT("MQTT Server: " + server.arg("mqtt_server"));
+    AQUA_DEBUG_PRINT("MQTT Port: " + server.arg("mqtt_port"));
+    AQUA_DEBUG_PRINT("MQTT User: " + server.arg("mqtt_user"));
+    
     // Zapisz poprzednie wartości na wypadek błędów
     Config oldConfig = config;
     bool needMqttReconnect = false;
@@ -1233,7 +1225,12 @@ void handleSave() {
     config.mqtt_port = server.arg("mqtt_port").toInt();
     strlcpy(config.mqtt_user, server.arg("mqtt_user").c_str(), sizeof(config.mqtt_user));
     strlcpy(config.mqtt_password, server.arg("mqtt_password").c_str(), sizeof(config.mqtt_password));
-
+    
+    // Debug - pokaż zapisane wartości
+    AQUA_DEBUG_PRINT("Zapisane wartości:");
+    AQUA_DEBUG_PRINT("MQTT Server: " + String(config.mqtt_server));
+    AQUA_DEBUG_PRINT("MQTT Port: " + String(config.mqtt_port));
+    AQUA_DEBUG_PRINT("MQTT User: " + String(config.mqtt_user));
 
     String pumpPrefix;
     String doseArg;
