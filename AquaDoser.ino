@@ -212,7 +212,7 @@ const unsigned long NTP_SYNC_INTERVAL = 24UL * 60UL * 60UL * 1000UL; // 24h w mi
 // ** KONFIGURACJA SYSTEMU **
 
 // Makra debugowania
-#define DEBUG 0  // 0 wyłącza debug, 1 włącza debug
+#define DEBUG 1  // 0 wyłącza debug, 1 włącza debug
 
 #if DEBUG
     #define AQUA_DEBUG_PRINT(x) Serial.println(x)
