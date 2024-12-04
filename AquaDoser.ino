@@ -760,7 +760,9 @@ void saveCalibration(uint8_t pumpId, float volume, uint16_t calibrationTime) {
     saveConfig();
     
     // Wyślij potwierdzenie przez WebSocket
-    webSocket.broadcastTXT("calibration_saved:" + String(pumpId));
+    //webSocket.broadcastTXT("calibration_saved:" + String(pumpId));
+    String wiadomosc = "calibration_saved:" + String(pumpId);
+    webSocket.broadcastTXT(wiadomosc);
 
     // Publikuj nową datę
     publishCalibrationDate(pumpId);
@@ -924,7 +926,7 @@ bool loadConfig() {
     AQUA_DEBUG_PRINT("Checksum calculated: " + String(calculatedChecksum));
     
     // Sprawdź sumę kontrolną
-    char calculatedChecksum = calculateChecksum(tempConfig);
+    //char calculatedChecksum = calculateChecksum(tempConfig);
     if (calculatedChecksum == tempConfig.checksum) {
         // Jeśli suma kontrolna się zgadza, skopiuj dane do głównej struktury config
         memcpy(&config, &tempConfig, sizeof(Config));
@@ -1089,7 +1091,9 @@ void setupHA() {
         sprintf(uniqueId, "stan_pumpy_%d", i + 1);
         
         pumpStates[i] = new HABinarySensor(uniqueId);
-        pumpStates[i]->setName(String("Stan Pompy ") + String(i + 1));
+        //pumpStates[i]->setName(String("Stan Pompy ") + String(i + 1));
+        String nazwaPompy = String("Stan Pompy ") + String(i + 1);
+        pumpStates[i]->setName(nazwaPompy.c_str());
         pumpStates[i]->setDeviceClass("running");
     }
     
@@ -1756,7 +1760,7 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length
                     int pumpId = message.substring(10).toInt();
                     if (pumpId >= 0 && pumpId < NUMBER_OF_PUMPS) {
                         // Włącz pompę
-                        pcf8574.write(config.pumps[pumpId].pcf8574_pin, HIGH);
+                        pcf8574.digitalWrite(config.pumps[pumpId].pcf8574_pin, HIGH);
                         Serial.printf("Rozpoczęto test pompy %d\n", pumpId + 1);
                         
                         // Zaplanuj wyłączenie pompy za 5 sekund
@@ -1835,7 +1839,7 @@ void loop() {
 
     // Sprawdź czy należy zakończyć test pompy
     if (testingPumpId >= 0 && millis() >= pumpTestEndTime) {
-        pcf8574.write(config.pumps[testingPumpId].pcf8574_pin, LOW);
+        pcf8574.digitalWrite(config.pumps[testingPumpId].pcf8574_pin, LOW);
         webSocket.broadcastTXT("pump_test:finished:" + String(testingPumpId));
         testingPumpId = -1;
     }
