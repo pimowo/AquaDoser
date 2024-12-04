@@ -187,8 +187,6 @@ struct Timers {
         lastButtonCheck(0) {}
 };
 
-CustomTimeStatus currentStatus = getCustomTimeStatus();
-
 struct CustomTimeStatus {
     String time;
     String date;
@@ -211,11 +209,11 @@ struct LEDState {
 };
 
 // Globalne instancje struktur
+CustomTimeStatus currentStatus = getCustomTimeStatus();
 Config config;
 Status status;
 ButtonState buttonState;
 Timers timers;
-
 LEDState ledStates[NUMBER_OF_PUMPS];  // Stan diod LED
 unsigned long lastLedUpdate = 0;
 
