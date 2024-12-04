@@ -852,23 +852,6 @@ void syncTimeFromNTP() {
     }
 }
 
-// Stałe dla LED
-#define LED_UPDATE_INTERVAL 50  // ms
-#define PULSE_MAX_BRIGHTNESS 255
-#define PULSE_MIN_BRIGHTNESS 50
-
-// Struktura stanu LED
-struct LEDState {
-    uint32_t currentColor;
-    uint8_t brightness;
-    bool pulseUp;
-    // dodaj inne potrzebne pola
-};
-
-// Tablica stanów LED
-LEDState ledStates[NUMBER_OF_PUMPS];
-unsigned long lastLedUpdate = 0;
-
 // Funkcje pomocnicze dla LED
 uint32_t interpolateColor(uint32_t color1, uint32_t color2, float ratio) {
     uint8_t r1, g1, b1, r2, g2, b2;
@@ -890,11 +873,11 @@ void colorToRGB(uint32_t color, uint8_t &r, uint8_t &g, uint8_t &b) {
 
 void initializeLEDs() {
     for(int i = 0; i < NUMBER_OF_PUMPS; i++) {
-        ledStates[i] = {
-            .currentColor = strip.Color(0, 0, 0),
-            .brightness = PULSE_MIN_BRIGHTNESS,
-            .pulseUp = true
-        };
+        ledStates[i].currentColor = strip.Color(0, 0, 0);
+        ledStates[i].targetColor = strip.Color(0, 0, 0);
+        ledStates[i].brightness = PULSE_MIN_BRIGHTNESS;
+        ledStates[i].pulseDirection = 1;
+        ledStates[i].pulsing = false;
     }
     strip.begin();
     strip.show();
@@ -1277,95 +1260,6 @@ void setupPin() {
     }
 }
 
-// --- Funkcje obsługi LED
-
-uint32_t interpolateColor(uint32_t color1, uint32_t color2, float ratio) {
-    uint8_t r1 = (color1 >> 16) & 0xFF;
-    uint8_t g1 = (color1 >> 8) & 0xFF;
-    uint8_t b1 = color1 & 0xFF;
-    
-    uint8_t r2 = (color2 >> 16) & 0xFF;
-    uint8_t g2 = (color2 >> 8) & 0xFF;
-    uint8_t b2 = color2 & 0xFF;
-    
-    uint8_t r = r1 + ((r2 - r1) * ratio);
-    uint8_t g = g1 + ((g2 - g1) * ratio);
-    uint8_t b = b1 + ((b2 - b1) * ratio);
-    
-    return (r << 16) | (g << 8) | b;
-}
-
-void colorToRGB(uint32_t color, uint8_t &r, uint8_t &g, uint8_t &b) {
-    r = (color >> 16) & 0xFF;
-    g = (color >> 8) & 0xFF;
-    b = color & 0xFF;
-}
-
-void setLEDColor(uint8_t index, uint32_t color, bool immediate) {
-    if (index >= NUMBER_OF_PUMPS) return;
-    
-    LEDState &state = ledStates[index];
-    if (immediate) {
-        state.currentColor = color;
-        state.targetColor = color;
-    } else {
-        state.targetColor = color;
-    }
-}
-
-// Aktualizacja wszystkich LED
-void updateLEDs() {
-    unsigned long currentMillis = millis();
-    
-    // Aktualizuj tylko co LED_UPDATE_INTERVAL
-    if (currentMillis - lastLedUpdate < LED_UPDATE_INTERVAL) {
-        return;
-    }
-    lastLedUpdate = currentMillis;
-    
-    // Aktualizacja każdego LED
-    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-        LEDState &state = ledStates[i];
-        
-        // Obsługa pulsowania
-        if (state.pulsing) {
-            state.brightness += state.pulseDirection * 5;
-            
-            if (state.brightness >= PULSE_MAX_BRIGHTNESS) {
-                state.brightness = PULSE_MAX_BRIGHTNESS;
-                state.pulseDirection = -1;
-            } else if (state.brightness <= PULSE_MIN_BRIGHTNESS) {
-                state.brightness = PULSE_MIN_BRIGHTNESS;
-                state.pulseDirection = 1;
-            }
-        } else {
-            state.brightness = 255;
-        }
-        
-        // Płynne przejście do docelowego koloru
-        if (state.currentColor != state.targetColor) {
-            state.currentColor = interpolateColor(
-                state.currentColor, 
-                state.targetColor, 
-                0.1 // współczynnik płynności przejścia
-            );
-        }
-        
-        // Zastosowanie jasności do koloru
-        uint8_t r, g, b;
-        colorToRGB(state.currentColor, r, g, b);
-        float brightnessRatio = state.brightness / 255.0;
-        
-        strip.setPixelColor(i, 
-            (uint8_t)(r * brightnessRatio),
-            (uint8_t)(g * brightnessRatio),
-            (uint8_t)(b * brightnessRatio)
-        );
-    }
-    
-    strip.show();
-}
-
 // Efekt powitalny
 void playWelcomeEffect() {
     // Efekt 1: Przebiegające światło (1s)
@@ -1548,8 +1442,6 @@ void onServiceSwitchCommand(bool state, HASwitch* sender) {
 // Zwraca zawartość strony konfiguracji jako ciąg znaków
 String getConfigPage() {
     String html = FPSTR(CONFIG_PAGE);
-
-    String configForms = "";  // Zainicjuj pusty string
     
     // Przygotuj wszystkie wartości przed zastąpieniem
     bool mqttConnected = client.connected();
