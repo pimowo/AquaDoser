@@ -164,7 +164,7 @@ struct Timers {
         lastButtonCheck(0) {}
 };
 
-struct TimeStatus {
+struct CustomTimeStatus {
     String time;
     String date;
     String season;
@@ -175,7 +175,7 @@ Config config;
 Status status;
 ButtonState buttonState;
 Timers timers;
-TimeStatus timeStatus = getCurrentTimeStatus();
+CustomTimeStatus currentStatus = getCustomTimeStatus();
 
 // ** INSTANCJE URZĄDZEŃ I USŁUG **
 
@@ -810,8 +810,8 @@ void syncTimeFromNTP() {
     }
 }
 
-TimeStatus getCurrentTimeStatus() {
-    TimeStatus status;
+CustomTimeStatus getCustomTimeStatus() {
+    CustomTimeStatus status;
     DateTime now = rtc.now();
     time_t localTime = CE.toLocal(now.unixtime());
     
@@ -1355,17 +1355,17 @@ String getConfigPage() {
     configForms += config.mqtt_password;
     configForms += F("'></td></tr>"
         
-    TimeStatus timeStatus = getCurrentTimeStatus();
+    CustomTimeStatus currentStatus = getCustomTimeStatus();
 
     // Dodaj informacje o czasie
     configForms += F("<tr><td>Czas</td><td>");
-    configForms += timeStatus.time;
+    configForms += currentStatus.time;
     configForms += F(" (");
-    configForms += timeStatus.season;
+    configForms += currentStatus.season;
     configForms += F(")</td></tr>");
     
     configForms += F("<tr><td>Data</td><td>");
-    configForms += timeStatus.date;
+    configForms += currentStatus.date;
     configForms += F("</td></tr>");    
                      "</table></div>");
 
@@ -1518,21 +1518,24 @@ bool validateConfigValues() {
         // Sprawdź dozowanie (nie może być ujemne)
         int dosage = server.arg("p" + String(i) + "_dosage").toInt();
         if (dosage < 0) {
-            webSocket.broadcastTXT("save:error:Dozowanie pompy " + String(i+1) + " nie może być ujemne");
+            String message = "save:error:Dozowanie pompy " + String(i+1) + " nie może być ujemne";
+            webSocket.broadcastTXT(message);
             return false;
         }
 
         // Sprawdź godzinę (0-23)
         int hour = server.arg("p" + String(i) + "_hour").toInt();
         if (hour < 0 || hour > 23) {
-            webSocket.broadcastTXT("save:error:Nieprawidłowa godzina dla pompy " + String(i+1));
+            String message2 = "save:error:Nieprawidłowa godzina dla pompy " + String(i+1);
+            webSocket.broadcastTXT(message2);
             return false;
         }
 
         // Sprawdź minutę (0-59)
         int minute = server.arg("p" + String(i) + "_minute").toInt();
         if (minute < 0 || minute > 59) {
-            webSocket.broadcastTXT("save:error:Nieprawidłowa minuta dla pompy " + String(i+1));
+            String message3 = "save:error:Nieprawidłowa minuta dla pompy " + String(i+1);
+            webSocket.broadcastTXT(message3);
             return false;
         }
     }
@@ -1775,7 +1778,9 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length
                         testingPumpId = pumpId;
                         
                         // Wyślij potwierdzenie do przeglądarki
-                        webSocket.broadcastTXT("pump_test:started:" + String(pumpId));
+                        //webSocket.broadcastTXT("pump_test:started:" + String(pumpId));
+                        String message4 = "pump_test:started:" + String(pumpId);
+                        webSocket.broadcastTXT(message4);
                     }
                 }
             }
@@ -1848,7 +1853,9 @@ void loop() {
     // Sprawdź czy należy zakończyć test pompy
     if (testingPumpId >= 0 && millis() >= pumpTestEndTime) {
         pcf8574.digitalWrite(config.pumps[testingPumpId].pcf8574_pin, LOW);
-        webSocket.broadcastTXT("pump_test:finished:" + String(testingPumpId));
+        //webSocket.broadcastTXT("pump_test:finished:" + String(testingPumpId));
+        String message5 = "pump_test:finished:" + String(testingPumpId);
+        webSocket.broadcastTXT(message5);
         testingPumpId = -1;
     }
     
