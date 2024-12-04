@@ -1456,7 +1456,7 @@ String getConfigPage() {
     String soundStatusClass = config.soundEnabled ? "success" : "error";
     
     // Sekcja przycisków - zmieniona na String zamiast PROGMEM
-    String buttons = F(
+    String buttons += F(
         "<div class='section'>"
         "<div class='buttons-container'>"
         "<button class='btn btn-blue' onclick='rebootDevice()'>Restart urządzenia</button>"
@@ -1486,20 +1486,19 @@ String getConfigPage() {
     html.replace("%SOUND_STATUS_CLASS%", config.soundEnabled ? "success" : "error");
     html.replace("%SOFTWARE_VERSION%", SOFTWARE_VERSION);
     html.replace("%CONFIG_FORMS%", configForms);
-    // html.replace("%BUTTONS%", F(
-    //     "<div class='section'>"
-    //     "<div class='buttons-container'>"
-    //     "<button class='btn btn-blue' onclick='rebootDevice()'>Restart urządzenia</button>"
-    //     "<button class='btn btn-red' onclick='factoryReset()'>Przywróć ustawienia fabryczne</button>"
-    //     "</div>"
-    //     "</div>"
-    // ));
-    html.replace("%BUTTONS%", buttons);
+    html.replace("%BUTTONS%", F(
+        "<div class='section'>"
+        "<div class='buttons-container'>"
+        "<button class='btn btn-blue' onclick='rebootDevice()'>Restart urządzenia</button>"
+        "<button class='btn btn-red' onclick='factoryReset()'>Przywróć ustawienia fabryczne</button>"
+        "</div>"
+        "</div>"
+    ));
     html.replace("%UPDATE_FORM%", FPSTR(UPDATE_FORM));
     html.replace("%FOOTER%", FPSTR(PAGE_FOOTER));
 
     // Przygotuj formularze konfiguracyjne
-    String configForms = F("<form method='POST' action='/save'>");
+    String configForms += F("<form method='POST' action='/save'>");
     
     // MQTT
     configForms += F("<div class='section'>"
