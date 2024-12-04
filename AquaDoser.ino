@@ -39,7 +39,10 @@ const int SCL_PIN = 5;          // GPIO 5
 
 PCF8574 pcf8574(0x20);
 
-// --- Kolory LED
+// LED
+// Definicja paska LED
+Adafruit_NeoPixel strip(NUMBER_OF_PUMPS, LED_PIN, NEO_GRB + NEO_KHZ800);
+
 #define COLOR_OFF 0xFF0000        // Czerwony - pompa wyłączona
 #define COLOR_ON 0x00FF00         // Zielony - pompa włączona
 #define COLOR_WORKING 0x0000FF    // Niebieski - pompa pracuje
@@ -849,11 +852,9 @@ void syncTimeFromNTP() {
 
 CustomTimeStatus getCustomTimeStatus() {
     CustomTimeStatus status;
-    // Pobierz aktualny czas
     status.time = String(hour()) + ":" + String(minute()) + ":" + String(second());
-    // Pobierz aktualną datę
     status.date = String(day()) + "/" + String(month()) + "/" + String(year());
-    // Ustaw sezon (możesz dostosować logikę)
+    
     int currentMonth = month();
     if (currentMonth >= 3 && currentMonth <= 5) status.season = "Wiosna";
     else if (currentMonth >= 6 && currentMonth <= 8) status.season = "Lato";
@@ -1178,6 +1179,60 @@ void setupPin() {
         pcf8574.pinMode(i, OUTPUT);
         pcf8574.digitalWrite(i, HIGH);  // HIGH = wyłączone (logika ujemna)
     }
+}
+
+// --- Funkcje obsługi LED
+// Aktualizacja wszystkich LED
+void updateLEDs() {
+    unsigned long currentMillis = millis();
+    
+    // Aktualizuj tylko co LED_UPDATE_INTERVAL
+    if (currentMillis - lastLedUpdate < LED_UPDATE_INTERVAL) {
+        return;
+    }
+    lastLedUpdate = currentMillis;
+    
+    // Aktualizacja każdego LED
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        LEDState &state = ledStates[i];
+        
+        // Obsługa pulsowania
+        if (state.pulsing) {
+            state.brightness += state.pulseDirection * 5;
+            
+            if (state.brightness >= PULSE_MAX_BRIGHTNESS) {
+                state.brightness = PULSE_MAX_BRIGHTNESS;
+                state.pulseDirection = -1;
+            } else if (state.brightness <= PULSE_MIN_BRIGHTNESS) {
+                state.brightness = PULSE_MIN_BRIGHTNESS;
+                state.pulseDirection = 1;
+            }
+        } else {
+            state.brightness = 255;
+        }
+        
+        // Płynne przejście do docelowego koloru
+        if (state.currentColor != state.targetColor) {
+            state.currentColor = interpolateColor(
+                state.currentColor, 
+                state.targetColor, 
+                0.1 // współczynnik płynności przejścia
+            );
+        }
+        
+        // Zastosowanie jasności do koloru
+        uint8_t r, g, b;
+        colorToRGB(state.currentColor, r, g, b);
+        float brightnessRatio = state.brightness / 255.0;
+        
+        strip.setPixelColor(i, 
+            (uint8_t)(r * brightnessRatio),
+            (uint8_t)(g * brightnessRatio),
+            (uint8_t)(b * brightnessRatio)
+        );
+    }
+    
+    strip.show();
 }
 
 // Efekt powitalny
