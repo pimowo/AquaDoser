@@ -27,6 +27,29 @@
 // Pozostałe
 #include <Adafruit_NeoPixel.h>  // Sterowanie LED
 
+
+// Definicja struktury
+struct CustomTimeStatus {
+    String time;
+    String date;
+    String season;
+};
+
+// Deklaracja funkcji
+static CustomTimeStatus getCustomTimeStatus() {
+    CustomTimeStatus status;
+    status.time = String(hour()) + ":" + String(minute()) + ":" + String(second());
+    status.date = String(day()) + "/" + String(month()) + "/" + String(year());
+    
+    int currentMonth = month();
+    if (currentMonth >= 3 && currentMonth <= 5) status.season = "Wiosna";
+    else if (currentMonth >= 6 && currentMonth <= 8) status.season = "Lato";
+    else if (currentMonth >= 9 && currentMonth <= 11) status.season = "Jesień";
+    else status.season = "Zima";
+    
+    return status;
+}
+
 // ** DEFINICJE PINÓW **
 
 // Przypisanie pinów do urządzeń
@@ -202,6 +225,7 @@ struct LEDState {
     uint8_t brightness;
     bool pulsing;
     int8_t pulseDirection;
+    int8_t pulseUp;
     
     LEDState() : currentColor(0), targetColor(0), lastUpdateTime(0), 
                  immediate(false), brightness(255), pulsing(false), 
@@ -209,11 +233,12 @@ struct LEDState {
 };
 
 // Globalne instancje struktur
-CustomTimeStatus currentStatus = getCustomTimeStatus();
+//CustomTimeStatus currentStatus = getCustomTimeStatus();
 Config config;
 Status status;
 ButtonState buttonState;
 Timers timers;
+CustomTimeStatus currentStatus;
 LEDState ledStates[NUMBER_OF_PUMPS];  // Stan diod LED
 unsigned long lastLedUpdate = 0;
 
@@ -1589,6 +1614,8 @@ String getConfigPage() {
         configForms += F("'>Test pompy</button></td></tr>");
     
         configForms += F("</table></div>\n");
+
+        return configForms;
     }
 
     // W sekcji pompy
@@ -1932,7 +1959,9 @@ void setup() {
     //ESP.wdtEnable(WATCHDOG_TIMEOUT);  // Aktywacja watchdoga
     Serial.begin(115200);  // Inicjalizacja portu szeregowego
     Serial.println("\nStart AquaDoser...");
-       
+
+    currentStatus = getCustomTimeStatus();
+
     // Wczytaj konfigurację na początku
     if (!loadConfig()) {
         AQUA_DEBUG_PRINTF("Błąd wczytywania konfiguracji - używam ustawień domyślnych");
