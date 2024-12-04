@@ -32,10 +32,10 @@
 const uint8_t NUMBER_OF_PUMPS = 8;  // Ilość pomp
 
 struct CalibrationHistory {
-    uint32_t timestamp;    // unix timestamp z RTC
-    float volume;         // ilość w ml
-    uint16_t time;        // czas w sekundach
-    float flowRate;       // przeliczona wydajność ml/min
+    uint32_t timestamp;  // unix timestamp z RTC
+    float volume;        // ilość w ml
+    uint16_t time;       // czas w sekundach
+    float flowRate;      // przeliczona wydajność ml/min
 };
 
 // Struktura dla pojedynczej pompy
