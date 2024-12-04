@@ -51,6 +51,19 @@ void updateHAState(uint8_t pumpIndex);
 unsigned long pumpTestEndTime = 0;
 int8_t testingPumpId = -1;
 
+// RTC
+RTC_DS3231 rtc;
+
+// Reguły dla czasu letniego w Polsce
+// Ostatnia niedziela marca o 2:00 -> 3:00
+// Ostatnia niedziela października o 3:00 -> 2:00
+TimeChangeRule CEST = {"CEST", Last, Sun, Mar, 2, 120};  // UTC + 2h
+TimeChangeRule CET = {"CET", Last, Sun, Oct, 3, 60};     // UTC + 1h
+Timezone CE(CEST, CET);
+
+unsigned long lastNTPSync = 0;
+const unsigned long NTP_SYNC_INTERVAL = 24UL * 60UL * 60UL * 1000UL; // 24h w milisekundach
+
 // ** KONFIGURACJA SYSTEMU **
 
 // Makra debugowania
@@ -92,6 +105,7 @@ struct Config {
     char mqtt_password[32];             // hasło MQTT
     bool soundEnabled;                  // czy dźwięki są włączone
     PumpConfig pumps[NUMBER_OF_PUMPS];  // konfiguracja dla każdej pompy
+    unsigned long lastNTPSync;  // timestamp ostatniej synchronizacji
     uint8_t configVersion;              // wersja konfiguracji (dla EEPROM)
     char checksum;                      // suma kontrolna konfiguracji
 };
@@ -139,6 +153,12 @@ struct Timers {
         lastPumpCheck(0),
         lastStateUpdate(0),
         lastButtonCheck(0) {}
+};
+
+struct TimeStatus {
+    String time;
+    String date;
+    String season;
 };
 
 // Globalne instancje struktur
@@ -549,6 +569,13 @@ const char CONFIG_PAGE[] PROGMEM = R"rawliteral(
                     background-color: #666;
                     color: white;
                 }
+                
+                .time-info { 
+                    font-weight: bold; 
+                }
+                .season-info { 
+                    margin-left: 10px; font-size: 0.9em; 
+                }
             }
         </style>
         <script>
@@ -725,6 +752,55 @@ const char PAGE_FOOTER[] PROGMEM = R"rawliteral(
 )rawliteral";
 
 // ** FUNKCJE I METODY SYSTEMOWE **
+
+// Zegar
+bool initRTC() {
+    if (!rtc.begin()) {
+        AQUA_DEBUG_PRINT(F("Nie znaleziono RTC DS3231!"));
+        return false;
+    }
+
+    // Jeśli RTC stracił zasilanie, ustaw czas z NTP
+    if (rtc.lostPower()) {
+        AQUA_DEBUG_PRINT(F("RTC stracił zasilanie, synchronizuję z NTP..."));
+        syncTimeFromNTP();
+    }
+
+    return true;
+}
+
+void syncTimeFromNTP() {
+    time_t ntpTime = time(nullptr);
+    if (ntpTime > 0) {
+        // Konwersja czasu UTC na lokalny
+        time_t localTime = CE.toLocal(ntpTime);
+        
+        rtc.adjust(DateTime(localTime));
+        lastNTPSync = millis();
+        AQUA_DEBUG_PRINT(F("Zsynchronizowano czas z NTP"));
+    }
+}
+
+TimeStatus getCurrentTimeStatus() {
+    TimeStatus status;
+    DateTime now = rtc.now();
+    time_t localTime = CE.toLocal(now.unixtime());
+    
+    // Format czasu GG:MM
+    char timeStr[6];
+    sprintf(timeStr, "%02d:%02d", hour(localTime), minute(localTime));
+    status.time = String(timeStr);
+    
+    // Format daty DD/MM/RRRR
+    char dateStr[11];
+    sprintf(dateStr, "%02d/%02d/%04d", day(localTime), month(localTime), year(localTime));
+    status.date = String(dateStr);
+    
+    // Sprawdzenie czy jest czas letni
+    status.season = CE.locIsDST(now.unixtime()) ? "LATO" : "ZIMA";
+    
+    return status;
+}
 
 // Reset do ustawień fabrycznych
 void factoryReset() {    
@@ -1239,6 +1315,19 @@ String getConfigPage() {
                      "<tr><td>Hasło</td><td><input type='password' name='mqtt_password' value='");
     configForms += config.mqtt_password;
     configForms += F("'></td></tr>"
+        
+    TimeStatus timeStatus = getCurrentTimeStatus();
+
+    // Dodaj informacje o czasie
+    configForms += F("<tr><td>Czas</td><td>");
+    configForms += timeStatus.time;
+    configForms += F(" (");
+    configForms += timeStatus.season;
+    configForms += F(")</td></tr>");
+    
+    configForms += F("<tr><td>Data</td><td>");
+    configForms += timeStatus.date;
+    configForms += F("</td></tr>");    
                      "</table></div>");
 
     // Sekcja pomp
@@ -1650,6 +1739,15 @@ void setup() {
     webSocket.begin();
     webSocket.onEvent(webSocketEvent);
     setupHA();
+
+    // Inicjalizacja NTP
+    configTime(0, 0, "pool.ntp.org"); // Ustawiamy strefę na UTC (offset 0)
+    
+    // Inicjalizacja RTC
+    if (!initRTC()) {
+        // Obsługa błędu inicjalizacji RTC
+        AQUA_DEBUG_PRINT(F("Błąd inicjalizacji RTC!"));
+    }
     
     // Konfiguracja OTA
     ArduinoOTA.setHostname("AquaDoser");  // Ustaw nazwę urządzenia
@@ -1689,5 +1787,10 @@ void loop() {
     if (currentMillis - timers.lastOTACheck >= OTA_CHECK_INTERVAL) {
         ArduinoOTA.handle();                  // Obsługa aktualizacji OTA
         timers.lastOTACheck = currentMillis;  // Aktualizacja znacznika czasu ostatniego sprawdzenia OTA
+    }
+
+    // Synchronizacja RTC z NTP raz na dobę
+    if (millis() - lastNTPSync >= NTP_SYNC_INTERVAL) {
+        syncTimeFromNTP();
     }
 }
