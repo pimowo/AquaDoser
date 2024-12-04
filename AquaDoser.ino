@@ -1851,6 +1851,7 @@ void onServiceSwitchCommand(bool state, HASwitch* sender) {
 
 String getConfigPage() {
     String html = FPSTR(CONFIG_PAGE);
+    String content;
     String configForms = "";
     
     // Przygotuj buttons
@@ -2005,11 +2006,13 @@ String getConfigPage() {
     // Zamień wszystkie placeholdery
     html.replace(F("%MQTT_STATUS%"), client.connected() ? F("Połączony") : F("Rozłączony"));
     html.replace(F("%MQTT_STATUS_CLASS%"), client.connected() ? F("success") : F("error"));
+    // html.replace(F("%MQTT_STATUS%"), mqtt.connected() ? F("Połączony") : F("Rozłączony"));
+    // html.replace(F("%MQTT_STATUS_CLASS%"), mqtt.connected() ? F("success") : F("error"));
     html.replace(F("%SOUND_STATUS%"), config.soundEnabled ? F("Włączony") : F("Wyłączony"));
     html.replace(F("%SOUND_STATUS_CLASS%"), config.soundEnabled ? F("success") : F("error"));
     String softwareVersion = SOFTWARE_VERSION;
     html.replace(F("%SOFTWARE_VERSION%"), softwareVersion);
-    page.replace(F("%CURRENT_TIME%"), getFormattedDateTime());
+    html.replace(F("%CURRENT_TIME%"), getFormattedDateTime());
     html.replace(F("%CONFIG_FORMS%"), configForms);
     html.replace(F("%BUTTONS%"), buttons);
     html.replace(F("%UPDATE_FORM%"), FPSTR(UPDATE_FORM));
