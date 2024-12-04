@@ -82,6 +82,13 @@ const char* SOFTWARE_VERSION = "4.12.24";  // Definiowanie wersji oprogramowania
 
 // Struktury konfiguracyjne i statusowe
 
+struct CalibrationHistory {
+    uint32_t timestamp;    // unix timestamp z RTC
+    float volume;         // ilość w ml
+    uint16_t time;        // czas w sekundach
+    float flowRate;       // przeliczona wydajność ml/min
+};
+
 // Struktura dla pojedynczej pompy
 struct PumpConfig {
     bool enabled;           // czy pompa jest włączona w harmonogramie
@@ -92,6 +99,8 @@ struct PumpConfig {
     uint8_t hour;          // godzina dozowania
     uint8_t minute;        // minuta dozowania
     uint8_t weekDays;      // dni tygodnia (bitmapa: 0b0PWTŚCPSN)
+        CalibrationHistory lastCalibration;  // nowe pole
+
 };
 
 // Konfiguracja
@@ -167,23 +176,6 @@ Status status;
 ButtonState buttonState;
 Timers timers;
 
-// ** FILTROWANIE I POMIARY **
-
-// Parametry czujnika ultradźwiękowego i obliczeń
-// const int HYSTERESIS = 10;  // Histereza przy zmianach poziomu (mm)
-// const int SENSOR_MIN_RANGE = 20;    // Minimalny zakres czujnika (mm)
-// const int SENSOR_MAX_RANGE = 1020;  // Maksymalny zakres czujnika (mm)
-// const float EMA_ALPHA = 0.2f;       // Współczynnik wygładzania dla średniej wykładniczej (0-1)
-// const int SENSOR_AVG_SAMPLES = 3;   // Liczba próbek do uśrednienia pomiaru
-
-// float lastFilteredDistance = 0;     // Dla filtra EMA (Exponential Moving Average)
-// float lastReportedDistance = 0;     // Ostatnia zgłoszona wartość odległości
-// unsigned long lastMeasurement = 0;  // Ostatni czas pomiaru
-// float currentDistance = 0;          // Bieżąca odległość od powierzchni wody (mm)
-// float volume = 0;                   // Objętość wody w akwarium (l)
-// unsigned long pumpStartTime = 0;    // Czas rozpoczęcia pracy pompy
-// float waterLevelBeforePump = 0;     // Poziom wody przed uruchomieniem pompy
-
 // ** INSTANCJE URZĄDZEŃ I USŁUG **
 
 // Serwer HTTP i WebSockets
@@ -198,6 +190,7 @@ HAMqtt mqtt(client, device);    // Klient MQTT dla Home Assistant
 // Czujniki i przełączniki dla Home Assistant
 
 HABinarySensor* pumpStates[NUMBER_OF_PUMPS];  // Sensory do pokazywania aktualnego stanu pomp (włączona/wyłączona)
+HASensor* calibrationSensors[NUMBER_OF_PUMPS];
 
 HASwitch* pumpSchedules[NUMBER_OF_PUMPS];  // Przełączniki do aktywacji/deaktywacji harmonogramu dla każdej pompy
 HASwitch switchService("service_mode");  // Tryb serwisowy
@@ -751,6 +744,39 @@ const char PAGE_FOOTER[] PROGMEM = R"rawliteral(
 </div>
 )rawliteral";
 
+// ** FILTROWANIE I POMIARY **
+
+void saveCalibration(uint8_t pumpId, float volume, uint16_t calibrationTime) {
+    // Oblicz wydajność
+    float mlPerMinute = (volume * 60.0) / calibrationTime;
+    
+    // Zapisz dane kalibracji
+    config.pumps[pumpId].lastCalibration.timestamp = now(); // current time from RTC
+    config.pumps[pumpId].lastCalibration.volume = volume;
+    config.pumps[pumpId].lastCalibration.time = calibrationTime;
+    config.pumps[pumpId].lastCalibration.flowRate = mlPerMinute;
+    
+    // Zapisz do EEPROM
+    saveConfig();
+    
+    // Wyślij potwierdzenie przez WebSocket
+    webSocket.broadcastTXT("calibration_saved:" + String(pumpId));
+
+    // Publikuj nową datę
+    publishCalibrationDate(pumpId);
+}
+
+// Funkcja do aktualizacji daty kalibracji
+void publishCalibrationDate(uint8_t pumpId) {
+    if (config.pumps[pumpId].lastCalibration.timestamp > 0) {
+        char dateStr[11];
+        time_t ts = config.pumps[pumpId].lastCalibration.timestamp;
+        strftime(dateStr, sizeof(dateStr), "%Y-%m-%d", localtime(&ts));
+        
+        calibrationSensors[pumpId]->setValue(dateStr);
+    }
+}
+
 // ** FUNKCJE I METODY SYSTEMOWE **
 
 // Zegar
@@ -833,7 +859,6 @@ void handleMillisOverflow() {
     if (currentMillis < status.pumpDelayStartTime) status.pumpDelayStartTime = 0;
     if (currentMillis < status.lastSoundAlert) status.lastSoundAlert = 0;
     if (currentMillis < status.lastSuccessfulMeasurement) status.lastSuccessfulMeasurement = 0;
-    if (currentMillis < lastMeasurement) lastMeasurement = 0;
     
     // Jeśli zbliża się przepełnienie, zresetuj wszystkie timery
     if (currentMillis > MILLIS_OVERFLOW_THRESHOLD) {
@@ -841,7 +866,6 @@ void handleMillisOverflow() {
         status.pumpDelayStartTime = 0;
         status.lastSoundAlert = 0;
         status.lastSuccessfulMeasurement = 0;
-        lastMeasurement = 0;
         
         AQUA_DEBUG_PRINT(F("Reset timerów - zbliża się przepełnienie millis()"));
     }
@@ -1077,6 +1101,14 @@ void setupHA() {
         pumpSchedules[i] = new HASwitch(uniqueId);
         pumpSchedules[i]->setName(String("Pompa ") + String(i + 1));
         pumpSchedules[i]->onCommand(onPumpCommand);
+    }
+
+    // Inicjalizacja sensorów kalibracji
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        String sensorId = String(F("pump_")) + String(i + 1) + String(F("_calibration"));
+        calibrationSensors[i] = new HASensor(sensorId.c_str());
+        calibrationSensors[i]->setName((String(config.pumps[i].name) + " Last Calibration").c_str());
+        calibrationSensors[i]->setIcon("mdi:calendar");
     }
 
     switchSound.setName("Dźwięk");
@@ -1413,6 +1445,30 @@ String getConfigPage() {
     
         configForms += F("</table></div>");
     }
+
+    // W sekcji pompy
+    configForms += F("<tr><td colspan='2' class='calibration-history'>");
+    configForms += F("<strong>Ostatnia kalibracja:</strong><br>");
+
+    if (config.pumps[i].lastCalibration.timestamp > 0) {  // jeśli była kalibracja
+        // Konwersja timestamp na czytelną datę
+        char dateStr[20];
+        time_t ts = config.pumps[i].lastCalibration.timestamp;
+        strftime(dateStr, sizeof(dateStr), "%d.%m.%Y %H:%M", localtime(&ts));
+        
+        configForms += String(dateStr);
+        configForms += F("<br>Czas: ");
+        configForms += String(config.pumps[i].lastCalibration.time);
+        configForms += F("s<br>Objętość: ");
+        configForms += String(config.pumps[i].lastCalibration.volume);
+        configForms += F("ml<br>Wydajność: ");
+        configForms += String(config.pumps[i].lastCalibration.flowRate);
+        configForms += F(" ml/min");
+    } else {
+        configForms += F("Brak kalibracji");
+    }
+
+    configForms += F("</td></tr>");
     
     configForms += F("<div class='section'>"
                      "<input type='submit' value='Zapisz ustawienia' class='btn btn-blue'>"
@@ -1749,6 +1805,11 @@ void setup() {
         AQUA_DEBUG_PRINT(F("Błąd inicjalizacji RTC!"));
     }
     
+    // Wysyłamy zapisane daty kalibracji do HA
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        publishCalibrationDate(i);
+    }
+
     // Konfiguracja OTA
     ArduinoOTA.setHostname("AquaDoser");  // Ustaw nazwę urządzenia
     ArduinoOTA.setPassword("aquadoser");  // Ustaw hasło dla OTA
