@@ -29,6 +29,8 @@
 
 // Struktury konfiguracyjne i statusowe
 
+const uint8_t NUMBER_OF_PUMPS = 8;  // Ilość pomp
+
 struct CalibrationHistory {
     uint32_t timestamp;    // unix timestamp z RTC
     float volume;         // ilość w ml
@@ -46,8 +48,7 @@ struct PumpConfig {
     uint8_t hour;          // godzina dozowania
     uint8_t minute;        // minuta dozowania
     uint8_t weekDays;      // dni tygodnia (bitmapa: 0b0PWTŚCPSN)
-        CalibrationHistory lastCalibration;  // nowe pole
-
+    CalibrationHistory lastCalibration;  // nowe pole
 };
 
 // Konfiguracja
@@ -151,7 +152,7 @@ static CustomTimeStatus getCustomTimeStatus() {
 // ** DEFINICJE PINÓW **
 
 // Przypisanie pinów do urządzeń
-const uint8_t NUMBER_OF_PUMPS = 8;  // Ilość pomp
+
 const int BUZZER_PIN = 13;      // GPIO 13
 const int LED_PIN = 12;         // GPIO 12
 const int BUTTON_PIN = 14;    // GPIO 14
@@ -934,28 +935,6 @@ void updateLEDs() {
         ));
     }
     strip.show();
-}
-
-// Funkcja getCustomTimeStatus
-CustomTimeStatus getCustomTimeStatus() {
-    CustomTimeStatus status;
-    time_t now = time(nullptr);
-    struct tm *timeinfo = localtime(&now);
-    
-    status.time = String(timeinfo->tm_hour) + ":" + 
-                 String(timeinfo->tm_min) + ":" + 
-                 String(timeinfo->tm_sec);
-                 
-    status.date = String(timeinfo->tm_mday) + "/" + 
-                 String(timeinfo->tm_mon + 1) + "/" + 
-                 String(timeinfo->tm_year + 1900);
-                 
-    if (timeinfo->tm_mon >= 2 && timeinfo->tm_mon <= 4) status.season = "Wiosna";
-    else if (timeinfo->tm_mon >= 5 && timeinfo->tm_mon <= 7) status.season = "Lato";
-    else if (timeinfo->tm_mon >= 8 && timeinfo->tm_mon <= 10) status.season = "Jesień";
-    else status.season = "Zima";
-    
-    return status;
 }
 
 // Reset do ustawień fabrycznych
