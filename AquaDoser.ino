@@ -619,45 +619,33 @@ bool loadConfig() {
 }
 
 // Zapis aktualnej konfiguracji do pamięci EEPROM
-void saveConfig() {
-  Serial.println(F("\nZapisywanie konfiguracji:"));
-  Serial.print(F("Rozmiar struktury Config: "));
-  Serial.println(sizeof(Config));
-
-  // Oblicz checksum
-  uint8_t checksum = 0;
-  uint8_t* p = (uint8_t*)&config;
-  for (unsigned int i = 0; i < sizeof(Config) - 1; i++) {
-    checksum ^= p[i];
-  }
-  config.checksum = checksum;
-
-  Serial.println(F("Wartości do zapisu:"));
-  Serial.print(F("MQTT Server: "));
-  Serial.println(config.mqtt_server);
-  Serial.print(F("MQTT Port: "));
-  Serial.println(config.mqtt_port);
-  Serial.print(F("MQTT User: "));
-  Serial.println(config.mqtt_user);
-  Serial.print(F("Checksum: 0x"));
-  Serial.println(checksum, HEX);
-
-  // Zapisz do EEPROM
-  EEPROM.begin(sizeof(Config));
-  EEPROM.put(0, config);
-
-  // Debug - pokaż surowe dane po zapisie
-  Serial.println(F("\nZapisane surowe dane EEPROM:"));
-  for (size_t i = 0; i < sizeof(Config); i++) {
-    if (i % 16 == 0) {
-      Serial.printf("\n%04X: ", i);
+bool saveConfig() {
+    // Oblicz checksum przed zapisem
+    config.checksum = calculateChecksum();
+    
+    // Zapisz konfigurację
+    EEPROM.put(0, config);
+    bool success = EEPROM.commit();
+    
+    if (success) {
+        // Weryfikacja zapisanych danych
+        Config verifyConfig;
+        EEPROM.get(0, verifyConfig);
+        
+        if (verifyConfig.checksum != config.checksum) {
+            Serial.println("Błąd weryfikacji checksum po zapisie!");
+            return false;
+        }
+        
+        Serial.println("Konfiguracja zapisana i zweryfikowana pomyślnie");
+        // Debug - pokaż zapisane wartości
+        Serial.print("Zapisany checksum: 0x");
+        Serial.println(verifyConfig.checksum, HEX);
+    } else {
+        Serial.println("Błąd podczas zapisu konfiguracji!");
     }
-    Serial.printf("%02X ", EEPROM.read(i));
-  }
-  Serial.println();
-
-  bool success = EEPROM.commit();
-  Serial.println(success ? F("Zapisano konfigurację") : F("Błąd zapisu konfiguracji"));
+    
+    return success;
 }
 
 // Oblicz sumę kontrolną dla danej konfiguracji
@@ -1485,6 +1473,13 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t length)
 void setup() {
   //ESP.wdtEnable(WATCHDOG_TIMEOUT);  // Aktywacja watchdoga
   Serial.begin(115200);  // Inicjalizacja portu szeregowego
+      delay(10);
+    Serial.println();
+    // Wymuszenie UTF-8 w Serial Monitor
+    Serial.write(0xEF);
+    Serial.write(0xBB);
+    Serial.write(0xBF);
+
   Serial.println("\nStart AquaDoser...");
 
   currentStatus = getCustomTimeStatus();
@@ -1620,6 +1615,6 @@ void loop() {
         setTime(now.unixtime());
         lastNTPSync = millis();
     }
-
+ 
   yield();  // Obsługa zadań systemowych ESP8266
 }
