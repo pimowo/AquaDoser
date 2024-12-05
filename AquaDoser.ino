@@ -18,6 +18,7 @@
 #include <ESP8266WebServer.h>         // Serwer HTTP - obsługa strony konfiguracyjnej
 #include <WebSocketsServer.h>         // WebSocket - komunikacja w czasie rzeczywistym ze stroną WWW
 #include <EEPROM.h>                   // Dostęp do pamięci nieulotnej - zapisywanie konfiguracji
+#include <LittleFS.h>
 
 // Zegar
 #include <RTClib.h>
@@ -2322,7 +2323,7 @@ void setup() {
     Serial.println("\nStart AquaDoser...");
 
     currentStatus = getCustomTimeStatus();
-
+    
     // Wczytaj konfigurację na początku
     if (!loadConfig()) {
         AQUA_DEBUG_PRINTF("Błąd wczytywania konfiguracji - używam ustawień domyślnych");
@@ -2339,6 +2340,13 @@ void setup() {
     webSocket.begin();
     webSocket.onEvent(webSocketEvent);
     setupHA();
+
+    // Inicjalizacja LittleFS
+    if(!LittleFS.begin()) {
+        Serial.println(F("Błąd montowania LittleFS"));
+        return;
+    }
+    Serial.println(F("LittleFS zamontowany pomyślnie"));
     
     // Inicjalizacja RTC
     if (!initRTC()) {
