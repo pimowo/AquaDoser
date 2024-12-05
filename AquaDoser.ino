@@ -1,7 +1,7 @@
 // ** BIBLIOTEKI **
 
 // Biblioteki podstawowe
-#include <Arduino.h>                  // Podstawowa biblioteka Arduino - zawiera funkcje rdzenia (pinMoc:\Users\piotrek\Documents\Arduino\AquaDoser_5_12_24\data\index.htmlde, digitalRead itp.)
+#include <Arduino.h>                  // Podstawowa biblioteka Arduino - zawiera funkcje rdzenia (pinMoc:\Users\piotrek\Documents\c:\Users\piotrek\Documents\Arduino\AquaDoser\config.inoArduino\AquaDoser_5_12_24\data\index.htmlde, digitalRead itp.)
 #include <Wire.h>                     // Biblioteka do komunikacji I2C (TWI) - wymagana do obsługi PCF8574
 
 // Biblioteki do komunikacji z Home Assistant
