@@ -234,6 +234,7 @@ Status status;
 ButtonState buttonState;
 Timers timers;
 CustomTimeStatus currentStatus;
+WiFiManager wifiManager;
 LEDState ledStates[NUMBER_OF_PUMPS];  // Stan diod LED
 unsigned long lastLedUpdate = 0;
 
@@ -256,6 +257,33 @@ HASensor* calibrationSensors[NUMBER_OF_PUMPS];
 HASwitch* pumpSchedules[NUMBER_OF_PUMPS];  // Przełączniki do aktywacji/deaktywacji harmonogramu dla każdej pompy
 HASwitch switchService("service_mode");  // Tryb serwisowy
 HASwitch switchSound("sound_switch");    // Dźwięki systemu
+
+void resetConfig() {
+    memset(&config, 0, sizeof(config));  // Wyzeruj całą strukturę
+    
+    // Ustaw wartości domyślne
+    strlcpy(config.mqtt_server, "localhost", sizeof(config.mqtt_server));
+    config.mqtt_port = 1883;
+    strlcpy(config.mqtt_user, "", sizeof(config.mqtt_user));
+    strlcpy(config.mqtt_password, "", sizeof(config.mqtt_password));
+    config.soundEnabled = true;
+    
+    // Inicjalizacja pomp
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        snprintf(config.pumps[i].name, sizeof(config.pumps[i].name), "Pompa %d", i + 1);
+        config.pumps[i].enabled = false;
+        config.pumps[i].calibration = 100.0;
+        config.pumps[i].dosage = 1.0;
+        config.pumps[i].hour = 12;
+        config.pumps[i].minute = 0;
+        config.pumps[i].weekDays = 0b1111111;
+    }
+    
+    // Zapisz konfigurację
+    saveConfig();
+    
+    Serial.println(F("Zresetowano konfigurację do wartości domyślnych"));
+}
 
 // ** FILTROWANIE I POMIARY **
 
@@ -472,65 +500,43 @@ void setDefaultConfig() {
 
 // Ładowanie konfiguracji z pamięci EEPROM
 bool loadConfig() {
-    EEPROM.begin(sizeof(Config) + 1);  // +1 dla sumy kontrolnej
+    EEPROM.begin(sizeof(Config));
+    EEPROM.get(0, config);
     
-    // Tymczasowa struktura do wczytania danych
-    Config tempConfig;
-    
-    // Wczytaj dane z EEPROM do tymczasowej struktury
-    uint8_t *p = (uint8_t*)&tempConfig;
-    for (size_t i = 0; i < sizeof(Config); i++) {
-        p[i] = EEPROM.read(i);
+    // Oblicz checksum
+    uint8_t checksum = 0;
+    uint8_t* p = (uint8_t*)&config;
+    for (unsigned int i = 0; i < sizeof(Config) - 1; i++) {
+        checksum ^= p[i];
     }
     
-    EEPROM.end();
-
-    // Debug - wyświetl wartości przed sprawdzeniem sumy kontrolnej
-    AQUA_DEBUG_PRINT("Wczytane dane z EEPROM:");
-    AQUA_DEBUG_PRINT("MQTT Server: " + String(tempConfig.mqtt_server));
-    AQUA_DEBUG_PRINT("MQTT Port: " + String(tempConfig.mqtt_port));
-    AQUA_DEBUG_PRINT("MQTT User: " + String(tempConfig.mqtt_user));
-    
-    char calculatedChecksum = calculateChecksum(tempConfig);
-    AQUA_DEBUG_PRINT("Checksum stored: " + String(tempConfig.checksum));
-    AQUA_DEBUG_PRINT("Checksum calculated: " + String(calculatedChecksum));
-    
-    // Sprawdź sumę kontrolną
-    //char calculatedChecksum = calculateChecksum(tempConfig);
-    if (calculatedChecksum == tempConfig.checksum) {
-        // Jeśli suma kontrolna się zgadza, skopiuj dane do głównej struktury config
-        memcpy(&config, &tempConfig, sizeof(Config));
-        AQUA_DEBUG_PRINTF("Konfiguracja wczytana pomyślnie");
-        return true;
-    } else {
-        AQUA_DEBUG_PRINTF("Błąd sumy kontrolnej - ładowanie ustawień domyślnych");
-        setDefaultConfig();
+    // Sprawdź czy dane są poprawne
+    if (checksum != config.checksum || config.mqtt_port < 0 || config.mqtt_port > 65535) {
+        Serial.println(F("Niepoprawny checksum lub dane - resetowanie do wartości domyślnych"));
+        resetConfig();
         return false;
     }
+    
+    Serial.println(F("Konfiguracja wczytana pomyślnie"));
+    return true;
 }
 
 // Zapis aktualnej konfiguracji do pamięci EEPROM
 void saveConfig() {
-    EEPROM.begin(sizeof(Config) + 1);  // +1 dla sumy kontrolnej
-    
-    // Oblicz sumę kontrolną przed zapisem
-    config.checksum = calculateChecksum(config);
-    
-    // Zapisz strukturę do EEPROM
-    uint8_t *p = (uint8_t*)&config;
-    for (size_t i = 0; i < sizeof(Config); i++) {
-        EEPROM.write(i, p[i]);
+    // Oblicz checksum
+    uint8_t checksum = 0;
+    uint8_t* p = (uint8_t*)&config;
+    for (unsigned int i = 0; i < sizeof(Config) - 1; i++) {
+        checksum ^= p[i];
     }
-    
-    // Wykonaj faktyczny zapis do EEPROM
+    config.checksum = checksum;
+
+    // Zapisz do EEPROM
+    EEPROM.begin(sizeof(Config));
+    EEPROM.put(0, config);
     bool success = EEPROM.commit();
-    EEPROM.end();
     
-    if (success) {
-        AQUA_DEBUG_PRINTF("Konfiguracja zapisana pomyślnie");
-    } else {
-        AQUA_DEBUG_PRINTF("Błąd zapisu konfiguracji!");
-    }
+    Serial.println(success ? F("Zapisano konfigurację") : F("Błąd zapisu konfiguracji"));
 }
 
 // Oblicz sumę kontrolną dla danej konfiguracji
@@ -1304,17 +1310,23 @@ void setupWebServer() {
         delay(1000);
         ESP.restart();
     });
-
-    // Obsługa resetu przez WWW
+    
     server.on("/factory-reset", HTTP_POST, []() {
         server.send(200, "text/plain", "Resetting to factory defaults...");
-        delay(200);  // Daj czas na wysłanie odpowiedzi
-        factoryReset();  // Wywołaj tę samą funkcję co przy resecie fizycznym
+        delay(200);
+        resetConfig();
     });
     
-    // Dodaj obsługę plików CSS i JS
-    server.serveStatic("/css/style.css", LittleFS, "/css/style.css", "max-age=86400");
-    server.serveStatic("/js/main.js", LittleFS, "/js/main.js", "max-age=86400");
+    server.on("/reset-wifi", HTTP_POST, []() {
+        server.send(200, "text/plain", "Resetting WiFi settings...");
+        delay(200);
+        wifiManager.resetSettings();
+        ESP.restart();
+    });
+
+    // Dodaj obsługę plików statycznych
+    server.serveStatic("/css/style.css", LittleFS, "/css/style.css");
+    server.serveStatic("/js/main.js", LittleFS, "/js/main.js");
 
     server.begin();
 }
@@ -1369,11 +1381,29 @@ void setup() {
     }
     Serial.println(F("LittleFS zamontowany pomyślnie"));
     
-    // Wczytaj konfigurację na początku
+    // Wczytaj konfigurację
     if (!loadConfig()) {
-        AQUA_DEBUG_PRINTF("Błąd wczytywania konfiguracji - używam ustawień domyślnych");
-        setDefaultConfig();
-        saveConfig();  // Zapisz domyślną konfigurację do EEPROM
+        Serial.println(F("Błąd wczytywania konfiguracji - resetowanie do wartości domyślnych"));
+        resetConfig();
+    }
+
+    // Konfiguracja WiFiManager
+    wifiManager.setDebugOutput(true);
+    wifiManager.setConfigPortalTimeout(180);
+    wifiManager.setAPCallback([](WiFiManager *myWiFiManager) {
+        Serial.println(F("Uruchomiono tryb konfiguracji AP"));
+        Serial.println(WiFi.softAPIP());
+    });
+    
+    wifiManager.setSaveConfigCallback([]() {
+        Serial.println(F("Zapisano nową konfigurację WiFi"));
+    });
+    
+    if(!wifiManager.autoConnect("AquaDoser")) {
+        Serial.println(F("Nie udało się połączyć i timeout został osiągnięty"));
+        delay(3000);
+        ESP.restart();
+        delay(5000);
     }
 
     // Debug - sprawdź zawartość systemu plików
