@@ -482,15 +482,24 @@ void colorToRGB(uint32_t color, uint8_t& r, uint8_t& g, uint8_t& b) {
 }
 
 void initializeLEDs() {
+  strip.begin();
+  
+  // Inicjalizacja wszystkich LED-ów
   for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-    ledStates[i].currentColor = strip.Color(0, 0, 0);
-    ledStates[i].targetColor = strip.Color(0, 0, 0);
     ledStates[i].brightness = PULSE_MIN_BRIGHTNESS;
     ledStates[i].pulseDirection = 1;
     ledStates[i].pulsing = false;
+    
+    // Ustaw kolor na podstawie stanu pompy
+    if (pumpEnabled[i]) {
+      ledStates[i].currentColor = strip.Color(0, 255, 0);  // Zielony - pompa włączona
+    } else {
+      ledStates[i].currentColor = strip.Color(255, 0, 0);  // Czerwony - pompa wyłączona
+    }
+    ledStates[i].targetColor = ledStates[i].currentColor;
   }
-  strip.begin();
-  strip.show();
+  
+  strip.show(); // Wyświetl kolory
 }
 
 void updateLEDs() {
