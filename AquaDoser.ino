@@ -58,11 +58,26 @@ struct PumpConfig {
 // Główna struktura konfiguracji
 struct Config {
     char mqtt_server[40];
-    uint16_t mqtt_port;  // Zmienione z int na uint16_t dla lepszego wyrównania
+    uint16_t mqtt_port;
     char mqtt_user[40];
     char mqtt_password[40];
     bool soundEnabled;
-    Pump pumps[NUMBER_OF_PUMPS];
+    struct {
+        char name[32];
+        bool enabled;
+        float calibration;
+        float dosage;
+        uint8_t hour;
+        uint8_t minute;
+        uint8_t weekDays;
+        uint8_t pcf8574_pin;
+        struct {
+            time_t timestamp;
+            float volume;
+            uint16_t time;
+            float flowRate;
+        } lastCalibration;
+    } pumps[NUMBER_OF_PUMPS];
     uint8_t checksum;
 };
 
@@ -93,7 +108,18 @@ struct PumpStatus {
 
 // Status wszystkich pomp
 struct Status {
-    PumpStatus pumps[NUMBER_OF_PUMPS];
+    struct {
+        bool isRunning;
+        unsigned long lastDose;
+        float totalDosed;
+    } pumps[NUMBER_OF_PUMPS];
+    bool isServiceMode;
+    bool pumpSafetyLock;
+    bool soundEnabled;
+    unsigned long pumpStartTime;
+    unsigned long pumpDelayStartTime;
+    unsigned long lastSoundAlert;
+    unsigned long lastSuccessfulMeasurement;
 };
 
 #pragma pack(1)
