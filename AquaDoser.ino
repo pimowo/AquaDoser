@@ -182,6 +182,14 @@ static CustomTimeStatus getCustomTimeStatus() {
   return status;
 }
 
+
+// Zadeklaruj zmienną globalną dla trybu serwisowego
+bool isServiceMode = false;
+
+// Tablica do przechowywania stanów pomp
+bool pumpEnabled[NUMBER_OF_PUMPS] = {false}; // Inicjalizacja wszystkich na false
+
+
 // ** DEFINICJE PINÓW **
 
 // Przypisanie pinów do urządzeń
@@ -1395,9 +1403,11 @@ void handleDoUpdate() {
   }
 }
 
+
 void updatePumpState(uint8_t pumpIndex, bool state) {
   if (pumpIndex < NUMBER_OF_PUMPS && pumpStates[pumpIndex] != nullptr) {
     pumpStates[pumpIndex]->setState(state, true);
+    pumpEnabled[pumpIndex] = state; // Zapisz stan w tablicy
 
     // Ustaw kolor LED w zależności od stanu
     if (state) {
@@ -1410,24 +1420,21 @@ void updatePumpState(uint8_t pumpIndex, bool state) {
   }
 }
 
-// Gdy pompa pracuje (dozuje)
 void setPumpWorking(uint8_t pumpIndex, bool isWorking) {
   if (pumpIndex < NUMBER_OF_PUMPS) {
     if (isWorking) {
       ledStates[pumpIndex].currentColor = strip.Color(0, 0, 255); // Niebieski - pompa pracuje
     } else {
       // Wróć do koloru zależnego od stanu włączenia
-      bool pumpEnabled = pumpStates[pumpIndex]->getState();
-      ledStates[pumpIndex].currentColor = pumpEnabled ? 
+      ledStates[pumpIndex].currentColor = pumpEnabled[pumpIndex] ? 
         strip.Color(0, 255, 0) :  // Zielony - pompa włączona
         strip.Color(255, 0, 0);   // Czerwony - pompa wyłączona
     }
   }
 }
 
-// Tryb serwisowy
 void setServiceMode(bool enabled) {
-  serviceMode = enabled;
+  isServiceMode = enabled; // Używamy zadeklarowanej zmiennej globalnej
   
   for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
     ledStates[i].pulsing = enabled;
@@ -1435,15 +1442,13 @@ void setServiceMode(bool enabled) {
       ledStates[i].currentColor = strip.Color(255, 165, 0); // Pomarańczowy w trybie serwisowym
     } else {
       // Przywróć normalny kolor zależny od stanu pompy
-      bool pumpEnabled = pumpStates[i]->getState();
-      ledStates[i].currentColor = pumpEnabled ? 
+      ledStates[i].currentColor = pumpEnabled[i] ? 
         strip.Color(0, 255, 0) :  // Zielony - pompa włączona
         strip.Color(255, 0, 0);   // Czerwony - pompa wyłączona
     }
   }
 }
 
-// Tryb kalibracji
 void setCalibrationMode(uint8_t pumpIndex, bool enabled) {
   if (pumpIndex < NUMBER_OF_PUMPS) {
     ledStates[pumpIndex].pulsing = enabled;
@@ -1451,8 +1456,7 @@ void setCalibrationMode(uint8_t pumpIndex, bool enabled) {
       ledStates[pumpIndex].currentColor = strip.Color(128, 0, 128); // Fioletowy podczas kalibracji
     } else {
       // Przywróć normalny kolor
-      bool pumpEnabled = pumpStates[pumpIndex]->getState();
-      ledStates[pumpIndex].currentColor = pumpEnabled ? 
+      ledStates[pumpIndex].currentColor = pumpEnabled[pumpIndex] ? 
         strip.Color(0, 255, 0) :  // Zielony - pompa włączona
         strip.Color(255, 0, 0);   // Czerwony - pompa wyłączona
     }
