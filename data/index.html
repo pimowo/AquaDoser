@@ -1,78 +1,27 @@
 <!DOCTYPE HTML><html>
 <head>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ESP Web Server</title>
-  <style>
-    html {font-family: Arial; display: inline-block; margin: 0px auto; text-align: left;}
-    h2 { font-size: 2.0rem; }
-    p { font-size: 1.5rem; }
-    .ds-labels{
-      font-weight: bold;
-    }
-    button {
-      font-size: 1.5rem;
-    }
-  </style>
+    <meta charset='UTF-8'>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AquaDoser</title>
+    <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-  <h2>ESP Web Server</h2>
-  <p>
-    <span class="ds-labels">Current Date and Time (UTC):</span>
-    <span id="datetime">%DATETIME%</span>
-  </p>
-  <p>
-    <span class="ds-labels">Current User's Login:</span>
-    <span id="userlogin">%USERLOGIN%</span>
-  </p>
-  <p>
-    <span class="ds-labels">Pump 1</span>
-    <button onclick="togglePump(1)">Toggle</button>
-  </p>
-  <p>
-    <span class="ds-labels">Pump 2</span>
-    <button onclick="togglePump(2)">Toggle</button>
-  </p>
-  <p>
-    <span class="ds-labels">Pump 3</span>
-    <button onclick="togglePump(3)">Toggle</button>
-  </p>
-  <p>
-    <span class="ds-labels">Pump 4</span>
-    <button onclick="togglePump(4)">Toggle</button>
-  </p>
-  <p>
-    <span class="ds-labels">Pump 5</span>
-    <button onclick="togglePump(5)">Toggle</button>
-  </p>
-  <p>
-    <span class="ds-labels">Pump 6</span>
-    <button onclick="togglePump(6)">Toggle</button>
-  </p>
-  <p>
-    <span class="ds-labels">Pump 7</span>
-    <button onclick="togglePump(7)">Toggle</button>
-  </p>
-  <p>
-    <span class="ds-labels">Pump 8</span>
-    <button onclick="togglePump(8)">Toggle</button>
-  </p>
-<script>
-function togglePump(pumpId) {
-  var xhr = new XMLHttpRequest();
-  xhr.open("GET", "/pump/"+pumpId, true);
-  xhr.send();
-}
-function updateDateTime() {
-  var xhr = new XMLHttpRequest();
-  xhr.onreadystatechange = function() {
-    if (this.readyState == 4 && this.status == 200) {
-      document.getElementById("datetime").innerHTML = this.responseText;
-    }
-  };
-  xhr.open("GET", "/datetime", true);
-  xhr.send();
-}
-setInterval(updateDateTime, 1000);
-</script>
+    <h1>AquaDoser</h1>
+    <div class='section'>
+        <h2>Status systemu</h2>
+        <table class='config-table'>
+            <tr><td>Status MQTT</td><td><span class='%MQTT_STATUS_CLASS%'>%MQTT_STATUS%</span></td></tr>
+            <tr><td>Status dźwięku</td><td><span class='%SOUND_STATUS_CLASS%'>%SOUND_STATUS%</span></td></tr>
+            <tr><td>Wersja oprogramowania</td><td>%SOFTWARE_VERSION%</td></tr>
+            <tr><td>Data i czas</td><td>%CURRENT_TIME%</td></tr>
+        </table>
+    </div>
+    <div id='mainContent'>
+        %CONFIG_FORMS%
+        %BUTTONS%
+        %UPDATE_FORM%
+    </div>
+    %FOOTER%
+    <script src="/js/main.js"></script>
 </body>
 </html>
