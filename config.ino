@@ -14,4 +14,4 @@
 
 // WiFi
 #define WIFI_AP_SSID "AquaDoser"
-#define WIFI_AP_PASSWORD "password123"
+#define WIFI_AP_PASSWORD "aquadoser"
