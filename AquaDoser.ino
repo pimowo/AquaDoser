@@ -200,7 +200,7 @@ Adafruit_NeoPixel strip(NUMBER_OF_PUMPS, LED_PIN, NEO_GRB + NEO_KHZ800);
 
 #define LED_UPDATE_INTERVAL 50  // ms
 #define PULSE_MAX_BRIGHTNESS 255
-#define PULSE_MIN_BRIGHTNESS 50
+#define PULSE_MIN_BRIGHTNESS 15
 
 #define COLOR_OFF 0xFF0000      // Czerwony - pompa wyłączona
 #define COLOR_ON 0x00FF00       // Zielony - pompa włączona
