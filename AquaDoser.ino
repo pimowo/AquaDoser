@@ -904,7 +904,7 @@ String getConfigPage() {
     String html = file.readString();
     file.close();
 
-    // Zamień wszystkie placeholdery
+    // Zastąp placeholdery
     html.replace(F("%MQTT_STATUS%"), client.connected() ? F("Połączony") : F("Rozłączony"));
     html.replace(F("%MQTT_STATUS_CLASS%"), client.connected() ? F("success") : F("error"));
     html.replace(F("%SOUND_STATUS%"), config.soundEnabled ? F("Włączony") : F("Wyłączony"));
@@ -1177,26 +1177,9 @@ void setupWebServer() {
         factoryReset();  // Wywołaj tę samą funkcję co przy resecie fizycznym
     });
     
-// Dodaj obsługę plików statycznych
-    server.on("/css/style.css", HTTP_GET, []() {
-        if (LittleFS.exists("/css/style.css")) {
-            File file = LittleFS.open("/css/style.css", "r");
-            server.streamFile(file, "text/css");
-            file.close();
-        } else {
-            server.send(404, "text/plain", "File not found");
-        }
-    });
-
-    server.on("/js/main.js", HTTP_GET, []() {
-        if (LittleFS.exists("/js/main.js")) {
-            File file = LittleFS.open("/js/main.js", "r");
-            server.streamFile(file, "text/javascript");
-            file.close();
-        } else {
-            server.send(404, "text/plain", "File not found");
-        }
-    });
+    // Dodaj obsługę plików CSS i JS
+    server.serveStatic("/css/style.css", LittleFS, "/css/style.css", "max-age=86400");
+    server.serveStatic("/js/main.js", LittleFS, "/js/main.js", "max-age=86400");
 
     server.begin();
 }
