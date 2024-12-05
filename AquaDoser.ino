@@ -18,6 +18,7 @@
 #include <ESP8266WebServer.h>         // Serwer HTTP - obsługa strony konfiguracyjnej
 #include <WebSocketsServer.h>         // WebSocket - komunikacja w czasie rzeczywistym ze stroną WWW
 #include <EEPROM.h>                   // Dostęp do pamięci nieulotnej - zapisywanie konfiguracji
+#include <LittleFS.h>
 
 // Zegar
 #include <RTClib.h>
@@ -904,7 +905,7 @@ String getConfigPage() {
     String html = file.readString();
     file.close();
 
-    // Zastąp placeholdery
+    // Zastąp placeholdery dla statusu
     html.replace(F("%MQTT_STATUS%"), client.connected() ? F("Połączony") : F("Rozłączony"));
     html.replace(F("%MQTT_STATUS_CLASS%"), client.connected() ? F("success") : F("error"));
     html.replace(F("%SOUND_STATUS%"), config.soundEnabled ? F("Włączony") : F("Wyłączony"));
@@ -912,8 +913,119 @@ String getConfigPage() {
     html.replace(F("%SOFTWARE_VERSION%"), SOFTWARE_VERSION);
     html.replace(F("%CURRENT_TIME%"), getFormattedDateTime());
     
-    // Dodaj formularze konfiguracyjne
-    String configForms = generateConfigForms(); // Ta funkcja pozostaje bez zmian
+    // Generuj formularze konfiguracyjne
+    String configForms = F("<form method='POST' action='/save'>");
+    
+    // Sekcja MQTT
+    configForms += F("<div class='section'>"
+                     "<h2>Konfiguracja MQTT</h2>"
+                     "<table class='config-table'>");
+    
+    configForms += F("<tr><td>Serwer</td><td><input type='text' name='mqtt_server' value='");
+    configForms += config.mqtt_server;
+    configForms += F("'></td></tr>");
+    
+    configForms += F("<tr><td>Port</td><td><input type='number' name='mqtt_port' value='");
+    configForms += String(config.mqtt_port);
+    configForms += F("'></td></tr>");
+    
+    configForms += F("<tr><td>Użytkownik</td><td><input type='text' name='mqtt_user' value='");
+    configForms += config.mqtt_user;
+    configForms += F("'></td></tr>");
+    
+    configForms += F("<tr><td>Hasło</td><td><input type='password' name='mqtt_password' value='");
+    configForms += config.mqtt_password;
+    configForms += F("'></td></tr></table></div>");
+
+    // Sekcja pomp
+    configForms += F("<div class='section'>"
+                     "<h2>Konfiguracja pomp</h2>");
+    
+    // Dla każdej pompy
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        configForms += F("<div class='pump-section'>"
+                        "<h3>Pompa ");
+        configForms += String(i + 1);
+        configForms += F("</h3>"
+                        "<table class='config-table'>");
+        
+        // Nazwa pompy
+        configForms += F("<tr><td>Nazwa</td><td><input type='text' name='p");
+        configForms += String(i);
+        configForms += F("_name' value='");
+        configForms += config.pumps[i].name[0] ? String(config.pumps[i].name) : String("Pompa ") + String(i + 1);
+        configForms += F("'></td></tr>");
+        
+        // Aktywna
+        configForms += F("<tr><td>Aktywna</td><td><input type='checkbox' name='p");
+        configForms += String(i);
+        configForms += F("_enabled' ");
+        configForms += config.pumps[i].enabled ? F("checked") : F("");
+        configForms += F("></td></tr>");
+        
+        // Kalibracja
+        configForms += F("<tr><td>Kalibracja (ml/min)</td><td><input type='number' step='0.1' name='p");
+        configForms += String(i);
+        configForms += F("_calibration' value='");
+        configForms += String(config.pumps[i].calibration);
+        configForms += F("'></td></tr>");
+        
+        // Dozowanie
+        configForms += F("<tr><td>Dozowanie (ml)</td><td><input type='number' name='p");
+        configForms += String(i);
+        configForms += F("_dosage' value='");
+        configForms += String(config.pumps[i].dosage);
+        configForms += F("'></td></tr>");
+        
+        // Godzina i minuta
+        configForms += F("<tr><td>Godzina dozowania</td><td><input type='number' min='0' max='23' name='p");
+        configForms += String(i);
+        configForms += F("_hour' value='");
+        configForms += String(config.pumps[i].hour);
+        configForms += F("'></td></tr>");
+        
+        configForms += F("<tr><td>Minuta dozowania</td><td><input type='number' min='0' max='59' name='p");
+        configForms += String(i);
+        configForms += F("_minute' value='");
+        configForms += String(config.pumps[i].minute);
+        configForms += F("'></td></tr>");
+        
+        // Dni tygodnia
+        configForms += F("<tr><td>Dni tygodnia</td><td class='weekdays'>");
+        const char* days[] = {"Pn", "Wt", "Śr", "Cz", "Pt", "Sb", "Nd"};
+        for (int day = 0; day < 7; day++) {
+            configForms += F("<label><input type='checkbox' name='p");
+            configForms += String(i);
+            configForms += F("_day");
+            configForms += String(day);
+            configForms += F("' ");
+            configForms += (config.pumps[i].weekDays & (1 << day)) ? F("checked") : F("");
+            configForms += F("><span>");
+            configForms += days[day];
+            configForms += F("</span></label>");
+        }
+        configForms += F("</td></tr>");
+
+        // Status
+        configForms += F("<tr><td>Status</td><td><span class='pump-status ");
+        configForms += config.pumps[i].enabled ? F("active") : F("inactive");
+        configForms += F("'>");
+        configForms += config.pumps[i].enabled ? F("Aktywna") : F("Nieaktywna");
+        configForms += F("</span></td></tr>");
+
+        // Test pompy
+        configForms += F("<tr><td colspan='2'><button type='button' class='btn btn-blue test-pump' data-pump='");
+        configForms += String(i);
+        configForms += F("'>Test pompy</button></td></tr>");
+        
+        configForms += F("</table></div>");
+    }
+
+    // Przycisk zapisu
+    configForms += F("<div class='section'>"
+                     "<input type='submit' value='Zapisz ustawienia' class='btn btn-blue'>"
+                     "</div></form>");
+
     html.replace(F("%CONFIG_FORMS%"), configForms);
     
     // Dodaj przyciski
@@ -924,6 +1036,29 @@ String getConfigPage() {
                       "</div>"
                       "</div>");
     html.replace(F("%BUTTONS%"), buttons);
+
+    // Dodaj formularz aktualizacji
+    String updateForm = F("<div class='section'>"
+                         "<h2>Aktualizacja firmware</h2>"
+                         "<form method='POST' action='/update' enctype='multipart/form-data'>"
+                         "<table class='config-table' style='margin-bottom: 15px;'>"
+                         "<tr><td colspan='2'><input type='file' name='update' accept='.bin'></td></tr>"
+                         "</table>"
+                         "<input type='submit' value='Aktualizuj firmware' class='btn btn-orange'>"
+                         "</form>"
+                         "<div id='update-progress' style='display:none'>"
+                         "<div class='progress'>"
+                         "<div id='progress-bar' class='progress-bar' role='progressbar' style='width: 0%'>0%</div>"
+                         "</div>"
+                         "</div>"
+                         "</div>");
+    html.replace(F("%UPDATE_FORM%"), updateForm);
+
+    // Dodaj stopkę
+    String footer = F("<div class='footer'>"
+                     "<a href='https://github.com/pimowo/AquaDoser' target='_blank'>Project by PMW</a>"
+                     "</div>");
+    html.replace(F("%FOOTER%"), footer);
 
     return html;
 }
