@@ -257,7 +257,7 @@ const unsigned long NTP_SYNC_INTERVAL = 24UL * 60UL * 60UL * 1000UL;  // 24h w m
 #endif
 
 // Zmienna przechowująca wersję oprogramowania
-const char* SOFTWARE_VERSION = "4.12.24";  // Definiowanie wersji oprogramowania
+const char* SOFTWARE_VERSION = "5.12.24";  // Definiowanie wersji oprogramowania
 
 // Globalne instancje struktur
 //CustomTimeStatus currentStatus = getCustomTimeStatus();
@@ -1396,17 +1396,18 @@ void handleDoUpdate() {
 }
 
 void updatePumpState(uint8_t pumpIndex, bool state) {
-  //pumps[pumpIndex].state = state;
-  //pumps[pumpIndex].haSwitch->setState(state); // Aktualizuj stan w HA
-
   if (pumpIndex < NUMBER_OF_PUMPS && pumpStates[pumpIndex] != nullptr) {
     pumpStates[pumpIndex]->setState(state, true);
 
+    // Ustaw kolor LED w zależności od stanu
+    if (state) {
+      ledStates[pumpIndex].currentColor = strip.Color(0, 0, 255); // Niebieski - pompa pracuje
+    } else {
+      ledStates[pumpIndex].currentColor = strip.Color(0, 255, 0); // Zielony - pompa OK
+    }
+   
     // Aktualizacja sensora statusu
     String statusText = "Pompa_" + String(pumpIndex + 1) + (state ? "ON" : "OFF");
-    //sensorPump.setValue(statusText.c_str());
-
-    //mqtt.loop(); // Wymuszenie aktualizacji
   }
 }
 
