@@ -1,5 +1,5 @@
-<!DOCTYPE HTML><html>
-<head>
+<!DOCTYPE html>
+<html>
     <meta charset='UTF-8'>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AquaDoser</title>
@@ -13,7 +13,12 @@
             <tr><td>Status MQTT</td><td><span class='%MQTT_STATUS_CLASS%'>%MQTT_STATUS%</span></td></tr>
             <tr><td>Status dźwięku</td><td><span class='%SOUND_STATUS_CLASS%'>%SOUND_STATUS%</span></td></tr>
             <tr><td>Wersja oprogramowania</td><td>%SOFTWARE_VERSION%</td></tr>
-            <tr><td>Data i czas</td><td>%CURRENT_TIME%</td></tr>
+                <div class="clock-section">
+                <div id="time"></div>
+                <div id="date"></div>
+                <div id="timezone"></div>
+                </div>
+            </td></tr>
         </table>
     </div>
     <div id='mainContent'>
