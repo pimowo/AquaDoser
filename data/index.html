@@ -7,11 +7,36 @@
     <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-    <div class="dashboard">
-        <div class="card">
-            <div class="time-display"></div>
-            <div class="date-display"></div>
-            <div class="timezone-badge"></div>
+    <div class="container">
+        <div class="card time-card">
+            <div id="time-display"></div>
+            <div id="date-display"></div>
+            <div id="timezone-badge"></div>
+        </div>
+
+        <div class="card pump-card">
+            <h2>Sterowanie pompami</h2>
+            <div class="pump-controls">
+                <div class="pump-control">
+                    <span>Pompa 1</span>
+                    <label class="switch">
+                        <input type="checkbox" id="pump1">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="pump-control">
+                    <span>Pompa 2</span>
+                    <label class="switch">
+                        <input type="checkbox" id="pump2">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <div class="card schedule-card">
+            <h2>Harmonogram</h2>
+            <div id="schedule"></div>
         </div>
     </div>
     <script src="/js/main.js"></script>
