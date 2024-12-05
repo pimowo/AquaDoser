@@ -512,8 +512,7 @@ bool loadConfig() {
     
     // Sprawdź czy dane są poprawne
     if (checksum != config.checksum || config.mqtt_port < 0 || config.mqtt_port > 65535) {
-        Serial.println(F("Niepoprawny checksum lub dane - resetowanie do wartości domyślnych"));
-        resetConfig();
+        Serial.println(F("Niepoprawny checksum lub dane"));
         return false;
     }
     
@@ -1380,8 +1379,8 @@ void setup() {
         return;
     }
     Serial.println(F("LittleFS zamontowany pomyślnie"));
-    
-    // Wczytaj konfigurację
+        
+    // Wczytaj konfigurację lub zresetuj do wartości domyślnych
     if (!loadConfig()) {
         Serial.println(F("Błąd wczytywania konfiguracji - resetowanie do wartości domyślnych"));
         resetConfig();
