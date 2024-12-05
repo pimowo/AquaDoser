@@ -1,63 +1,90 @@
-// Aktualizacja czasu
-function updateTime() {
-    fetch('/api/time')
-        .then(response => response.json())
-        .then(data => {
-            document.getElementById('time-display').textContent = data.time;
-            document.getElementById('date-display').textContent = data.date;
-            document.getElementById('timezone-badge').textContent = data.timezone;
-        })
-        .catch(error => console.error('Error:', error));
-}
-
-// Obsługa pomp
-function setupPumpControls() {
-    const pumps = [1, 2];
-    pumps.forEach(pumpId => {
-        const checkbox = document.getElementById(`pump${pumpId}`);
-        checkbox.addEventListener('change', () => {
-            fetch(`/api/pump/${pumpId}/${checkbox.checked ? 'on' : 'off'}`)
-                .then(response => response.text())
-                .then(result => {
-                    console.log(`Pump ${pumpId}: ${result}`);
-                })
-                .catch(error => console.error('Error:', error));
+var socket;
+window.onload = function() {
+    document.querySelector('form[action="/save"]').addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        var formData = new FormData(this);
+        fetch('/save', {
+            method: 'POST',
+            body: formData
+        }).then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+        }).catch(error => {
+            showMessage('Błąd podczas zapisywania!', 'error');
         });
     });
+
+    socket = new WebSocket('ws://' + window.location.hostname + ':81/');
+    socket.onmessage = function(event) {
+        var message = event.data;
+        
+        if (message.startsWith('update:')) {
+            if (message.startsWith('update:error:')) {
+                document.getElementById('update-progress').style.display = 'none';
+                showMessage(message.split(':')[2], 'error');
+                return;
+            }
+            var percentage = message.split(':')[1];
+            document.getElementById('update-progress').style.display = 'block';
+            document.getElementById('progress-bar').style.width = percentage + '%';
+            document.getElementById('progress-bar').textContent = percentage + '%';
+            
+            if (percentage == '100') {
+                document.getElementById('update-progress').style.display = 'none';
+                showMessage('Aktualizacja zakończona pomyślnie! Trwa restart urządzenia...', 'success');
+                setTimeout(function() {
+                    window.location.reload();
+                }, 3000);
+            }
+        } 
+        else if (message.startsWith('save:')) {
+            var parts = message.split(':');
+            var type = parts[1];
+            var text = parts[2];
+            showMessage(text, type);
+        }
+    };
+};
+
+function rebootDevice() {
+    if(confirm('Czy na pewno chcesz zrestartować urządzenie?')) {
+        fetch('/reboot', {method: 'POST'}).then(() => {
+            showMessage('Urządzenie zostanie zrestartowane...', 'success');
+            setTimeout(() => { window.location.reload(); }, 3000);
+        });
+    }
 }
 
-// Aktualizacja stanu pomp
-function updatePumpStates() {
-    fetch('/api/pumps')
-        .then(response => response.json())
-        .then(data => {
-            document.getElementById('pump1').checked = data.pump1;
-            document.getElementById('pump2').checked = data.pump2;
-        })
-        .catch(error => console.error('Error:', error));
+function factoryReset() {
+    if(confirm('Czy na pewno chcesz przywrócić ustawienia fabryczne? Spowoduje to utratę wszystkich ustawień.')) {
+        fetch('/factory-reset', {method: 'POST'}).then(() => {
+            showMessage('Przywracanie ustawień fabrycznych...', 'success');
+            setTimeout(() => { window.location.reload(); }, 3000);
+        });
+    }
 }
 
-// Harmonogram
-function updateSchedule() {
-    fetch('/api/schedule')
-        .then(response => response.json())
-        .then(data => {
-            const scheduleDiv = document.getElementById('schedule');
-            scheduleDiv.innerHTML = ''; // Wyczyść obecny harmonogram
-            // Tu dodaj kod wyświetlania harmonogramu
-        })
-        .catch(error => console.error('Error:', error));
-}
-
-// Inicjalizacja
-document.addEventListener('DOMContentLoaded', () => {
-    setupPumpControls();
-    updateTime();
-    updatePumpStates();
-    updateSchedule();
+function showMessage(text, type) {
+    var oldMessages = document.querySelectorAll('.message');
+    oldMessages.forEach(function(msg) {
+        msg.remove();
+    });
     
-    // Aktualizuj czas co sekundę
-    setInterval(updateTime, 1000);
-    // Aktualizuj stan pomp co 5 sekund
-    setInterval(updatePumpStates, 5000);
-});
+    var messageBox = document.createElement('div');
+    messageBox.className = 'message ' + type;
+    messageBox.innerHTML = text;
+    document.body.appendChild(messageBox);
+    
+    setTimeout(function() {
+        messageBox.style.opacity = '1';
+    }, 10);
+    
+    setTimeout(function() {
+        messageBox.style.opacity = '0';
+        setTimeout(function() {
+            messageBox.remove();
+        }, 300);
+    }, 3000);
+}
