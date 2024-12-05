@@ -235,8 +235,8 @@ RTC_DS3231 rtc;
 // Reguły dla czasu letniego w Polsce
 // Ostatnia niedziela marca o 2:00 -> 3:00
 // Ostatnia niedziela października o 3:00 -> 2:00
-TimeChangeRule CEST = { "CEST", Last, Sun, Mar, 2, 120 };  // UTC + 2h
-TimeChangeRule CET = { "CET", Last, Sun, Oct, 3, 60 };     // UTC + 1h
+TimeChangeRule CEST = {"CEST", Last, Sun, Mar, 2, 120};  // UTC + 2h
+TimeChangeRule CET = {"CET", Last, Sun, Oct, 3, 60};     // UTC + 1h
 Timezone CE(CEST, CET);
 
 unsigned long lastNTPSync = 0;
@@ -334,7 +334,24 @@ void resetConfig() {
 
 // ** FILTROWANIE I POMIARY **
 
-//RTC_DS3231 rtc;  // lub inny model RTC, który używasz
+void handleTimeAPI() {
+    time_t utc = now();
+    TimeChangeRule *tcr;
+    time_t local = CE.toLocal(utc, &tcr);
+    
+    String json = "{";
+    json += "\"hour\":" + String(hour(local)) + ",";
+    json += "\"minute\":" + String(minute(local)) + ",";
+    json += "\"second\":" + String(second(local)) + ",";
+    json += "\"day\":" + String(day(local)) + ",";
+    json += "\"month\":" + String(month(local)) + ",";
+    json += "\"year\":" + String(year(local)) + ",";
+    json += "\"isDST\":" + String(tcr->offset == 120 ? "true" : "false") + ",";
+    json += "\"tzAbbrev\":\"" + String(tcr->abbrev) + "\"";
+    json += "}";
+    
+    server.send(200, "application/json", json);
+}
 
 void setupRTC() {
     if (!rtc.begin()) {
@@ -422,12 +439,19 @@ void syncTimeFromNTP() {
 }
 
 String getFormattedDateTime() {
-  time_t local = CE.toLocal(now());
-  char buffer[25];
-  sprintf(buffer, "%04d-%02d-%02d %02d:%02d:%02d",
-          year(local), month(local), day(local),
-          hour(local), minute(local), second(local));
-  return String(buffer);
+    time_t utc = now(); // Aktualny czas UTC
+    time_t local = CE.toLocal(utc); // Konwersja na czas lokalny
+    
+    TimeChangeRule *tcr;
+    time_t t = CE.toLocal(utc, &tcr); // Pobierz też regułę czasu
+    
+    char buf[32];
+    snprintf(buf, sizeof(buf), 
+        "%02d/%02d/%04d %02d:%02d:%02d %s",
+        day(t), month(t), year(t),
+        hour(t), minute(t), second(t),
+        tcr->abbrev);
+    return String(buf);
 }
 
 // Funkcje pomocnicze dla LED
@@ -621,7 +645,7 @@ bool loadConfig() {
 // Zapis aktualnej konfiguracji do pamięci EEPROM
 bool saveConfig() {
     // Oblicz checksum przed zapisem
-    config.checksum = calculateChecksum();
+    config.checksum = calculateChecksum(config);
     
     // Zapisz konfigurację
     EEPROM.put(0, config);
@@ -638,7 +662,6 @@ bool saveConfig() {
         }
         
         Serial.println("Konfiguracja zapisana i zweryfikowana pomyślnie");
-        // Debug - pokaż zapisane wartości
         Serial.print("Zapisany checksum: 0x");
         Serial.println(verifyConfig.checksum, HEX);
     } else {
@@ -1405,6 +1428,7 @@ void handleUpdateResult() {
 // Konfiguracja serwera weboweg do obsługi żądań HTTP
 void setupWebServer() {
   server.on("/", handleRoot);
+  server.on("/api/time", HTTP_GET, handleTimeAPI);
   server.on("/update", HTTP_POST, handleUpdateResult, handleDoUpdate);
   server.on("/save", handleSave);
 
@@ -1473,13 +1497,6 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t length)
 void setup() {
   //ESP.wdtEnable(WATCHDOG_TIMEOUT);  // Aktywacja watchdoga
   Serial.begin(115200);  // Inicjalizacja portu szeregowego
-      delay(10);
-    Serial.println();
-    // Wymuszenie UTF-8 w Serial Monitor
-    Serial.write(0xEF);
-    Serial.write(0xBB);
-    Serial.write(0xBF);
-
   Serial.println("\nStart AquaDoser...");
 
   currentStatus = getCustomTimeStatus();
@@ -1517,12 +1534,12 @@ void setup() {
   }
 
   // Debug - sprawdź zawartość systemu plików
-  Dir dir = LittleFS.openDir("/");
-  while (dir.next()) {
-    String fileName = dir.fileName();
-    size_t fileSize = dir.fileSize();
-    Serial.printf("FS File: %s, size: %s\n", fileName.c_str(), String(fileSize).c_str());
-  }
+  // Dir dir = LittleFS.openDir("/");
+  // while (dir.next()) {
+  //   String fileName = dir.fileName();
+  //   size_t fileSize = dir.fileSize();
+  //   Serial.printf("FS File: %s, size: %s\n", fileName.c_str(), String(fileSize).c_str());
+  // }
 
   setupPin();
   setupPump();
@@ -1533,16 +1550,10 @@ void setup() {
   webSocket.begin();
   webSocket.onEvent(webSocketEvent);
   setupHA();
+  setupRTC();
 
-  // Inicjalizacja RTC
-  // if (!initRTC()) {
-  //   // Obsługa błędu inicjalizacji RTC
-  //   AQUA_DEBUG_PRINT(F("Błąd inicjalizacji RTC!"));
-  // }
-setupRTC();
-  // Po inicjalizacji WiFi
   configTime(0, 0, "pool.ntp.org", "time.nist.gov");
-  delay(2000);
+  // delay(2000);
 
   // Poczekaj na synchronizację czasu
   time_t now = time(nullptr);
@@ -1550,8 +1561,6 @@ setupRTC();
     delay(500);
     now = time(nullptr);
   }
-
-  //debugPrint("Czas zsynchronizowany");
 
   // Wysyłamy zapisane daty kalibracji do HA
   for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
@@ -1570,7 +1579,7 @@ setupRTC();
 
   // Efekty startowe
   playWelcomeEffect();
-  welcomeMelody();
+  //welcomeMelody();
 }
 
 // ** Funkcja loop - główny cykl pracy urządzenia **
