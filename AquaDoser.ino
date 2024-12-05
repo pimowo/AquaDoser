@@ -1362,11 +1362,26 @@ void setup() {
 
     currentStatus = getCustomTimeStatus();
 
+    // Inicjalizacja LittleFS
+    if(!LittleFS.begin()) {
+        Serial.println(F("Błąd montowania LittleFS"));
+        return;
+    }
+    Serial.println(F("LittleFS zamontowany pomyślnie"));
+    
     // Wczytaj konfigurację na początku
     if (!loadConfig()) {
         AQUA_DEBUG_PRINTF("Błąd wczytywania konfiguracji - używam ustawień domyślnych");
         setDefaultConfig();
         saveConfig();  // Zapisz domyślną konfigurację do EEPROM
+    }
+
+    // Debug - sprawdź zawartość systemu plików
+    Dir dir = LittleFS.openDir("/");
+    while (dir.next()) {
+        String fileName = dir.fileName();
+        size_t fileSize = dir.fileSize();
+        Serial.printf("FS File: %s, size: %s\n", fileName.c_str(), String(fileSize).c_str());
     }
 
     setupPin();

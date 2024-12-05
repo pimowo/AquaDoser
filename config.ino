@@ -1,5 +1,5 @@
-// Stałe czasowe
-#define NTP_SYNC_INTERVAL (24 * 60 * 60 * 1000)  // 24h w ms
+// Stałe czasowec:\Users\piotrek\Documents\GitHub\AquaDoser\data\css\style.css
+#define NTP_SYNC_INTERVAL (24 * 60 * 60 * c:\Users\piotrek\Documents\GitHub\AquaDoser\data1000)  // 24h w ms
 #define PUMP_CHECK_INTERVAL 1000                  // 1s w ms
 
 // EEPROM
