@@ -1,44 +1,54 @@
-<!DOCTYPE HTML>
-<html>
+<!DOCTYPE HTML><html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>AquaDoser</title>
-    <link rel="stylesheet" href="/css/style.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ESP Web Server</title>
+  <style>
+    html {font-family: Arial; display: inline-block; margin: 0px auto; text-align: left;}
+    h2 { font-size: 2.0rem; }
+    p { font-size: 1.5rem; }
+    .ds-labels{
+      font-weight: bold;
+    }
+    button {
+      font-size: 1.5rem;
+    }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <div class="card time-card">
-            <div id="time-display"></div>
-            <div id="date-display"></div>
-            <div id="timezone-badge"></div>
-        </div>
-
-        <div class="card pump-card">
-            <h2>Sterowanie pompami</h2>
-            <div class="pump-controls">
-                <div class="pump-control">
-                    <span>Pompa 1</span>
-                    <label class="switch">
-                        <input type="checkbox" id="pump1">
-                        <span class="slider"></span>
-                    </label>
-                </div>
-                <div class="pump-control">
-                    <span>Pompa 2</span>
-                    <label class="switch">
-                        <input type="checkbox" id="pump2">
-                        <span class="slider"></span>
-                    </label>
-                </div>
-            </div>
-        </div>
-
-        <div class="card schedule-card">
-            <h2>Harmonogram</h2>
-            <div id="schedule"></div>
-        </div>
-    </div>
-    <script src="/js/main.js"></script>
+  <h2>ESP Web Server</h2>
+  <p>
+    <span class="ds-labels">Current Date and Time (UTC):</span>
+    <span id="datetime">%DATETIME%</span>
+  </p>
+  <p>
+    <span class="ds-labels">Current User's Login:</span>
+    <span id="userlogin">%USERLOGIN%</span>
+  </p>
+  <p>
+    <span class="ds-labels">Pump 1</span>
+    <button onclick="togglePump(1)">Toggle</button>
+  </p>
+  <p>
+    <span class="ds-labels">Pump 2</span>
+    <button onclick="togglePump(2)">Toggle</button>
+  </p>
+<script>
+function togglePump(pumpId) {
+  var xhr = new XMLHttpRequest();
+  xhr.open("GET", "/pump/"+pumpId, true);
+  xhr.send();
+}
+function updateDateTime() {
+  var xhr = new XMLHttpRequest();
+  xhr.onreadystatechange = function() {
+    if (this.readyState == 4 && this.status == 200) {
+      document.getElementById("datetime").innerHTML = this.responseText;
+    }
+  };
+  xhr.open("GET", "/datetime", true);
+  xhr.send();
+}
+setInterval(updateDateTime, 1000);
+</script>
 </body>
 </html>
