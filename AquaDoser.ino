@@ -110,16 +110,14 @@ struct PumpStatus {
 
 // Struktura do przechowywania różnych stanów i parametrów systemu
 struct Status {
-  unsigned long pumpStartTime;
-  unsigned long pumpDelayStartTime;
-  unsigned long lastSoundAlert;
-  unsigned long lastSuccessfulMeasurement;
-  bool isServiceMode;
-  bool isPumpActive;
-  bool isPumpDelayActive;
-  bool soundEnabled;
-  bool pumpSafetyLock;
-  Pump pumps[NUMBER_OF_PUMPS];
+    PumpStatus pumps[NUMBER_OF_PUMPS];
+    bool isServiceMode;
+    bool pumpSafetyLock;
+    bool soundEnabled;
+    unsigned long pumpStartTime;
+    unsigned long pumpDelayStartTime;
+    unsigned long lastSoundAlert;
+    unsigned long lastSuccessfulMeasurement;
 };
 
 // Stan przycisku
@@ -335,6 +333,30 @@ void resetConfig() {
 }
 
 // ** FILTROWANIE I POMIARY **
+
+//RTC_DS3231 rtc;  // lub inny model RTC, który używasz
+
+void setupRTC() {
+    if (!rtc.begin()) {
+        AQUA_DEBUG_PRINTF("Nie można znaleźć RTC");
+        return;
+    }
+
+    // Sprawdź czy RTC działa
+    if (rtc.lostPower()) {
+        AQUA_DEBUG_PRINTF("RTC stracił zasilanie, ustawiam czas kompilacji!");
+        // Ustaw czas kompilacji jako fallback
+        rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+    }
+
+    // Synchronizuj czas systemowy z RTC
+    DateTime now = rtc.now();
+    setTime(now.unixtime());
+    
+    AQUA_DEBUG_PRINTF("RTC zainicjalizowany, czas: %04d-%02d-%02d %02d:%02d:%02d", 
+        now.year(), now.month(), now.day(),
+        now.hour(), now.minute(), now.second());
+}
 
 void saveCalibration(uint8_t pumpId, float volume, uint16_t calibrationTime) {
   // Oblicz wydajność
@@ -1518,11 +1540,11 @@ void setup() {
   setupHA();
 
   // Inicjalizacja RTC
-  if (!initRTC()) {
-    // Obsługa błędu inicjalizacji RTC
-    AQUA_DEBUG_PRINT(F("Błąd inicjalizacji RTC!"));
-  }
-
+  // if (!initRTC()) {
+  //   // Obsługa błędu inicjalizacji RTC
+  //   AQUA_DEBUG_PRINT(F("Błąd inicjalizacji RTC!"));
+  // }
+setupRTC();
   // Po inicjalizacji WiFi
   configTime(0, 0, "pool.ntp.org", "time.nist.gov");
   delay(2000);
@@ -1594,8 +1616,10 @@ void loop() {
 
   // Synchronizacja RTC z NTP raz na dobę
   if (millis() - lastNTPSync >= NTP_SYNC_INTERVAL) {
-    syncTimeFromNTP();
-  }
+        DateTime now = rtc.now();
+        setTime(now.unixtime());
+        lastNTPSync = millis();
+    }
 
   yield();  // Obsługa zadań systemowych ESP8266
 }
