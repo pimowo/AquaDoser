@@ -106,22 +106,6 @@ struct PumpStatus {
     float totalDosed;
 };
 
-// Status wszystkich pomp
-struct Status {
-    struct {
-        bool isRunning;
-        unsigned long lastDose;
-        float totalDosed;
-    } pumps[NUMBER_OF_PUMPS];
-    bool isServiceMode;
-    bool pumpSafetyLock;
-    bool soundEnabled;
-    unsigned long pumpStartTime;
-    unsigned long pumpDelayStartTime;
-    unsigned long lastSoundAlert;
-    unsigned long lastSuccessfulMeasurement;
-};
-
 #pragma pack(1)
 
 // Struktura do przechowywania różnych stanów i parametrów systemu
