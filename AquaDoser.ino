@@ -1272,83 +1272,83 @@ void handleSaveMQTT() {
         return;
     }
 
-    // Odpowiedz klientowi od razu
-    server.send(200, "text/plain", "OK");
-    yield();
-
-    // Zachowaj poprzednie ustawienia MQTT do sprawdzenia czy potrzebne ponowne połączenie
-    String oldServer = config.mqtt_server;
-    uint16_t oldPort = config.mqtt_port;
-    String oldUser = config.mqtt_user;
-    String oldPassword = config.mqtt_password;
-
-    // Zapisz nowe ustawienia MQTT
     bool changed = false;
     
+    // Tymczasowa kopia konfiguracji MQTT
+    char temp_server[40] = {0};
+    uint16_t temp_port = config.mqtt_port;
+    char temp_user[32] = {0};
+    char temp_password[32] = {0};
+    
+    // Zapisz nowe ustawienia do zmiennych tymczasowych
     if (server.hasArg("mqtt_server")) {
-        strlcpy(config.mqtt_server, server.arg("mqtt_server").c_str(), sizeof(config.mqtt_server));
+        strlcpy(temp_server, server.arg("mqtt_server").c_str(), sizeof(temp_server));
         changed = true;
     }
     if (server.hasArg("mqtt_port")) {
-        config.mqtt_port = server.arg("mqtt_port").toInt();
+        temp_port = server.arg("mqtt_port").toInt();
         changed = true;
     }
     if (server.hasArg("mqtt_user")) {
-        strlcpy(config.mqtt_user, server.arg("mqtt_user").c_str(), sizeof(config.mqtt_user));
+        strlcpy(temp_user, server.arg("mqtt_user").c_str(), sizeof(temp_user));
         changed = true;
     }
     if (server.hasArg("mqtt_password")) {
-        strlcpy(config.mqtt_password, server.arg("mqtt_password").c_str(), sizeof(config.mqtt_password));
+        strlcpy(temp_password, server.arg("mqtt_password").c_str(), sizeof(temp_password));
         changed = true;
     }
 
     if (!changed) {
+        server.send(200, "text/plain", "OK");
         webSocket.broadcastTXT("save:info:Brak zmian w konfiguracji MQTT");
         return;
     }
 
+    bool success = false;
+    
     // Zapisz do EEPROM
     EEPROM.begin(sizeof(Config));
-    
-    // Zapisz tylko sekcję MQTT
-    uint8_t *p = (uint8_t*)&config;
-    size_t mqttOffset = offsetof(Config, mqtt_server);
-    size_t mqttSize = sizeof(config.mqtt_server) + sizeof(config.mqtt_port) + 
-                      sizeof(config.mqtt_user) + sizeof(config.mqtt_password);
-    
-    for (size_t i = 0; i < mqttSize; i++) {
-        EEPROM.write(mqttOffset + i, p[mqttOffset + i]);
-        if (i % 32 == 0) yield();
+    yield();
+
+    if (changed) {
+        // Aktualizuj główną konfigurację
+        if (server.hasArg("mqtt_server")) strlcpy(config.mqtt_server, temp_server, sizeof(config.mqtt_server));
+        if (server.hasArg("mqtt_port")) config.mqtt_port = temp_port;
+        if (server.hasArg("mqtt_user")) strlcpy(config.mqtt_user, temp_user, sizeof(config.mqtt_user));
+        if (server.hasArg("mqtt_password")) strlcpy(config.mqtt_password, temp_password, sizeof(config.mqtt_password));
+        
+        yield();
+        
+        // Zapisz do EEPROM
+        uint8_t *p = (uint8_t*)&config;
+        size_t mqttOffset = offsetof(Config, mqtt_server);
+        size_t mqttSize = sizeof(config.mqtt_server) + sizeof(config.mqtt_port) + 
+                         sizeof(config.mqtt_user) + sizeof(config.mqtt_password);
+        
+        for (size_t i = 0; i < mqttSize; i++) {
+            EEPROM.write(mqttOffset + i, p[mqttOffset + i]);
+            if (i % 16 == 0) yield();
+        }
+
+        // Oblicz i zapisz sumę kontrolną
+        config.checksum = calculateChecksum(config);
+        EEPROM.write(offsetof(Config, checksum), config.checksum);
+        yield();
+
+        success = EEPROM.commit();
+        yield();
     }
-
-    // Oblicz i zapisz nową sumę kontrolną
-    config.checksum = calculateChecksum(config);
-    EEPROM.write(offsetof(Config, checksum), config.checksum);
-
-    bool success = EEPROM.commit();
+    
     EEPROM.end();
     yield();
 
-    if (success) {
-        server.send(200, "text/plain", "OK");
-    } else {
-        server.send(500, "text/plain", "Error");
-    }
+    // Wyślij odpowiedź
+    server.send(success ? 200 : 500, "text/plain", success ? "OK" : "Error");
+    yield();
 
+    // Wyślij komunikat przez WebSocket
     if (success) {
         webSocket.broadcastTXT("save:success:Zapisano ustawienia MQTT");
-        
-        // Sprawdź czy potrzebne ponowne połączenie MQTT
-        if (strcmp(oldServer.c_str(), config.mqtt_server) != 0 ||
-            oldPort != config.mqtt_port ||
-            strcmp(oldUser.c_str(), config.mqtt_user) != 0 ||
-            strcmp(oldPassword.c_str(), config.mqtt_password) != 0) {
-            
-            // if (mqtt.connected()) {
-            //     mqtt.disconnect();
-            // }
-            // connectMQTT();
-        }
     } else {
         webSocket.broadcastTXT("save:error:Błąd zapisu konfiguracji MQTT");
     }
@@ -1361,116 +1361,131 @@ void handleSavePumps() {
         return;
     }
 
-    // Odpowiedz klientowi od razu
-    server.send(200, "text/plain", "OK");
+    // Struktura tymczasowa dla jednej pompy
+    struct {
+        char name[32];
+        bool enabled;
+        float calibration;
+        float dosage;
+        uint8_t hour;
+        uint8_t minute;
+        uint8_t weekDays;
+    } tempPump;
+
+    // Rozpocznij sesję EEPROM
+    EEPROM.begin(sizeof(Config));
     yield();
 
-    bool changed = false;
+    bool anyChanges = false;
 
-    // Zapisz konfigurację każdej pompy
+    // Aktualizuj każdą pompę osobno
     for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        bool pumpChanged = false;
+        
+        // Kopiuj aktualne dane pompy do bufora tymczasowego
+        memcpy(&tempPump, &config.pumps[i], sizeof(tempPump));
+        yield();
+
+        // Nazwa
         if (server.hasArg("p" + String(i) + "_name")) {
-            strlcpy(config.pumps[i].name, server.arg("p" + String(i) + "_name").c_str(), sizeof(config.pumps[i].name));
-            changed = true;
+            strlcpy(tempPump.name, server.arg("p" + String(i) + "_name").c_str(), sizeof(tempPump.name));
+            pumpChanged = true;
         }
-        
-        if (server.hasArg("p" + String(i) + "_enabled")) {
-            bool newState = server.hasArg("p" + String(i) + "_enabled");
-            if (config.pumps[i].enabled != newState) {
-                config.pumps[i].enabled = newState;
-                changed = true;
-            }
-        }
-        
+        yield();
+
+        // Enabled
+        tempPump.enabled = server.hasArg("p" + String(i) + "_enabled");
+        pumpChanged = true;
+        yield();
+
+        // Kalibracja
         if (server.hasArg("p" + String(i) + "_calibration")) {
-            float newCal = server.arg("p" + String(i) + "_calibration").toFloat();
-            if (config.pumps[i].calibration != newCal) {
-                config.pumps[i].calibration = newCal;
-                changed = true;
-            }
+            tempPump.calibration = server.arg("p" + String(i) + "_calibration").toFloat();
+            pumpChanged = true;
         }
+        yield();
 
+        // Dawkowanie
         if (server.hasArg("p" + String(i) + "_dosage")) {
-            float newDosage = server.arg("p" + String(i) + "_dosage").toFloat();
-            if (config.pumps[i].dosage != newDosage) {
-                config.pumps[i].dosage = newDosage;
-                changed = true;
-            }
+            tempPump.dosage = server.arg("p" + String(i) + "_dosage").toFloat();
+            pumpChanged = true;
         }
+        yield();
 
+        // Godzina
         if (server.hasArg("p" + String(i) + "_hour")) {
-            uint8_t newHour = constrain(server.arg("p" + String(i) + "_hour").toInt(), 0, 23);
-            if (config.pumps[i].hour != newHour) {
-                config.pumps[i].hour = newHour;
-                changed = true;
-            }
+            tempPump.hour = constrain(server.arg("p" + String(i) + "_hour").toInt(), 0, 23);
+            pumpChanged = true;
         }
+        yield();
 
+        // Minuta
         if (server.hasArg("p" + String(i) + "_minute")) {
-            uint8_t newMinute = constrain(server.arg("p" + String(i) + "_minute").toInt(), 0, 59);
-            if (config.pumps[i].minute != newMinute) {
-                config.pumps[i].minute = newMinute;
-                changed = true;
-            }
+            tempPump.minute = constrain(server.arg("p" + String(i) + "_minute").toInt(), 0, 59);
+            pumpChanged = true;
         }
+        yield();
 
+        // Dni tygodnia
         uint8_t weekDays = 0;
         for (int day = 0; day < 7; day++) {
             if (server.hasArg("p" + String(i) + "_day" + String(day))) {
                 weekDays |= (1 << day);
             }
         }
-        if (config.pumps[i].weekDays != weekDays) {
-            config.pumps[i].weekDays = weekDays;
-            changed = true;
-        }
-
+        tempPump.weekDays = weekDays;
+        pumpChanged = true;
         yield();
+
+        // Jeśli były zmiany w pompie, zapisz ją
+        if (pumpChanged) {
+            anyChanges = true;
+            
+            // Zapisz do głównej konfiguracji
+            memcpy(&config.pumps[i], &tempPump, sizeof(tempPump));
+            yield();
+
+            // Zapisz do EEPROM
+            size_t pumpOffset = offsetof(Config, pumps) + (i * sizeof(tempPump));
+            uint8_t *pumpData = (uint8_t*)&tempPump;
+            
+            for (size_t j = 0; j < sizeof(tempPump); j++) {
+                EEPROM.write(pumpOffset + j, pumpData[j]);
+                if (j % 4 == 0) yield(); // Częstsze yield
+            }
+            yield();
+        }
     }
 
-    if (!changed) {
-        webSocket.broadcastTXT("save:info:Brak zmian w konfiguracji pomp");
+    if (!anyChanges) {
+        EEPROM.end();
+        server.sendHeader("Location", "/");
+        server.send(302, "text/plain", "");
         return;
     }
 
-    // Zapisz do EEPROM
-    EEPROM.begin(sizeof(Config));
-    
-    // Zapisz tylko sekcję pomp
-    uint8_t *p = (uint8_t*)&config;
-    size_t pumpsOffset = offsetof(Config, pumps);
-    size_t pumpsSize = sizeof(config.pumps);
-    
-    for (size_t i = 0; i < pumpsSize; i++) {
-        EEPROM.write(pumpsOffset + i, p[pumpsOffset + i]);
-        if (i % 32 == 0) yield();
-    }
-
-    // Oblicz i zapisz nową sumę kontrolną
+    // Aktualizuj sumę kontrolną
     config.checksum = calculateChecksum(config);
     EEPROM.write(offsetof(Config, checksum), config.checksum);
+    yield();
 
+    // Wykonaj commit
     bool success = EEPROM.commit();
+    yield();
     EEPROM.end();
     yield();
 
+    // Aktualizuj stany LED tylko jeśli zapis się powiódł
     if (success) {
-        server.send(200, "text/plain", "OK");
-    } else {
-        server.send(500, "text/plain", "Error");
-    }
-
-    if (success) {
-        webSocket.broadcastTXT("save:success:Zapisano ustawienia pomp");
-        
-        // Aktualizuj stany LED
         for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
             updatePumpState(i, config.pumps[i].enabled);
             yield();
         }
-    } else {
-        webSocket.broadcastTXT("save:error:Błąd zapisu konfiguracji pomp");
     }
+
+    // Przekieruj z powrotem na główną stronę
+    server.sendHeader("Location", "/");
+    server.send(302, "text/plain", "");
 }
 
 // Obsługa aktualizacji oprogramowania przez HTTP
