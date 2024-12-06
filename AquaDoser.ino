@@ -1065,11 +1065,11 @@ String getConfigPage() {
   html.replace(F("%SOFTWARE_VERSION%"), SOFTWARE_VERSION);
   html.replace(F("%CURRENT_TIME%"), getFormattedDateTime());
 
-  // Generuj formularze konfiguracyjne
-  String configForms = F("<form method='POST' action='/save'>");
+  String configForms = "";
 
-  // Sekcja MQTT
-  configForms += F("<div class='section'>"
+  // Formularz MQTT
+  configForms += F("<form method='POST' action='/save-mqtt'>"
+                   "<div class='section'>"
                    "<h2>Konfiguracja MQTT</h2>"
                    "<table class='config-table'>");
 
@@ -1087,10 +1087,15 @@ String getConfigPage() {
 
   configForms += F("<tr><td>Hasło</td><td><input type='password' name='mqtt_password' value='");
   configForms += config.mqtt_password;
-  configForms += F("'></td></tr></table></div>");
+  configForms += F("'></td></tr></table>");
 
-  // Sekcja pomp
-  configForms += F("<div class='section'>"
+  // Przycisk zapisu MQTT
+  configForms += F("<input type='submit' value='Zapisz ustawienia MQTT' class='btn btn-blue'>"
+                   "</div></form>");
+
+  // Formularz pomp
+  configForms += F("<form method='POST' action='/save-pumps'>"
+                   "<div class='section'>"
                    "<h2>Konfiguracja pomp</h2>");
 
   // Dla każdej pompy
@@ -1173,43 +1178,41 @@ String getConfigPage() {
     configForms += F("</table></div>");
   }
 
-  // Przycisk zapisu
+  // Przycisk zapisu pomp
   configForms += F("<div class='section'>"
-                   "<input type='submit' value='Zapisz ustawienia' class='btn btn-blue'>"
+                   "<input type='submit' value='Zapisz ustawienia pomp' class='btn btn-blue'>"
                    "</div></form>");
 
   html.replace(F("%CONFIG_FORMS%"), configForms);
 
-  // Dodaj przyciski
+  // Reszta kodu bez zmian
   String buttons = F("<div class='section'>"
-                     "<div class='buttons-container'>"
-                     "<button class='btn btn-blue' onclick='rebootDevice()'>Restart urządzenia</button>"
-                     "<button class='btn btn-red' onclick='factoryReset()'>Przywróć ustawienia fabryczne</button>"
-                     "</div>"
-                     "</div>");
+                    "<div class='buttons-container'>"
+                    "<button class='btn btn-blue' onclick='rebootDevice()'>Restart urządzenia</button>"
+                    "<button class='btn btn-red' onclick='factoryReset()'>Przywróć ustawienia fabryczne</button>"
+                    "</div>"
+                    "</div>");
   html.replace(F("%BUTTONS%"), buttons);
 
-  // Dodaj formularz aktualizacji
   String updateForm = F("<div class='section'>"
-                        "<h2>Aktualizacja firmware</h2>"
-                        "<form method='POST' action='/update' enctype='multipart/form-data'>"
-                        "<table class='config-table' style='margin-bottom: 15px;'>"
-                        "<tr><td colspan='2'><input type='file' name='update' accept='.bin'></td></tr>"
-                        "</table>"
-                        "<input type='submit' value='Aktualizuj firmware' class='btn btn-orange'>"
-                        "</form>"
-                        "<div id='update-progress' style='display:none'>"
-                        "<div class='progress'>"
-                        "<div id='progress-bar' class='progress-bar' role='progressbar' style='width: 0%'>0%</div>"
-                        "</div>"
-                        "</div>"
-                        "</div>");
+                       "<h2>Aktualizacja firmware</h2>"
+                       "<form method='POST' action='/update' enctype='multipart/form-data'>"
+                       "<table class='config-table' style='margin-bottom: 15px;'>"
+                       "<tr><td colspan='2'><input type='file' name='update' accept='.bin'></td></tr>"
+                       "</table>"
+                       "<input type='submit' value='Aktualizuj firmware' class='btn btn-orange'>"
+                       "</form>"
+                       "<div id='update-progress' style='display:none'>"
+                       "<div class='progress'>"
+                       "<div id='progress-bar' class='progress-bar' role='progressbar' style='width: 0%'>0%</div>"
+                       "</div>"
+                       "</div>"
+                       "</div>");
   html.replace(F("%UPDATE_FORM%"), updateForm);
 
-  // Dodaj stopkę
   String footer = F("<div class='footer'>"
-                    "<a href='https://github.com/pimowo/AquaDoser' target='_blank'>Project by PMW</a>"
-                    "</div>");
+                   "<a href='https://github.com/pimowo/AquaDoser' target='_blank'>Project by PMW</a>"
+                   "</div>");
   html.replace(F("%FOOTER%"), footer);
 
   return html;
@@ -1262,8 +1265,213 @@ bool validateConfigValues() {
   return true;
 }
 
-    //server.on("/save-mqtt", HTTP_POST, handleSaveMQTT);
-    //server.on("/save-pumps", HTTP_POST, handleSavePumps);
+// Funkcja zapisująca tylko konfigurację MQTT
+void handleSaveMQTT() {
+    if (server.method() != HTTP_POST) {
+        server.send(405, "text/plain", "Method Not Allowed");
+        return;
+    }
+
+    // Odpowiedz klientowi od razu
+    server.send(200, "text/plain", "OK");
+    yield();
+
+    // Zachowaj poprzednie ustawienia MQTT do sprawdzenia czy potrzebne ponowne połączenie
+    String oldServer = config.mqtt_server;
+    uint16_t oldPort = config.mqtt_port;
+    String oldUser = config.mqtt_user;
+    String oldPassword = config.mqtt_password;
+
+    // Zapisz nowe ustawienia MQTT
+    bool changed = false;
+    
+    if (server.hasArg("mqtt_server")) {
+        strlcpy(config.mqtt_server, server.arg("mqtt_server").c_str(), sizeof(config.mqtt_server));
+        changed = true;
+    }
+    if (server.hasArg("mqtt_port")) {
+        config.mqtt_port = server.arg("mqtt_port").toInt();
+        changed = true;
+    }
+    if (server.hasArg("mqtt_user")) {
+        strlcpy(config.mqtt_user, server.arg("mqtt_user").c_str(), sizeof(config.mqtt_user));
+        changed = true;
+    }
+    if (server.hasArg("mqtt_password")) {
+        strlcpy(config.mqtt_password, server.arg("mqtt_password").c_str(), sizeof(config.mqtt_password));
+        changed = true;
+    }
+
+    if (!changed) {
+        webSocket.broadcastTXT("save:info:Brak zmian w konfiguracji MQTT");
+        return;
+    }
+
+    // Zapisz do EEPROM
+    EEPROM.begin(sizeof(Config));
+    
+    // Zapisz tylko sekcję MQTT
+    uint8_t *p = (uint8_t*)&config;
+    size_t mqttOffset = offsetof(Config, mqtt_server);
+    size_t mqttSize = sizeof(config.mqtt_server) + sizeof(config.mqtt_port) + 
+                      sizeof(config.mqtt_user) + sizeof(config.mqtt_password);
+    
+    for (size_t i = 0; i < mqttSize; i++) {
+        EEPROM.write(mqttOffset + i, p[mqttOffset + i]);
+        if (i % 32 == 0) yield();
+    }
+
+    // Oblicz i zapisz nową sumę kontrolną
+    config.checksum = calculateChecksum(config);
+    EEPROM.write(offsetof(Config, checksum), config.checksum);
+
+    bool success = EEPROM.commit();
+    EEPROM.end();
+    yield();
+
+    if (success) {
+        server.send(200, "text/plain", "OK");
+    } else {
+        server.send(500, "text/plain", "Error");
+    }
+
+    if (success) {
+        webSocket.broadcastTXT("save:success:Zapisano ustawienia MQTT");
+        
+        // Sprawdź czy potrzebne ponowne połączenie MQTT
+        if (strcmp(oldServer.c_str(), config.mqtt_server) != 0 ||
+            oldPort != config.mqtt_port ||
+            strcmp(oldUser.c_str(), config.mqtt_user) != 0 ||
+            strcmp(oldPassword.c_str(), config.mqtt_password) != 0) {
+            
+            // if (mqtt.connected()) {
+            //     mqtt.disconnect();
+            // }
+            // connectMQTT();
+        }
+    } else {
+        webSocket.broadcastTXT("save:error:Błąd zapisu konfiguracji MQTT");
+    }
+}
+
+// Funkcja zapisująca tylko konfigurację pomp
+void handleSavePumps() {
+    if (server.method() != HTTP_POST) {
+        server.send(405, "text/plain", "Method Not Allowed");
+        return;
+    }
+
+    // Odpowiedz klientowi od razu
+    server.send(200, "text/plain", "OK");
+    yield();
+
+    bool changed = false;
+
+    // Zapisz konfigurację każdej pompy
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        if (server.hasArg("p" + String(i) + "_name")) {
+            strlcpy(config.pumps[i].name, server.arg("p" + String(i) + "_name").c_str(), sizeof(config.pumps[i].name));
+            changed = true;
+        }
+        
+        if (server.hasArg("p" + String(i) + "_enabled")) {
+            bool newState = server.hasArg("p" + String(i) + "_enabled");
+            if (config.pumps[i].enabled != newState) {
+                config.pumps[i].enabled = newState;
+                changed = true;
+            }
+        }
+        
+        if (server.hasArg("p" + String(i) + "_calibration")) {
+            float newCal = server.arg("p" + String(i) + "_calibration").toFloat();
+            if (config.pumps[i].calibration != newCal) {
+                config.pumps[i].calibration = newCal;
+                changed = true;
+            }
+        }
+
+        if (server.hasArg("p" + String(i) + "_dosage")) {
+            float newDosage = server.arg("p" + String(i) + "_dosage").toFloat();
+            if (config.pumps[i].dosage != newDosage) {
+                config.pumps[i].dosage = newDosage;
+                changed = true;
+            }
+        }
+
+        if (server.hasArg("p" + String(i) + "_hour")) {
+            uint8_t newHour = constrain(server.arg("p" + String(i) + "_hour").toInt(), 0, 23);
+            if (config.pumps[i].hour != newHour) {
+                config.pumps[i].hour = newHour;
+                changed = true;
+            }
+        }
+
+        if (server.hasArg("p" + String(i) + "_minute")) {
+            uint8_t newMinute = constrain(server.arg("p" + String(i) + "_minute").toInt(), 0, 59);
+            if (config.pumps[i].minute != newMinute) {
+                config.pumps[i].minute = newMinute;
+                changed = true;
+            }
+        }
+
+        uint8_t weekDays = 0;
+        for (int day = 0; day < 7; day++) {
+            if (server.hasArg("p" + String(i) + "_day" + String(day))) {
+                weekDays |= (1 << day);
+            }
+        }
+        if (config.pumps[i].weekDays != weekDays) {
+            config.pumps[i].weekDays = weekDays;
+            changed = true;
+        }
+
+        yield();
+    }
+
+    if (!changed) {
+        webSocket.broadcastTXT("save:info:Brak zmian w konfiguracji pomp");
+        return;
+    }
+
+    // Zapisz do EEPROM
+    EEPROM.begin(sizeof(Config));
+    
+    // Zapisz tylko sekcję pomp
+    uint8_t *p = (uint8_t*)&config;
+    size_t pumpsOffset = offsetof(Config, pumps);
+    size_t pumpsSize = sizeof(config.pumps);
+    
+    for (size_t i = 0; i < pumpsSize; i++) {
+        EEPROM.write(pumpsOffset + i, p[pumpsOffset + i]);
+        if (i % 32 == 0) yield();
+    }
+
+    // Oblicz i zapisz nową sumę kontrolną
+    config.checksum = calculateChecksum(config);
+    EEPROM.write(offsetof(Config, checksum), config.checksum);
+
+    bool success = EEPROM.commit();
+    EEPROM.end();
+    yield();
+
+    if (success) {
+        server.send(200, "text/plain", "OK");
+    } else {
+        server.send(500, "text/plain", "Error");
+    }
+
+    if (success) {
+        webSocket.broadcastTXT("save:success:Zapisano ustawienia pomp");
+        
+        // Aktualizuj stany LED
+        for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+            updatePumpState(i, config.pumps[i].enabled);
+            yield();
+        }
+    } else {
+        webSocket.broadcastTXT("save:error:Błąd zapisu konfiguracji pomp");
+    }
+}
 
 // Obsługa aktualizacji oprogramowania przez HTTP
 void handleDoUpdate() {
