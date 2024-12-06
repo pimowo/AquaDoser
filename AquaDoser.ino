@@ -28,6 +28,10 @@
 // Pozostałe
 #include <Adafruit_NeoPixel.h>  // Sterowanie LED
 
+// 0x68 DS3231
+// 0x57 eeprom
+// 0x20 pcf8574
+
 // Struktury konfiguracyjne i statusowe
 #pragma pack(1)  // Wymuszone wyrównanie do 1 bajta
 
@@ -265,7 +269,7 @@ const unsigned long NTP_SYNC_INTERVAL = 24UL * 60UL * 60UL * 1000UL;  // 24h w m
 #endif
 
 // Zmienna przechowująca wersję oprogramowania
-const char* SOFTWARE_VERSION = "5.12.24";  // Definiowanie wersji oprogramowania
+const char* SOFTWARE_VERSION = "6.12.24";  // Definiowanie wersji oprogramowania
 
 // Globalne instancje struktur
 //CustomTimeStatus currentStatus = getCustomTimeStatus();
@@ -614,14 +618,14 @@ bool loadConfig() {
   EEPROM.begin(sizeof(Config));
 
   // Debug - pokaż surowe dane przed wczytaniem
-  Serial.println(F("\nSurowe dane EEPROM:"));
-  for (size_t i = 0; i < sizeof(Config); i++) {
-    if (i % 16 == 0) {
-      Serial.printf("\n%04X: ", i);
-    }
-    Serial.printf("%02X ", EEPROM.read(i));
-  }
-  Serial.println();
+  // Serial.println(F("\nSurowe dane EEPROM:"));
+  // for (size_t i = 0; i < sizeof(Config); i++) {
+  //   if (i % 16 == 0) {
+  //     Serial.printf("\n%04X: ", i);
+  //   }
+  //   Serial.printf("%02X ", EEPROM.read(i));
+  // }
+  // Serial.println();
 
   // Wczytaj konfigurację
   EEPROM.get(0, config);
@@ -723,7 +727,16 @@ void setupPump() {
     status.pumps[i].isRunning = false;
     status.pumps[i].lastDose = 0;
     status.pumps[i].totalDosed = 0;
+    
+    // Dodaj aktualizację stanu LED-ów na podstawie konfiguracji
+    pumpEnabled[i] = config.pumps[i].enabled;  // Ustaw stan na podstawie konfiguracji
+    if (pumpEnabled[i]) {
+      ledStates[i].currentColor = strip.Color(0, 255, 0); // Zielony dla włączonej pompy
+    } else {
+      ledStates[i].currentColor = strip.Color(255, 0, 0); // Czerwony dla wyłączonej pompy
+    }
   }
+  strip.show(); // Wyświetl zaktualizowane kolory
 }
 
 // Włączenie pompy
@@ -1266,62 +1279,151 @@ bool validateConfigValues() {
 }
 
 // Obsługa zapisania konfiguracji po jej wprowadzeniu przez użytkownika
+// void handleSave() {
+//   if (server.method() != HTTP_POST) {
+//     server.send(405, "text/plain", "Method Not Allowed");
+//     return;
+//   }
+
+//   // Debug - pokaż otrzymane dane
+//   AQUA_DEBUG_PRINT("Otrzymane dane z formularza:");
+//   AQUA_DEBUG_PRINT("MQTT Server: " + server.arg("mqtt_server"));
+//   AQUA_DEBUG_PRINT("MQTT Port: " + server.arg("mqtt_port"));
+//   AQUA_DEBUG_PRINT("MQTT User: " + server.arg("mqtt_user"));
+
+//   // Zapisz poprzednie wartości na wypadek błędów
+//   Config oldConfig = config;
+//   bool needMqttReconnect = false;
+
+//   // Zapisz poprzednie wartości MQTT do porównania
+//   String oldServer = config.mqtt_server;
+//   int oldPort = config.mqtt_port;
+//   String oldUser = config.mqtt_user;
+//   String oldPassword = config.mqtt_password;
+
+//   // Zapisz ustawienia MQTT
+//   strlcpy(config.mqtt_server, server.arg("mqtt_server").c_str(), sizeof(config.mqtt_server));
+//   config.mqtt_port = server.arg("mqtt_port").toInt();
+//   strlcpy(config.mqtt_user, server.arg("mqtt_user").c_str(), sizeof(config.mqtt_user));
+//   strlcpy(config.mqtt_password, server.arg("mqtt_password").c_str(), sizeof(config.mqtt_password));
+
+//   // Debug - pokaż zapisane wartości
+//   AQUA_DEBUG_PRINT("Zapisane wartości:");
+//   AQUA_DEBUG_PRINT("MQTT Server: " + String(config.mqtt_server));
+//   AQUA_DEBUG_PRINT("MQTT Port: " + String(config.mqtt_port));
+//   AQUA_DEBUG_PRINT("MQTT User: " + String(config.mqtt_user));
+
+//   String pumpPrefix;
+//   String doseArg;
+
+//   // Zapisz konfigurację pomp
+//   for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+//     // Nazwa
+//     String pumpName = server.arg("p" + String(i) + "_name");
+//     strlcpy(config.pumps[i].name, pumpName.c_str(), sizeof(config.pumps[i].name));
+
+//     // Aktywna
+//     config.pumps[i].enabled = server.hasArg("p" + String(i) + "_enabled");
+
+//     // Kalibracja
+//     config.pumps[i].calibration = server.arg("p" + String(i) + "_calibration").toFloat();
+
+//     // Dozowanie
+//     config.pumps[i].dosage = server.arg("p" + String(i) + "_dosage").toInt();
+
+//     // Godzina i minuta
+//     config.pumps[i].hour = server.arg("p" + String(i) + "_hour").toInt();
+//     config.pumps[i].minute = server.arg("p" + String(i) + "_minute").toInt();
+
+//     // Dni tygodnia
+//     uint8_t weekDays = 0;
+//     for (int day = 0; day < 7; day++) {
+//       if (server.hasArg("p" + String(i) + "_day" + String(day))) {
+//         weekDays |= (1 << day);
+//       }
+//     }
+//     config.pumps[i].weekDays = weekDays;
+
+//     // Debug
+//     AQUA_DEBUG_PRINTF("Zapisano konfigurację pompy %d:\n", i + 1);
+//     AQUA_DEBUG_PRINTF("  Nazwa: %s\n", config.pumps[i].name);
+//     AQUA_DEBUG_PRINTF("  Aktywna: %d\n", config.pumps[i].enabled);
+//     AQUA_DEBUG_PRINTF("  Kalibracja: %.1f\n", config.pumps[i].calibration);
+//     AQUA_DEBUG_PRINTF("  Dozowanie: %d\n", config.pumps[i].dosage);
+//     AQUA_DEBUG_PRINTF("  Czas: %02d:%02d\n", config.pumps[i].hour, config.pumps[i].minute);
+//     AQUA_DEBUG_PRINTF("  Dni: 0b%08b\n", config.pumps[i].weekDays);
+//   }
+
+//   // Sprawdź poprawność wartości
+//   if (!validateConfigValues()) {
+//     config = oldConfig;  // Przywróć poprzednie wartości
+//     //webSocket.broadcastTXT("save:error:Nieprawidłowe wartości! Sprawdź wprowadzone dane.");
+//     server.send(204);  // Nie przekierowuj strony
+//     return;
+//   }
+
+//   // Sprawdź czy dane MQTT się zmieniły
+//   if (oldServer != config.mqtt_server || oldPort != config.mqtt_port || oldUser != config.mqtt_user || oldPassword != config.mqtt_password) {
+//     needMqttReconnect = true;
+//   }
+
+//   // Zapisz konfigurację do EEPROM
+//   saveConfig();
+
+//   // Jeśli dane MQTT się zmieniły, zrestartuj połączenie
+//   // if (needMqttReconnect) {
+//   //     if (mqtt.isConnected()) {
+//   //         mqtt.disconnect();
+//   //     }
+//   //     connectMQTT();
+//   // }
+
+//   // Wyślij informację o sukcesie przez WebSocket
+//   //webSocket.broadcastTXT("save:success:Zapisano ustawienia!");
+//   server.send(204);  // Nie przekierowuj strony
+// }
+
 void handleSave() {
   if (server.method() != HTTP_POST) {
     server.send(405, "text/plain", "Method Not Allowed");
     return;
   }
 
-  // Debug - pokaż otrzymane dane
-  AQUA_DEBUG_PRINT("Otrzymane dane z formularza:");
-  AQUA_DEBUG_PRINT("MQTT Server: " + server.arg("mqtt_server"));
-  AQUA_DEBUG_PRINT("MQTT Port: " + server.arg("mqtt_port"));
-  AQUA_DEBUG_PRINT("MQTT User: " + server.arg("mqtt_user"));
+  // Odpowiedz najpierw klientowi, żeby uniknąć timeout'u
+  server.send(200, "text/plain", "OK");
+  delay(100); // Krótkie opóźnienie, żeby odpowiedź dotarła
 
-  // Zapisz poprzednie wartości na wypadek błędów
-  Config oldConfig = config;
-  bool needMqttReconnect = false;
+  // Zapisuj konfigurację po kawałku
+  bool success = true;
 
-  // Zapisz poprzednie wartości MQTT do porównania
-  String oldServer = config.mqtt_server;
-  int oldPort = config.mqtt_port;
-  String oldUser = config.mqtt_user;
-  String oldPassword = config.mqtt_password;
+  // MQTT
+  if (success) {
+    strlcpy(config.mqtt_server, server.arg("mqtt_server").c_str(), sizeof(config.mqtt_server));
+    config.mqtt_port = server.arg("mqtt_port").toInt();
+    strlcpy(config.mqtt_user, server.arg("mqtt_user").c_str(), sizeof(config.mqtt_user));
+    strlcpy(config.mqtt_password, server.arg("mqtt_password").c_str(), sizeof(config.mqtt_password));
+    
+    success = saveConfig();
+    if (!success) {
+      String errorMsg = "save:error:Błąd zapisu konfiguracji MQTT";
+      webSocket.broadcastTXT(errorMsg);
+      return;
+    }
+  }
 
-  // Zapisz ustawienia MQTT
-  strlcpy(config.mqtt_server, server.arg("mqtt_server").c_str(), sizeof(config.mqtt_server));
-  config.mqtt_port = server.arg("mqtt_port").toInt();
-  strlcpy(config.mqtt_user, server.arg("mqtt_user").c_str(), sizeof(config.mqtt_user));
-  strlcpy(config.mqtt_password, server.arg("mqtt_password").c_str(), sizeof(config.mqtt_password));
-
-  // Debug - pokaż zapisane wartości
-  AQUA_DEBUG_PRINT("Zapisane wartości:");
-  AQUA_DEBUG_PRINT("MQTT Server: " + String(config.mqtt_server));
-  AQUA_DEBUG_PRINT("MQTT Port: " + String(config.mqtt_port));
-  AQUA_DEBUG_PRINT("MQTT User: " + String(config.mqtt_user));
-
-  String pumpPrefix;
-  String doseArg;
-
-  // Zapisz konfigurację pomp
-  for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-    // Nazwa
+  // Pompy - zapisujemy każdą osobno
+  for (int i = 0; i < NUMBER_OF_PUMPS && success; i++) {
+    // Zapisz podstawowe ustawienia pompy
     String pumpName = server.arg("p" + String(i) + "_name");
     strlcpy(config.pumps[i].name, pumpName.c_str(), sizeof(config.pumps[i].name));
-
-    // Aktywna
     config.pumps[i].enabled = server.hasArg("p" + String(i) + "_enabled");
-
-    // Kalibracja
     config.pumps[i].calibration = server.arg("p" + String(i) + "_calibration").toFloat();
-
-    // Dozowanie
     config.pumps[i].dosage = server.arg("p" + String(i) + "_dosage").toInt();
-
-    // Godzina i minuta
+    
+    // Zapisz harmonogram
     config.pumps[i].hour = server.arg("p" + String(i) + "_hour").toInt();
     config.pumps[i].minute = server.arg("p" + String(i) + "_minute").toInt();
-
+    
     // Dni tygodnia
     uint8_t weekDays = 0;
     for (int day = 0; day < 7; day++) {
@@ -1331,43 +1433,25 @@ void handleSave() {
     }
     config.pumps[i].weekDays = weekDays;
 
-    // Debug
-    AQUA_DEBUG_PRINTF("Zapisano konfigurację pompy %d:\n", i + 1);
-    AQUA_DEBUG_PRINTF("  Nazwa: %s\n", config.pumps[i].name);
-    AQUA_DEBUG_PRINTF("  Aktywna: %d\n", config.pumps[i].enabled);
-    AQUA_DEBUG_PRINTF("  Kalibracja: %.1f\n", config.pumps[i].calibration);
-    AQUA_DEBUG_PRINTF("  Dozowanie: %d\n", config.pumps[i].dosage);
-    AQUA_DEBUG_PRINTF("  Czas: %02d:%02d\n", config.pumps[i].hour, config.pumps[i].minute);
-    AQUA_DEBUG_PRINTF("  Dni: 0b%08b\n", config.pumps[i].weekDays);
+    // Aktualizuj stan LED-ów
+    updatePumpState(i, config.pumps[i].enabled);
+
+    // Zapisz po każdej pompie
+    success = saveConfig();
+    if (!success) {
+      String errorMsg = "save:error:Błąd zapisu konfiguracji pompy " + String(i + 1);
+      webSocket.broadcastTXT(errorMsg);
+      return;
+    }
+
+    // Daj czas watchdogowi
+    yield();
   }
 
-  // Sprawdź poprawność wartości
-  if (!validateConfigValues()) {
-    config = oldConfig;  // Przywróć poprzednie wartości
-    //webSocket.broadcastTXT("save:error:Nieprawidłowe wartości! Sprawdź wprowadzone dane.");
-    server.send(204);  // Nie przekierowuj strony
-    return;
+  if (success) {
+    String successMsg = "save:success:Zapisano ustawienia";
+    webSocket.broadcastTXT(successMsg);
   }
-
-  // Sprawdź czy dane MQTT się zmieniły
-  if (oldServer != config.mqtt_server || oldPort != config.mqtt_port || oldUser != config.mqtt_user || oldPassword != config.mqtt_password) {
-    needMqttReconnect = true;
-  }
-
-  // Zapisz konfigurację do EEPROM
-  saveConfig();
-
-  // Jeśli dane MQTT się zmieniły, zrestartuj połączenie
-  // if (needMqttReconnect) {
-  //     if (mqtt.isConnected()) {
-  //         mqtt.disconnect();
-  //     }
-  //     connectMQTT();
-  // }
-
-  // Wyślij informację o sukcesie przez WebSocket
-  //webSocket.broadcastTXT("save:success:Zapisano ustawienia!");
-  server.send(204);  // Nie przekierowuj strony
 }
 
 // Obsługa aktualizacji oprogramowania przez HTTP
