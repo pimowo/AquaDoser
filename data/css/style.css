@@ -1,20 +1,23 @@
-        body { c:\Users\piotrek\Documents\Arduino\AquaDoser\config.ino
+        body { 
             font-family: Arial, sans-serif; 
             margin: 0; 
             padding: 20px; 
             background-color: #1a1a1a;
             color: #ffffff;
         }
+
         .buttons-container {
             display: flex;
             justify-content: space-between;
             margin: -5px;
         }
+
         .container { 
             max-width: 800px; 
             margin: 0 auto; 
             padding: 0 15px;
         }
+        
         .section {
             background-color: #2a2a2a;
             padding: 20px;
@@ -23,6 +26,7 @@
             width: 100%;
             box-sizing: border-box;
         }
+
         h1 { 
             color: #ffffff; 
             text-align: center;
@@ -33,11 +37,13 @@
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.2);
         }
+
         h2 { 
             color: #2196F3;
             margin-top: 0;
             font-size: 1.5em;
         }
+
         table { 
             width: 100%; 
             border-collapse: collapse;
@@ -46,20 +52,26 @@
             padding: 12px 8px;
             border-bottom: 1px solid #3d3d3d;
         }
+
         .config-table td {
             padding: 8px;
+            border-bottom: 1px solid #3d3d3d;
         }
+
         .config-table {
             width: 100%;
             border-collapse: collapse;
             table-layout: fixed;
         }
+
         .config-table td:first-child {
             width: 65%;
         }
+
         .config-table td:last-child {
             width: 35%;
         }
+
         .config-table input[type="text"],
         .config-table input[type="password"],
         .config-table input[type="number"] {
@@ -182,18 +194,9 @@
             .buttons-container { flex-direction: column; }
             .btn { margin: 5px 0; }
         }
-        .clock-section {
-            background: #f5f5f5;
-            padding: 10px;
-            border-radius: 5px;
-            margin: 10px 0;
-        }
 
-        #time {
-            font-size: 2em;
-            font-weight: bold;
-        }
-
-        #date, #timezone {
-            font-size: 1.2em;
+        #time, #date, #timezone {
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            font-weight: normal;
         }
