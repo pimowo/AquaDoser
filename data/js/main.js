@@ -62,7 +62,7 @@ function updateClock() {
             document.getElementById('date').innerHTML = 
                 `${String(data.day).padStart(2, '0')}/${String(data.month).padStart(2, '0')}/${data.year}`;
             document.getElementById('timezone').innerHTML = 
-                `Czas ${data.isDST ? 'Letni' : 'Zimowy'} (${data.tzAbbrev})`;
+                `${data.isDST ? 'Letni' : 'Zimowy'}`;
         })
         .catch(error => console.error('Error fetching time:', error));
 }
