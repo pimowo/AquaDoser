@@ -5,7 +5,35 @@
             background-color: #1a1a1a;
             color: #ffffff;
         }
+        .message {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 15px 30px;
+            border-radius: 5px;
+            color: white;
+            opacity: 0;
+            transition: opacity 0.3s ease-in-out;
+            z-index: 1000;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
 
+        .message.success {
+            background-color: #4CAF50;
+        }
+
+        .message.error {
+            background-color: #f44336;
+        }
+        .btn {
+            margin-top: 15px;
+            width: 100%;
+        }
+
+        form + form {
+            margin-top: 20px;
+        }
         .buttons-container {
             display: flex;
             justify-content: space-between;
