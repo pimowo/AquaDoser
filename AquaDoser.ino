@@ -46,16 +46,16 @@ struct CalibrationHistory {
 
 // Struktura dla pojedynczej pompy
 struct PumpConfig {
-  bool enabled;                        // czy pompa jest włączona w harmonogramie
-  char name[32];                       // nazwa pompy (max 31 znaków + null terminator)
-  uint8_t dosage;                      // dawka w ml
-  float calibration;                   // kalibracja (ml/min)
-  uint8_t pcf8574_pin;                 // numer pinu na PCF8574
-  uint8_t hour;                        // godzina dozowania
-  uint8_t minute;                      // minuta dozowania
-  uint8_t weekDays;                    // dni tygodnia (bitmapa: 0b0PWTŚCPSN)
-  CalibrationHistory lastCalibration;  // nowe pole
-};
+    char name[32];
+    bool enabled;
+    float calibration;
+    float dosage;
+    uint8_t hour;
+    uint8_t minute;
+    uint8_t weekDays;
+    uint8_t pcf8574_pin;
+    CalibrationData lastCalibration;
+} __attribute__((packed));
 
 // Konfiguracja
 
@@ -66,24 +66,9 @@ struct Config {
     char mqtt_user[40];
     char mqtt_password[40];
     bool soundEnabled;
-    struct {
-        char name[32];
-        bool enabled;
-        float calibration;
-        float dosage;
-        uint8_t hour;
-        uint8_t minute;
-        uint8_t weekDays;
-        uint8_t pcf8574_pin;
-        struct {
-            time_t timestamp;
-            float volume;
-            uint16_t time;
-            float flowRate;
-        } lastCalibration;
-    } pumps[NUMBER_OF_PUMPS];
+    PumpConfig pumps[NUMBER_OF_PUMPS];
     uint8_t checksum;
-};
+} __attribute__((packed));
 
 struct PumpCalibration {
     time_t timestamp;
@@ -91,6 +76,13 @@ struct PumpCalibration {
     uint16_t time;
     float flowRate;
 };
+
+struct CalibrationData {
+    time_t timestamp;
+    float volume;
+    uint16_t time;
+    float flowRate;
+} __attribute__((packed));
 
 struct Pump {
     char name[32];
@@ -1384,74 +1376,109 @@ bool validateConfigValues() {
 // }
 
 void handleSave() {
-  if (server.method() != HTTP_POST) {
-    server.send(405, "text/plain", "Method Not Allowed");
-    return;
-  }
-
-  // Odpowiedz najpierw klientowi, żeby uniknąć timeout'u
-  server.send(200, "text/plain", "OK");
-  delay(100); // Krótkie opóźnienie, żeby odpowiedź dotarła
-
-  // Zapisuj konfigurację po kawałku
-  bool success = true;
-
-  // MQTT
-  if (success) {
-    strlcpy(config.mqtt_server, server.arg("mqtt_server").c_str(), sizeof(config.mqtt_server));
-    config.mqtt_port = server.arg("mqtt_port").toInt();
-    strlcpy(config.mqtt_user, server.arg("mqtt_user").c_str(), sizeof(config.mqtt_user));
-    strlcpy(config.mqtt_password, server.arg("mqtt_password").c_str(), sizeof(config.mqtt_password));
-    
-    success = saveConfig();
-    if (!success) {
-      String errorMsg = "save:error:Błąd zapisu konfiguracji MQTT";
-      webSocket.broadcastTXT(errorMsg);
-      return;
-    }
-  }
-
-  // Pompy - zapisujemy każdą osobno
-  for (int i = 0; i < NUMBER_OF_PUMPS && success; i++) {
-    // Zapisz podstawowe ustawienia pompy
-    String pumpName = server.arg("p" + String(i) + "_name");
-    strlcpy(config.pumps[i].name, pumpName.c_str(), sizeof(config.pumps[i].name));
-    config.pumps[i].enabled = server.hasArg("p" + String(i) + "_enabled");
-    config.pumps[i].calibration = server.arg("p" + String(i) + "_calibration").toFloat();
-    config.pumps[i].dosage = server.arg("p" + String(i) + "_dosage").toInt();
-    
-    // Zapisz harmonogram
-    config.pumps[i].hour = server.arg("p" + String(i) + "_hour").toInt();
-    config.pumps[i].minute = server.arg("p" + String(i) + "_minute").toInt();
-    
-    // Dni tygodnia
-    uint8_t weekDays = 0;
-    for (int day = 0; day < 7; day++) {
-      if (server.hasArg("p" + String(i) + "_day" + String(day))) {
-        weekDays |= (1 << day);
-      }
-    }
-    config.pumps[i].weekDays = weekDays;
-
-    // Aktualizuj stan LED-ów
-    updatePumpState(i, config.pumps[i].enabled);
-
-    // Zapisz po każdej pompie
-    success = saveConfig();
-    if (!success) {
-      String errorMsg = "save:error:Błąd zapisu konfiguracji pompy " + String(i + 1);
-      webSocket.broadcastTXT(errorMsg);
-      return;
+    if (server.method() != HTTP_POST) {
+        server.send(405, "text/plain", "Method Not Allowed");
+        return;
     }
 
-    // Daj czas watchdogowi
+    // Odpowiedz klientowi od razu
+    server.send(200, "text/plain", "OK");
     yield();
-  }
 
-  if (success) {
-    String successMsg = "save:success:Zapisano ustawienia";
-    webSocket.broadcastTXT(successMsg);
-  }
+    // Zaczynamy od kopii aktualnej konfiguracji
+    static Config newConfig;
+    memcpy(&newConfig, &config, sizeof(Config));
+
+    // MQTT
+    if (server.hasArg("mqtt_server")) {
+        memset(newConfig.mqtt_server, 0, sizeof(newConfig.mqtt_server));
+        strlcpy(newConfig.mqtt_server, server.arg("mqtt_server").c_str(), sizeof(newConfig.mqtt_server));
+    }
+    if (server.hasArg("mqtt_port")) {
+        newConfig.mqtt_port = server.arg("mqtt_port").toInt();
+    }
+    if (server.hasArg("mqtt_user")) {
+        memset(newConfig.mqtt_user, 0, sizeof(newConfig.mqtt_user));
+        strlcpy(newConfig.mqtt_user, server.arg("mqtt_user").c_str(), sizeof(newConfig.mqtt_user));
+    }
+    if (server.hasArg("mqtt_password")) {
+        memset(newConfig.mqtt_password, 0, sizeof(newConfig.mqtt_password));
+        strlcpy(newConfig.mqtt_password, server.arg("mqtt_password").c_str(), sizeof(newConfig.mqtt_password));
+    }
+    yield();
+
+    // Pompy
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        if (server.hasArg("p" + String(i) + "_name")) {
+            memset(newConfig.pumps[i].name, 0, sizeof(newConfig.pumps[i].name));
+            strlcpy(newConfig.pumps[i].name, server.arg("p" + String(i) + "_name").c_str(), sizeof(newConfig.pumps[i].name));
+        }
+        
+        newConfig.pumps[i].enabled = server.hasArg("p" + String(i) + "_enabled");
+        
+        String cal = server.arg("p" + String(i) + "_calibration");
+        if (cal.length() > 0) {
+            newConfig.pumps[i].calibration = cal.toFloat();
+        }
+        
+        String dos = server.arg("p" + String(i) + "_dosage");
+        if (dos.length() > 0) {
+            newConfig.pumps[i].dosage = dos.toFloat();
+        }
+
+        String hour = server.arg("p" + String(i) + "_hour");
+        if (hour.length() > 0) {
+            newConfig.pumps[i].hour = constrain(hour.toInt(), 0, 23);
+        }
+
+        String minute = server.arg("p" + String(i) + "_minute");
+        if (minute.length() > 0) {
+            newConfig.pumps[i].minute = constrain(minute.toInt(), 0, 59);
+        }
+
+        uint8_t weekDays = 0;
+        for (int day = 0; day < 7; day++) {
+            if (server.hasArg("p" + String(i) + "_day" + String(day))) {
+                weekDays |= (1 << day);
+            }
+        }
+        newConfig.pumps[i].weekDays = weekDays;
+        
+        // Zachowujemy ostatnią kalibrację z obecnej konfiguracji
+        newConfig.pumps[i].lastCalibration = config.pumps[i].lastCalibration;
+        
+        yield();
+    }
+
+    // Zachowujemy stan dźwięku
+    newConfig.soundEnabled = config.soundEnabled;
+
+    // Zapisz do EEPROM
+    EEPROM.begin(sizeof(Config));
+    newConfig.checksum = calculateChecksum(newConfig);
+    
+    uint8_t *p = (uint8_t*)&newConfig;
+    for (size_t i = 0; i < sizeof(Config); i++) {
+        EEPROM.write(i, p[i]);
+        if (i % 32 == 0) yield();
+    }
+
+    if (EEPROM.commit()) {
+        memcpy(&config, &newConfig, sizeof(Config));
+        String msg = "save:success:Zapisano ustawienia";
+        webSocket.broadcastTXT(msg);
+
+        // Aktualizuj stany LED
+        for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+            updatePumpState(i, config.pumps[i].enabled);
+        }
+    } else {
+        String msg = "save:error:Błąd zapisu konfiguracji";
+        webSocket.broadcastTXT(msg);
+    }
+    
+    EEPROM.end();
+    yield();
 }
 
 // Obsługa aktualizacji oprogramowania przez HTTP
