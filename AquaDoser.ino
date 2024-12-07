@@ -35,6 +35,9 @@
 // Struktury konfiguracyjne i statusowe
 
 const uint8_t NUMBER_OF_PUMPS = 8;  // Ilość pomp
+// Globalne zmienne
+PumpState pumpStates[NUMBER_OF_PUMPS];
+uint8_t pumpStateByte = 0; // Byte do przechowywania stanu wszystkich pomp
 
 struct PumpSettings {
     byte status;     // 0 - wyłączona, 1 - włączona
@@ -48,7 +51,7 @@ struct PumpSettings {
     char name[32];   // nazwa pompy
 };
 
-// Zmienne do śledzenia stanu pomp
+// Stan pracy pompy
 struct PumpState {
     bool isRunning;
     unsigned long startTime;
@@ -440,43 +443,63 @@ void playConfirmationSound() {
 
 // ** FUNKCJE ALARMÓW I STEROWANIA POMPĄ **
 
-// Włączanie/wyłączanie pojedynczej pompy
+// Funkcja do sterowania pompą
 void setPump(byte pumpIndex, bool state) {
+    if (pumpIndex >= NUMBER_OF_PUMPS) return;
+    
     if (state) {
-        pumpStates |= (1 << pumpIndex);
+        pumpStateByte |= (1 << pumpIndex);  // Ustaw bit
     } else {
-        pumpStates &= ~(1 << pumpIndex);
+        pumpStateByte &= ~(1 << pumpIndex); // Wyczyść bit
     }
-    for (int i = 0; i < 8; i++) {
-        pcf.digitalWrite(i, !(pumpStates & (1 << i)));
+    
+    // PCF8574 ma odwróconą logikę (LOW = włączone)
+    for (uint8_t i = 0; i < 8; i++) {
+        bool pinState = !(pumpStateByte & (1 << i));
+        pcf8574.digitalWrite(i, pinState);
     }
 }
 
-// Dozowanie dla danej pompy
+// Funkcja do rozpoczęcia dozowania
 void startDosing(byte pumpIndex) {
-    if (!pumpStates[pumpIndex].isRunning) {
-        float volume = config.pumps[pumpIndex].volume + (config.pumps[pumpIndex].volumeDec * 0.1);
-        float flow = config.pumps[pumpIndex].flow + (config.pumps[pumpIndex].flowDec * 0.1);
-        float dosingTime = (volume / flow) * 60 * 1000; // czas w milisekundach
-        
-        pumpStates[pumpIndex].isRunning = true;
-        pumpStates[pumpIndex].startTime = millis();
-        pumpStates[pumpIndex].duration = (unsigned long)dosingTime;
-        
-        setPump(pumpIndex, true);
+    if (pumpIndex >= NUMBER_OF_PUMPS) return;
+    if (pumpStates[pumpIndex].isRunning) return;
+    
+    float volume = config.pumps[pumpIndex].volume;
+    float flow = config.pumps[pumpIndex].flow;
+    float dosingTime = (volume / flow) * 60 * 1000; // czas w ms
+    
+    pumpStates[pumpIndex].isRunning = true;
+    pumpStates[pumpIndex].startTime = millis();
+    pumpStates[pumpIndex].duration = (unsigned long)dosingTime;
+    
+    setPump(pumpIndex, true);
+    setLEDDosing(pumpIndex);
+}
+
+// Funkcja do zatrzymania dozowania
+void stopDosing(byte pumpIndex) {
+    if (pumpIndex >= NUMBER_OF_PUMPS) return;
+    
+    setPump(pumpIndex, false);
+    pumpStates[pumpIndex].isRunning = false;
+    
+    // Przywróć odpowiedni kolor LED
+    if (serviceMode) {
+        setLEDService(pumpIndex);
+    } else {
+        config.pumps[pumpIndex].status ? setLEDActive(pumpIndex) : setLEDInactive(pumpIndex);
     }
 }
 
-// Funkcja do sprawdzania i aktualizacji stanu pomp
+// Aktualizacja stanu pomp
 void updatePumps() {
     unsigned long currentTime = millis();
     
     for (byte i = 0; i < NUMBER_OF_PUMPS; i++) {
         if (pumpStates[i].isRunning) {
-            // Sprawdź czy czas dozowania minął
             if (currentTime - pumpStates[i].startTime >= pumpStates[i].duration) {
-                setPump(i, false);
-                pumpStates[i].isRunning = false;
+                stopDosing(i);
             }
         }
     }
@@ -682,19 +705,35 @@ void setupHA() {
 
 // Konfiguracja pinów wejścia/wyjścia
 void setupPin() {
-  pinMode(BUTTON_PIN, INPUT_PULLUP);  // Wejście z podciąganiem - przycisk
+    pinMode(BUTTON_PIN, INPUT_PULLUP);  // Wejście z podciąganiem - przycisk
 
-  pinMode(BUZZER_PIN, OUTPUT);    // Wyjście - buzzer
-  digitalWrite(BUZZER_PIN, LOW);  // Wyłączenie buzzera
+    pinMode(BUZZER_PIN, OUTPUT);    // Wyjście - buzzer
+    digitalWrite(BUZZER_PIN, LOW);  // Wyłączenie buzzera
 
-  pcf8574.begin();
+    pcf8574.begin();
 
-  // Ustaw wszystkie piny jako wyjścia
-  for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-    pcf8574.pinMode(i, OUTPUT);
-    pcf8574.digitalWrite(i, HIGH);  // HIGH = wyłączone (logika ujemna)
-  }
+    initializePCF();
+    initializeLEDs();
+    
+    // Przywróć stany pomp z konfiguracji
+    for (uint8_t i = 0; i < NUMBER_OF_PUMPS; i++) {
+        setPump(i, false); // Na początku wszystkie pompy wyłączone
+        config.pumps[i].status ? setLEDActive(i) : setLEDInactive(i);
+    }
 }
+
+    // Inicjalizacja PCF8574
+    void initializePCF() {
+        if (!pcf8574.begin()) {
+            Serial.println("Could not initialize PCF8574");
+            return;
+        }
+        
+        // Ustaw wszystkie piny jako wyjścia w stanie wysokim (pompy wyłączone)
+        for (uint8_t i = 0; i < 8; i++) {
+            pcf8574.digitalWrite(i, HIGH);
+        }
+    }
 
 // Efekt powitalny
 void playWelcomeEffect() {
@@ -1399,28 +1438,25 @@ void loop() {
     pumpStates[i]->setState(pumpState);
   }
 
-    // Sprawdzaj pompy co sekundę bez blokowania
-    if (currentMillis - lastCheckTime >= 1000) {
-        DateTime now = rtc.now();
-        
-        // Sprawdź każdą pompę
-        for (byte i = 0; i < NUMBER_OF_PUMPS; i++) {
-            // Nie rozpoczynaj nowego dozowania jeśli pompa już pracuje
-            if (!pumpStates[i].isRunning && 
-                config.pumps[i].status && 
-                isDayEnabled(config.pumps[i].days, now.dayOfTheWeek()) &&
-                now.hour() == config.pumps[i].hour && 
-                now.minute() == config.pumps[i].minute && 
-                now.second() == 0) {
-                
-                startDosing(i);
+    if (!serviceMode) {
+        if (currentMillis - lastCheckTime >= 1000) {
+            DateTime now = rtc.now();
+            
+            for (byte i = 0; i < NUMBER_OF_PUMPS; i++) {
+                if (!pumpStates[i].isRunning && 
+                    config.pumps[i].status && 
+                    isDayEnabled(config.pumps[i].days, now.dayOfTheWeek()) &&
+                    now.hour() == config.pumps[i].hour && 
+                    now.minute() == config.pumps[i].minute && 
+                    now.second() == 0) {
+                    
+                    startDosing(i);
+                }
             }
+            lastCheckTime = currentMillis;
         }
-        
-        lastCheckTime = currentMillis;
     }
     
-    // Aktualizuj stan pomp
     updatePumps();
 
   if (currentMillis - timers.lastOTACheck >= OTA_CHECK_INTERVAL) {
