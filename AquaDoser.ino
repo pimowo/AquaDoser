@@ -33,68 +33,37 @@
 // 0x20 pcf8574
 
 // Struktury konfiguracyjne i statusowe
-#pragma pack(1)  // Wymuszone wyrównanie do 1 bajta
 
 const uint8_t NUMBER_OF_PUMPS = 8;  // Ilość pomp
 
-// Dodaj na początku pliku, po #include
-struct CalibrationData {
-    time_t timestamp;
-    float volume;
-    uint16_t time;
-    float flowRate;
-} __attribute__((packed));
+struct PumpSettings {
+    byte status;     // 0 - wyłączona, 1 - włączona
+    byte hour;       // godzina dozowania (0-23)
+    byte minute;     // minuta dozowania (0-59)
+    byte flow;       // przepływ w ml/min (wartość całkowita)
+    byte flowDec;    // część dziesiętna przepływu (0-9)
+    byte volume;     // objętość w ml (wartość całkowita)
+    byte volumeDec;  // część dziesiętna objętości (0-9)
+    byte days;       // bity dni tygodnia (bit 0 = niedziela, bit 6 = sobota)
+    char name[32];   // nazwa pompy
+};
 
-struct PumpConfig {
-    char name[32];
-    bool enabled;
-    float calibration;
-    float dosage;
-    uint8_t hour;
-    uint8_t minute;
-    uint8_t weekDays;
-    uint8_t pcf8574_pin;
-    CalibrationData lastCalibration;
-} __attribute__((packed));
+// Zmienne do śledzenia stanu pomp
+struct PumpState {
+    bool isRunning;
+    unsigned long startTime;
+    unsigned long duration;
+};
 
+// Główna struktura konfiguracji
 struct Config {
     char mqtt_server[40];
     uint16_t mqtt_port;
     char mqtt_user[40];
     char mqtt_password[40];
     bool soundEnabled;
-    PumpConfig pumps[NUMBER_OF_PUMPS];
-    uint8_t checksum;
-} __attribute__((packed));
-
-// Usuń lub zakomentuj poprzednie deklaracje struktur w kodzie
-
-struct PumpCalibration {
-    time_t timestamp;
-    float volume;
-    uint16_t time;
-    float flowRate;
+    PumpSettings pumps[NUMBER_OF_PUMPS];
 };
-
-struct Pump {
-    char name[32];
-    bool enabled;
-    float calibration;
-    float dosage;
-    uint8_t hour;
-    uint8_t minute;
-    uint8_t weekDays;
-    uint8_t pcf8574_pin;
-    PumpCalibration lastCalibration;
-};
-
-struct PumpStatus {
-    bool isRunning;
-    unsigned long lastDose;
-    float totalDosed;
-};
-
-#pragma pack(1)
 
 // Struktura do przechowywania różnych stanów i parametrów systemu
 struct Status {
@@ -194,21 +163,15 @@ PCF8574 pcf8574(0x20);
 // Definicja paska LED
 Adafruit_NeoPixel strip(NUMBER_OF_PUMPS, LED_PIN, NEO_GRB + NEO_KHZ800);
 
-#define LED_UPDATE_INTERVAL 50  // ms
-#define PULSE_MAX_BRIGHTNESS 255
-#define PULSE_MIN_BRIGHTNESS 15
+// Kolory
+const uint32_t COLOR_INACTIVE = strip.Color(255, 0, 0);    // Czerwony - pompa nieaktywna
+const uint32_t COLOR_ACTIVE = strip.Color(0, 255, 0);      // Zielony - pompa aktywna
+const uint32_t COLOR_DOSING = strip.Color(0, 0, 255);      // Niebieski - dozowanie
+const uint32_t COLOR_SERVICE = strip.Color(255, 165, 0);   // Pomarańczowy - tryb serwisowy
+const uint32_t COLOR_CALIBRATION = strip.Color(255, 0, 255); // Fioletowy - kalibracja
 
-#define COLOR_OFF 0xFF0000      // Czerwony - pompa wyłączona
-#define COLOR_ON 0x00FF00       // Zielony - pompa włączona
-#define COLOR_WORKING 0x0000FF  // Niebieski - pompa pracuje
-#define COLOR_SERVICE 0xFFFF00  // Żółty - tryb serwisowy
-
-#define COLOR_RAINBOW_1 strip.Color(255, 0, 0)    // Czerwony
-#define COLOR_RAINBOW_2 strip.Color(255, 127, 0)  // Pomarańczowy
-#define COLOR_RAINBOW_3 strip.Color(255, 255, 0)  // Żółty
-#define COLOR_RAINBOW_4 strip.Color(0, 255, 0)    // Zielony
-#define COLOR_RAINBOW_5 strip.Color(0, 0, 255)    // Niebieski
-#define COLOR_RAINBOW_6 strip.Color(139, 0, 255)  // Fioletowy
+// Stan LED-ów dla każdej pompy
+uint32_t pumpColors[NUMBER_OF_PUMPS];
 
 // ** USTAWIENIA CZASOWE **
 
@@ -253,7 +216,7 @@ const unsigned long NTP_SYNC_INTERVAL = 24UL * 60UL * 60UL * 1000UL;  // 24h w m
 #endif
 
 // Zmienna przechowująca wersję oprogramowania
-const char* SOFTWARE_VERSION = "6.12.24";  // Definiowanie wersji oprogramowania
+const char* SOFTWARE_VERSION = "7.12.24";  // Definiowanie wersji oprogramowania
 
 // Globalne instancje struktur
 //CustomTimeStatus currentStatus = getCustomTimeStatus();
@@ -285,48 +248,6 @@ HASensor* calibrationSensors[NUMBER_OF_PUMPS];
 HASwitch* pumpSchedules[NUMBER_OF_PUMPS];  // Przełączniki do aktywacji/deaktywacji harmonogramu dla każdej pompy
 HASwitch switchService("service_mode");    // Tryb serwisowy
 HASwitch switchSound("sound_switch");      // Dźwięki systemu
-
-void resetConfig() {
-    Serial.println(F("\nResetowanie konfiguracji:"));
-    memset(&config, 0, sizeof(config));  // Wyzeruj całą strukturę
-    
-    // Ustaw wartości domyślne
-    strlcpy(config.mqtt_server, "localhost", sizeof(config.mqtt_server));
-    config.mqtt_port = 1883;
-    strlcpy(config.mqtt_user, "", sizeof(config.mqtt_user));
-    strlcpy(config.mqtt_password, "", sizeof(config.mqtt_password));
-    config.soundEnabled = true;
-    
-    // Debug - wyświetl wartości domyślne
-    Serial.println(F("Wartości domyślne:"));
-    Serial.print(F("Rozmiar struktury Config: "));
-    Serial.println(sizeof(Config));
-    Serial.print(F("Rozmiar struktury Pump: "));
-    Serial.println(sizeof(Pump));
-    Serial.print(F("MQTT Server: "));
-    Serial.println(config.mqtt_server);
-    Serial.print(F("MQTT Port: "));
-    Serial.println(config.mqtt_port);
-    
-    // Inicjalizacja pomp
-    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-        snprintf(config.pumps[i].name, sizeof(config.pumps[i].name), "Pompa %d", i + 1);
-        config.pumps[i].enabled = false;
-        config.pumps[i].calibration = 100.0;
-        config.pumps[i].dosage = 1.0;
-        config.pumps[i].hour = 12;
-        config.pumps[i].minute = 0;
-        config.pumps[i].weekDays = 0b1111111;
-        
-        Serial.print(F("Pompa "));
-        Serial.print(i + 1);
-        Serial.print(F(": "));
-        Serial.println(config.pumps[i].name);
-    }
-    
-    // Zapisz konfigurację
-    saveConfig();
-}
 
 // ** FILTROWANIE I POMIARY **
 
@@ -370,41 +291,6 @@ void setupRTC() {
         now.year(), now.month(), now.day(),
         now.hour(), now.minute(), now.second());
 }
-
-void saveCalibration(uint8_t pumpId, float volume, uint16_t calibrationTime) {
-  // Oblicz wydajność
-  float mlPerMinute = (volume * 60.0) / calibrationTime;
-
-  // Zapisz dane kalibracji
-  config.pumps[pumpId].lastCalibration.timestamp = now();  // current time from RTC
-  config.pumps[pumpId].lastCalibration.volume = volume;
-  config.pumps[pumpId].lastCalibration.time = calibrationTime;
-  config.pumps[pumpId].lastCalibration.flowRate = mlPerMinute;
-
-  // Zapisz do EEPROM
-  saveConfig();
-
-  // Wyślij potwierdzenie przez WebSocket
-  //webSocket.broadcastTXT("calibration_saved:" + String(pumpId));
-  String wiadomosc = "calibration_saved:" + String(pumpId);
-  webSocket.broadcastTXT(wiadomosc);
-
-  // Publikuj nową datę
-  publishCalibrationDate(pumpId);
-}
-
-// Funkcja do aktualizacji daty kalibracji
-void publishCalibrationDate(uint8_t pumpId) {
-  if (config.pumps[pumpId].lastCalibration.timestamp > 0) {
-    char dateStr[11];
-    time_t ts = config.pumps[pumpId].lastCalibration.timestamp;
-    strftime(dateStr, sizeof(dateStr), "%Y-%m-%d", localtime(&ts));
-
-    calibrationSensors[pumpId]->setValue(dateStr);
-  }
-}
-
-// ** FUNKCJE I METODY SYSTEMOWE **
 
 // Zegar
 bool initRTC() {
@@ -450,83 +336,6 @@ String getFormattedDateTime() {
     return String(buf);
 }
 
-// Funkcje pomocnicze dla LED
-uint32_t interpolateColor(uint32_t color1, uint32_t color2, float ratio) {
-  uint8_t r1, g1, b1, r2, g2, b2;
-  colorToRGB(color1, r1, g1, b1);
-  colorToRGB(color2, r2, g2, b2);
-
-  uint8_t r = r1 + (r2 - r1) * ratio;
-  uint8_t g = g1 + (g2 - g1) * ratio;
-  uint8_t b = b1 + (b2 - b1) * ratio;
-
-  return strip.Color(r, g, b);
-}
-
-void colorToRGB(uint32_t color, uint8_t& r, uint8_t& g, uint8_t& b) {
-  r = (color >> 16) & 0xFF;
-  g = (color >> 8) & 0xFF;
-  b = color & 0xFF;
-}
-
-void initializeLEDs() {
-  strip.begin();
-  
-  // Inicjalizacja wszystkich LED-ów
-  for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-    ledStates[i].brightness = PULSE_MIN_BRIGHTNESS;
-    ledStates[i].pulseDirection = 1;
-    ledStates[i].pulsing = false;
-    
-    // Ustaw kolor na podstawie stanu pompy
-    if (pumpEnabled[i]) {
-      ledStates[i].currentColor = strip.Color(0, 255, 0);  // Zielony - pompa włączona
-    } else {
-      ledStates[i].currentColor = strip.Color(255, 0, 0);  // Czerwony - pompa wyłączona
-    }
-    ledStates[i].targetColor = ledStates[i].currentColor;
-  }
-  
-  strip.show(); // Wyświetl kolory
-}
-
-void updateLEDs() {
-  unsigned long currentMillis = millis();
-  if (currentMillis - lastLedUpdate < LED_UPDATE_INTERVAL) {
-    return;
-  }
-  lastLedUpdate = currentMillis;
-
-  for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-    LEDState& state = ledStates[i];
-
-    // Aktualizacja jasności dla efektu pulsowania
-    if (state.pulseUp) {
-      state.brightness += 5;
-      if (state.brightness >= PULSE_MAX_BRIGHTNESS) {
-        state.brightness = PULSE_MAX_BRIGHTNESS;
-        state.pulseUp = false;
-      }
-    } else {
-      state.brightness -= 5;
-      if (state.brightness <= PULSE_MIN_BRIGHTNESS) {
-        state.brightness = PULSE_MIN_BRIGHTNESS;
-        state.pulseUp = true;
-      }
-    }
-
-    // Zastosuj jasność do koloru
-    uint8_t r, g, b;
-    colorToRGB(state.currentColor, r, g, b);
-    float brightnessRatio = state.brightness / 255.0;
-    strip.setPixelColor(i, strip.Color(
-                             r * brightnessRatio,
-                             g * brightnessRatio,
-                             b * brightnessRatio));
-  }
-  strip.show();
-}
-
 // Reset do ustawień fabrycznych
 void factoryReset() {
   WiFi.disconnect(true);  // true = kasuj zapisane ustawienia
@@ -570,120 +379,47 @@ void handleMillisOverflow() {
   }
 }
 
-// Ustawienia domyślne konfiguracji
-void setDefaultConfig() {
-  // Podstawowa konfiguracja
-  //config.version = CONFIG_VERSION;        // Ustawienie wersji konfiguracji
-  config.soundEnabled = true;  // Włączenie powiadomień dźwiękowych
-
-  // MQTT
-  strlcpy(config.mqtt_server, "", sizeof(config.mqtt_server));
-  config.mqtt_port = 1883;
-  strlcpy(config.mqtt_user, "", sizeof(config.mqtt_user));
-  strlcpy(config.mqtt_password, "", sizeof(config.mqtt_password));
-
-  // Domyślna konfiguracja pomp
-  for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-    config.pumps[i].enabled = false;  // Pompy wyłączone domyślnie
-    config.pumps[i].dosage = 10;      // Domyślna dawka 10ml
-    config.pumps[i].hour = 8;         // Domyślna godzina dozowania 8:00
-    config.pumps[i].minute = 0;       // Minuta 0
-  }
-
-  // Finalizacja
-  config.checksum = calculateChecksum(config);  // Obliczenie sumy kontrolnej
-  saveConfig();                                 // Zapis do EEPROM
-
-  AQUA_DEBUG_PRINT(F("Utworzono domyślną konfigurację"));
-}
-
 // Ładowanie konfiguracji z pamięci EEPROM
-bool loadConfig() {
-  EEPROM.begin(sizeof(Config));
-
-  // Debug - pokaż surowe dane przed wczytaniem
-  // Serial.println(F("\nSurowe dane EEPROM:"));
-  // for (size_t i = 0; i < sizeof(Config); i++) {
-  //   if (i % 16 == 0) {
-  //     Serial.printf("\n%04X: ", i);
-  //   }
-  //   Serial.printf("%02X ", EEPROM.read(i));
-  // }
-  // Serial.println();
-
-  // Wczytaj konfigurację
-  EEPROM.get(0, config);
-
-  // Debug - wyświetl wartości
-  Serial.println(F("\nWczytane dane z EEPROM:"));
-  Serial.print(F("Rozmiar struktury Config: "));
-  Serial.println(sizeof(Config));
-  Serial.print(F("MQTT Server: "));
-  Serial.println(config.mqtt_server);
-  Serial.print(F("MQTT Port: "));
-  Serial.println(config.mqtt_port);
-  Serial.print(F("MQTT User: "));
-  Serial.println(config.mqtt_user);
-
-  // Oblicz checksum
-  uint8_t checksum = 0;
-  uint8_t* p = (uint8_t*)&config;
-  for (unsigned int i = 0; i < sizeof(Config) - 1; i++) {
-    checksum ^= p[i];
-  }
-
-  Serial.print(F("Checksum stored: 0x"));
-  Serial.println(config.checksum, HEX);
-  Serial.print(F("Checksum calculated: 0x"));
-  Serial.println(checksum, HEX);
-
-  // Sprawdź czy dane są poprawne
-  if (checksum != config.checksum || config.mqtt_port < 0 || config.mqtt_port > 65535) {
-    Serial.println(F("Niepoprawny checksum lub dane"));
-    return false;
-  }
-
-  Serial.println(F("Konfiguracja wczytana pomyślnie"));
-  return true;
+void loadConfig() {
+    EEPROM.begin(512);
+    EEPROM.get(0, config);
+    EEPROM.end();
+    
+    // Podstawowa walidacja - jeśli dane są nieprawidłowe, załaduj domyślne
+    if (config.mqtt_port > 65535) {
+        setDefaultConfig();
+        saveConfig();
+    }
 }
 
 // Zapis aktualnej konfiguracji do pamięci EEPROM
-bool saveConfig() {
-    // Oblicz checksum przed zapisem
-    config.checksum = calculateChecksum(config);
-    
-    // Zapisz konfigurację
+void saveConfig() {
+    EEPROM.begin(512);
     EEPROM.put(0, config);
-    bool success = EEPROM.commit();
-    
-    if (success) {
-        // Weryfikacja zapisanych danych
-        Config verifyConfig;
-        EEPROM.get(0, verifyConfig);
-        
-        if (verifyConfig.checksum != config.checksum) {
-            Serial.println("Błąd weryfikacji checksum po zapisie!");
-            return false;
-        }
-        
-        Serial.println("Konfiguracja zapisana i zweryfikowana pomyślnie");
-        Serial.print("Zapisany checksum: 0x");
-        Serial.println(verifyConfig.checksum, HEX);
-    } else {
-        Serial.println("Błąd podczas zapisu konfiguracji!");
-    }
-    
-    return success;
+    EEPROM.commit();
+    EEPROM.end();
 }
 
-// Oblicz sumę kontrolną dla danej konfiguracji
-char calculateChecksum(const Config& cfg) {
-  char sum = 0;
-  const char* ptr = (const char*)&cfg;
-  for (size_t i = 0; i < sizeof(Config) - 1; i++) {
-    sum ^= *ptr++;
-  }
-  return sum;
+void setDefaultConfig() {
+    // Domyślne ustawienia MQTT
+    strlcpy(config.mqtt_server, "", sizeof(config.mqtt_server));
+    config.mqtt_port = 1883;
+    strlcpy(config.mqtt_user, "", sizeof(config.mqtt_user));
+    strlcpy(config.mqtt_password, "", sizeof(config.mqtt_password));
+    config.soundEnabled = true;
+    
+    // Domyślne ustawienia pomp
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        config.pumps[i].status = 0;
+        config.pumps[i].hour = 8;
+        config.pumps[i].minute = 0;
+        config.pumps[i].flow = 0;
+        config.pumps[i].flowDec = 0;
+        config.pumps[i].volume = 0;
+        config.pumps[i].volumeDec = 0;
+        config.pumps[i].days = 0;
+        sprintf(config.pumps[i].name, "Pompa %d", i+1);
+    }
 }
 
 // ** FUNKCJE DŹWIĘKOWE **
@@ -704,79 +440,170 @@ void playConfirmationSound() {
 
 // ** FUNKCJE ALARMÓW I STEROWANIA POMPĄ **
 
-// Inicjalizacja PCF8574
-void setupPump() {
-  for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-    pcf8574.digitalWrite(config.pumps[i].pcf8574_pin, HIGH);  // HIGH = pompa wyłączona
-    status.pumps[i].isRunning = false;
-    status.pumps[i].lastDose = 0;
-    status.pumps[i].totalDosed = 0;
-    
-    // Dodaj aktualizację stanu LED-ów na podstawie konfiguracji
-    pumpEnabled[i] = config.pumps[i].enabled;  // Ustaw stan na podstawie konfiguracji
-    if (pumpEnabled[i]) {
-      ledStates[i].currentColor = strip.Color(0, 255, 0); // Zielony dla włączonej pompy
+// Włączanie/wyłączanie pojedynczej pompy
+void setPump(byte pumpIndex, bool state) {
+    if (state) {
+        pumpStates |= (1 << pumpIndex);
     } else {
-      ledStates[i].currentColor = strip.Color(255, 0, 0); // Czerwony dla wyłączonej pompy
+        pumpStates &= ~(1 << pumpIndex);
     }
-  }
-  strip.show(); // Wyświetl zaktualizowane kolory
+    for (int i = 0; i < 8; i++) {
+        pcf.digitalWrite(i, !(pumpStates & (1 << i)));
+    }
 }
 
-// Włączenie pompy
-void turnOnPump(uint8_t pumpIndex) {
-  if (pumpIndex < NUMBER_OF_PUMPS) {
-#if DEBUG
-    AQUA_DEBUG_PRINTF("Turning ON pump %d\n", pumpIndex);
-#endif
-    pcf8574.digitalWrite(config.pumps[pumpIndex].pcf8574_pin, LOW);  // LOW = pompa włączona
-    status.pumps[pumpIndex].isRunning = true;
-    updatePumpState(pumpIndex, true);
-  }
+// Dozowanie dla danej pompy
+void startDosing(byte pumpIndex) {
+    if (!pumpStates[pumpIndex].isRunning) {
+        float volume = config.pumps[pumpIndex].volume + (config.pumps[pumpIndex].volumeDec * 0.1);
+        float flow = config.pumps[pumpIndex].flow + (config.pumps[pumpIndex].flowDec * 0.1);
+        float dosingTime = (volume / flow) * 60 * 1000; // czas w milisekundach
+        
+        pumpStates[pumpIndex].isRunning = true;
+        pumpStates[pumpIndex].startTime = millis();
+        pumpStates[pumpIndex].duration = (unsigned long)dosingTime;
+        
+        setPump(pumpIndex, true);
+    }
 }
 
-// Dozowanie określonej ilości
-void dosePump(uint8_t pumpIndex) {
-  if (!config.pumps[pumpIndex].enabled) return;
-
-  float doseTime = (config.pumps[pumpIndex].dosage / config.pumps[pumpIndex].calibration) * 60000;  // czas w ms
-
-  turnOnPump(pumpIndex);
-  delay(doseTime);
-  turnOffPump(pumpIndex);
-
-  status.pumps[pumpIndex].lastDose = millis();
-  status.pumps[pumpIndex].totalDosed += config.pumps[pumpIndex].dosage;
-
-  // Aktualizacja MQTT
-  updateHAState(pumpIndex);
+// Funkcja do sprawdzania i aktualizacji stanu pomp
+void updatePumps() {
+    unsigned long currentTime = millis();
+    
+    for (byte i = 0; i < NUMBER_OF_PUMPS; i++) {
+        if (pumpStates[i].isRunning) {
+            // Sprawdź czy czas dozowania minął
+            if (currentTime - pumpStates[i].startTime >= pumpStates[i].duration) {
+                setPump(i, false);
+                pumpStates[i].isRunning = false;
+            }
+        }
+    }
 }
 
-// Wyłączenie pompy
-void turnOffPump(uint8_t pumpIndex) {
-  if (pumpIndex < NUMBER_OF_PUMPS) {
-#if DEBUG
-    AQUA_DEBUG_PRINTF("Turning OFF pump %d\n", pumpIndex);
-#endif
-    pcf8574.digitalWrite(config.pumps[pumpIndex].pcf8574_pin, HIGH);  // HIGH = pompa wyłączona
-    status.pumps[pumpIndex].isRunning = false;
-    updatePumpState(pumpIndex, false);
-  }
+// Przy zmianie stanu pompy
+void updatePumpStatus(byte pumpIndex, bool enabled) {
+    config.pumps[pumpIndex].status = enabled;
+    if (enabled) {
+        setLEDActive(pumpIndex);
+    } else {
+        setLEDInactive(pumpIndex);
+    }
 }
 
-// Bezpieczne wyłączenie wszystkich pomp
-void stopAllPumps() {
-  for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-    turnOffPump(i);
-  }
+// Przy rozpoczęciu dozowania
+void startDosing(byte pumpIndex) {
+    if (!pumpStates[pumpIndex].isRunning) {
+        // ... kod dozowania ...
+        setLEDDosing(pumpIndex);
+    }
 }
 
-void testPump(uint8_t pumpId) {
-  // Kod testujący pompę
-  // Na przykład: włącz pompę na 5 sekund
-  digitalWrite(config.pumps[pumpId].pcf8574_pin, HIGH);
-  delay(5000);
-  digitalWrite(config.pumps[pumpId].pcf8574_pin, LOW);
+// Po zakończeniu dozowania
+void stopDosing(byte pumpIndex) {
+    setPump(pumpIndex, false);
+    pumpStates[pumpIndex].isRunning = false;
+    config.pumps[pumpIndex].status ? setLEDActive(pumpIndex) : setLEDInactive(pumpIndex);
+}
+
+void initializeLEDs() {
+    strip.begin();
+    strip.setBrightness(50);
+    
+    // Ustaw początkowe kolory bazując na stanie pomp
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        pumpColors[i] = config.pumps[i].status ? COLOR_ACTIVE : COLOR_INACTIVE;
+        strip.setPixelColor(i, pumpColors[i]);
+    }
+    
+    strip.show();
+}
+
+void updateLEDs() {
+    bool changed = false;
+    
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        uint32_t currentColor = strip.getPixelColor(i);
+        if (currentColor != pumpColors[i]) {
+            strip.setPixelColor(i, pumpColors[i]);
+            changed = true;
+        }
+    }
+    
+    if (changed) {
+        strip.show();
+    }
+}
+
+// Funkcja do ustawiania koloru
+void setPumpLED(uint8_t pumpIndex, uint32_t color) {
+    if (pumpIndex < NUMBER_OF_PUMPS) {
+        pumpColors[pumpIndex] = color;
+    }
+}
+
+// Funkcje pomocnicze dla każdego stanu
+void setLEDInactive(uint8_t pumpIndex) {
+    setPumpLED(pumpIndex, COLOR_INACTIVE);
+}
+
+void setLEDActive(uint8_t pumpIndex) {
+    setPumpLED(pumpIndex, COLOR_ACTIVE);
+}
+
+void setLEDDosing(uint8_t pumpIndex) {
+    setPumpLED(pumpIndex, COLOR_DOSING);
+}
+
+void setLEDService(uint8_t pumpIndex) {
+    setPumpLED(pumpIndex, COLOR_SERVICE);
+}
+
+void setLEDCalibration(uint8_t pumpIndex) {
+    setPumpLED(pumpIndex, COLOR_CALIBRATION);
+}
+
+// Funkcja do ustawiania wszystkich LED-ów w tryb serwisowy
+void setAllLEDsService() {
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        setLEDService(i);
+    }
+}
+
+// Funkcja do przywracania normalnego stanu LED-ów
+void restoreNormalLEDs() {
+    for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
+        if (pumpStates[i].isRunning) {
+            setLEDDosing(i);
+        } else {
+            config.pumps[i].status ? setLEDActive(i) : setLEDInactive(i);
+        }
+    }
+}
+
+// Przy wejściu w tryb serwisowy
+void enterServiceMode() {
+    setAllLEDsService();
+    // ... pozostały kod trybu serwisowego ...
+}
+
+// Przy wyjściu z trybu serwisowego
+void exitServiceMode() {
+    restoreNormalLEDs();
+    // ... pozostały kod wyjścia z trybu serwisowego ...
+}
+
+// Przy rozpoczęciu kalibracji
+void startCalibration(byte pumpIndex) {
+    setLEDCalibration(pumpIndex);
+    // ... kod kalibracji ...
+}
+
+// Po zakończeniu kalibracji
+void stopCalibration(byte pumpIndex) {
+    config.pumps[pumpIndex].status ? setLEDActive(pumpIndex) : setLEDInactive(pumpIndex);
+    // ... pozostały kod zakończenia kalibracji ...
 }
 
 // ** FUNKCJE WI-FI I MQTT **
@@ -1049,173 +876,59 @@ void onServiceSwitchCommand(bool state, HASwitch* sender) {
 }
 
 String getConfigPage() {
-  if (!LittleFS.exists("/index.html")) {
-    return F("Error: index.html not found in LittleFS");
-  }
-
-  File file = LittleFS.open("/index.html", "r");
-  String html = file.readString();
-  file.close();
-
-  // Zastąp placeholdery dla statusu
-  html.replace(F("%MQTT_STATUS%"), client.connected() ? F("Połączony") : F("Rozłączony"));
-  html.replace(F("%MQTT_STATUS_CLASS%"), client.connected() ? F("success") : F("error"));
-  html.replace(F("%SOUND_STATUS%"), config.soundEnabled ? F("Włączony") : F("Wyłączony"));
-  html.replace(F("%SOUND_STATUS_CLASS%"), config.soundEnabled ? F("success") : F("error"));
-  html.replace(F("%SOFTWARE_VERSION%"), SOFTWARE_VERSION);
-  html.replace(F("%CURRENT_TIME%"), getFormattedDateTime());
-
-  String configForms = "";
-
-  // Formularz MQTT
-  configForms += F("<form method='POST' action='/save-mqtt'>"
-                   "<div class='section'>"
-                   "<h2>Konfiguracja MQTT</h2>"
-                   "<table class='config-table'>");
-
-  configForms += F("<tr><td>Serwer</td><td><input type='text' name='mqtt_server' value='");
-  configForms += config.mqtt_server;
-  configForms += F("'></td></tr>");
-
-  configForms += F("<tr><td>Port</td><td><input type='number' name='mqtt_port' value='");
-  configForms += String(config.mqtt_port);
-  configForms += F("'></td></tr>");
-
-  configForms += F("<tr><td>Użytkownik</td><td><input type='text' name='mqtt_user' value='");
-  configForms += config.mqtt_user;
-  configForms += F("'></td></tr>");
-
-  configForms += F("<tr><td>Hasło</td><td><input type='password' name='mqtt_password' value='");
-  configForms += config.mqtt_password;
-  configForms += F("'></td></tr></table>");
-
-  // Przycisk zapisu MQTT
-  configForms += F("<input type='submit' value='Zapisz ustawienia MQTT' class='btn btn-blue'>"
-                   "</div></form>");
-
-  // Formularz pomp
-  configForms += F("<form method='POST' action='/save-pumps'>"
-                   "<div class='section'>"
-                   "<h2>Konfiguracja pomp</h2>");
-
-  // Dla każdej pompy
-  for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-    configForms += F("<div class='pump-section'>"
-                     "<h3>Pompa ");
-    configForms += String(i + 1);
-    configForms += F("</h3>"
-                     "<table class='config-table'>");
-
-    // Nazwa pompy
-    configForms += F("<tr><td>Nazwa</td><td><input type='text' name='p");
-    configForms += String(i);
-    configForms += F("_name' value='");
-    configForms += config.pumps[i].name[0] ? String(config.pumps[i].name) : String("Pompa ") + String(i + 1);
-    configForms += F("'></td></tr>");
-
-    // Aktywna
-    configForms += F("<tr><td>Aktywna</td><td><input type='checkbox' name='p");
-    configForms += String(i);
-    configForms += F("_enabled' ");
-    configForms += config.pumps[i].enabled ? F("checked") : F("");
-    configForms += F("></td></tr>");
-
-    // Kalibracja
-    configForms += F("<tr><td>Kalibracja (ml/min)</td><td><input type='number' step='0.1' name='p");
-    configForms += String(i);
-    configForms += F("_calibration' value='");
-    configForms += String(config.pumps[i].calibration);
-    configForms += F("'></td></tr>");
-
-    // Dozowanie
-    configForms += F("<tr><td>Dozowanie (ml)</td><td><input type='number' name='p");
-    configForms += String(i);
-    configForms += F("_dosage' value='");
-    configForms += String(config.pumps[i].dosage);
-    configForms += F("'></td></tr>");
-
-    // Godzina i minuta
-    configForms += F("<tr><td>Godzina dozowania</td><td><input type='number' min='0' max='23' name='p");
-    configForms += String(i);
-    configForms += F("_hour' value='");
-    configForms += String(config.pumps[i].hour);
-    configForms += F("'></td></tr>");
-
-    configForms += F("<tr><td>Minuta dozowania</td><td><input type='number' min='0' max='59' name='p");
-    configForms += String(i);
-    configForms += F("_minute' value='");
-    configForms += String(config.pumps[i].minute);
-    configForms += F("'></td></tr>");
-
-    // Dni tygodnia
-    configForms += F("<tr><td>Dni tygodnia</td><td class='weekdays'>");
-    const char* days[] = { "Pn", "Wt", "Śr", "Cz", "Pt", "Sb", "Nd" };
-    for (int day = 0; day < 7; day++) {
-      configForms += F("<label><input type='checkbox' name='p");
-      configForms += String(i);
-      configForms += F("_day");
-      configForms += String(day);
-      configForms += F("' ");
-      configForms += (config.pumps[i].weekDays & (1 << day)) ? F("checked") : F("");
-      configForms += F("><span>");
-      configForms += days[day];
-      configForms += F("</span></label>");
+    String html = F("<!DOCTYPE html><html><head><meta charset='UTF-8'>"
+                   "<title>Test</title></head><body>");
+    
+    // Sprawdź index.html
+    html += F("<h2>Checking index.html:</h2>");
+    if (!LittleFS.exists("/index.html")) {
+        html += F("<p style='color: red'>Error: index.html not found!</p>");
+    } else {
+        File file = LittleFS.open("/index.html", "r");
+        html += F("<p style='color: green'>index.html exists - size: ");
+        html += String(file.size());
+        html += F(" bytes</p>");
+        file.close();
     }
-    configForms += F("</td></tr>");
-
-    // Status
-    configForms += F("<tr><td>Status</td><td><span class='pump-status ");
-    configForms += config.pumps[i].enabled ? F("active") : F("inactive");
-    configForms += F("'>");
-    configForms += config.pumps[i].enabled ? F("Aktywna") : F("Nieaktywna");
-    configForms += F("</span></td></tr>");
-
-    // Test pompy
-    configForms += F("<tr><td colspan='2'><button type='button' class='btn btn-blue test-pump' data-pump='");
-    configForms += String(i);
-    configForms += F("'>Test pompy</button></td></tr>");
-
-    configForms += F("</table></div>");
-  }
-
-  // Przycisk zapisu pomp
-  configForms += F("<div class='section'>"
-                   "<input type='submit' value='Zapisz ustawienia pomp' class='btn btn-blue'>"
-                   "</div></form>");
-
-  html.replace(F("%CONFIG_FORMS%"), configForms);
-
-  // Reszta kodu bez zmian
-  String buttons = F("<div class='section'>"
-                    "<div class='buttons-container'>"
-                    "<button class='btn btn-blue' onclick='rebootDevice()'>Restart urządzenia</button>"
-                    "<button class='btn btn-red' onclick='factoryReset()'>Przywróć ustawienia fabryczne</button>"
-                    "</div>"
-                    "</div>");
-  html.replace(F("%BUTTONS%"), buttons);
-
-  String updateForm = F("<div class='section'>"
-                       "<h2>Aktualizacja firmware</h2>"
-                       "<form method='POST' action='/update' enctype='multipart/form-data'>"
-                       "<table class='config-table' style='margin-bottom: 15px;'>"
-                       "<tr><td colspan='2'><input type='file' name='update' accept='.bin'></td></tr>"
-                       "</table>"
-                       "<input type='submit' value='Aktualizuj firmware' class='btn btn-orange'>"
-                       "</form>"
-                       "<div id='update-progress' style='display:none'>"
-                       "<div class='progress'>"
-                       "<div id='progress-bar' class='progress-bar' role='progressbar' style='width: 0%'>0%</div>"
-                       "</div>"
-                       "</div>"
-                       "</div>");
-  html.replace(F("%UPDATE_FORM%"), updateForm);
-
-  String footer = F("<div class='footer'>"
-                   "<a href='https://github.com/pimowo/AquaDoser' target='_blank'>Project by PMW</a>"
-                   "</div>");
-  html.replace(F("%FOOTER%"), footer);
-
-  return html;
+    
+    // Sprawdź css/style.css
+    html += F("<h2>Checking css/style.css:</h2>");
+    if (!LittleFS.exists("/css/style.css")) {
+        html += F("<p style='color: red'>Error: css/style.css not found!</p>");
+    } else {
+        File cssFile = LittleFS.open("/css/style.css", "r");
+        html += F("<p style='color: green'>style.css exists - size: ");
+        html += String(cssFile.size());
+        html += F(" bytes</p>");
+        cssFile.close();
+    }
+    
+    // Sprawdź js/main.js
+    html += F("<h2>Checking js/main.js:</h2>");
+    if (!LittleFS.exists("/js/main.js")) {
+        html += F("<p style='color: red'>Error: js/main.js not found!</p>");
+    } else {
+        File jsFile = LittleFS.open("/js/main.js", "r");
+        html += F("<p style='color: green'>main.js exists - size: ");
+        html += String(jsFile.size());
+        html += F(" bytes</p>");
+        jsFile.close();
+    }
+    
+    // Pokaż listę wszystkich plików
+    html += F("<h2>All files in LittleFS:</h2><ul>");
+    Dir dir = LittleFS.openDir("/");
+    while (dir.next()) {
+        html += F("<li>");
+        html += dir.fileName();
+        html += F(" (");
+        html += String(dir.fileSize());
+        html += F(" bytes)</li>");
+    }
+    html += F("</ul>");
+    
+    html += F("</body></html>");
+    return html;
 }
 
 // Obsługa żądania HTTP do głównej strony konfiguracji
@@ -1457,32 +1170,6 @@ void handleSavePumps() {
         }
     }
 
-    if (!anyChanges) {
-        EEPROM.end();
-        server.sendHeader("Location", "/");
-        server.send(302, "text/plain", "");
-        return;
-    }
-
-    // Aktualizuj sumę kontrolną
-    config.checksum = calculateChecksum(config);
-    EEPROM.write(offsetof(Config, checksum), config.checksum);
-    yield();
-
-    // Wykonaj commit
-    bool success = EEPROM.commit();
-    yield();
-    EEPROM.end();
-    yield();
-
-    // Aktualizuj stany LED tylko jeśli zapis się powiódł
-    if (success) {
-        for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-            updatePumpState(i, config.pumps[i].enabled);
-            yield();
-        }
-    }
-
     // Przekieruj z powrotem na główną stronę
     server.sendHeader("Location", "/");
     server.send(302, "text/plain", "");
@@ -1526,66 +1213,6 @@ void handleDoUpdate() {
       Update.printError(Serial);
       webSocket.broadcastTXT("update:error:Update failed");
       server.send(204);
-    }
-  }
-}
-
-
-void updatePumpState(uint8_t pumpIndex, bool state) {
-  if (pumpIndex < NUMBER_OF_PUMPS && pumpStates[pumpIndex] != nullptr) {
-    pumpStates[pumpIndex]->setState(state, true);
-    pumpEnabled[pumpIndex] = state; // Zapisz stan w tablicy
-
-    // Ustaw kolor LED w zależności od stanu
-    if (state) {
-      ledStates[pumpIndex].currentColor = strip.Color(0, 255, 0); // Zielony - pompa włączona
-    } else {
-      ledStates[pumpIndex].currentColor = strip.Color(255, 0, 0); // Czerwony - pompa wyłączona
-    }
-
-    String statusText = "Pompa_" + String(pumpIndex + 1) + (state ? "ON" : "OFF");
-  }
-}
-
-void setPumpWorking(uint8_t pumpIndex, bool isWorking) {
-  if (pumpIndex < NUMBER_OF_PUMPS) {
-    if (isWorking) {
-      ledStates[pumpIndex].currentColor = strip.Color(0, 0, 255); // Niebieski - pompa pracuje
-    } else {
-      // Wróć do koloru zależnego od stanu włączenia
-      ledStates[pumpIndex].currentColor = pumpEnabled[pumpIndex] ? 
-        strip.Color(0, 255, 0) :  // Zielony - pompa włączona
-        strip.Color(255, 0, 0);   // Czerwony - pompa wyłączona
-    }
-  }
-}
-
-void setServiceMode(bool enabled) {
-  isServiceMode = enabled; // Używamy zadeklarowanej zmiennej globalnej
-  
-  for (int i = 0; i < NUMBER_OF_PUMPS; i++) {
-    ledStates[i].pulsing = enabled;
-    if (enabled) {
-      ledStates[i].currentColor = strip.Color(255, 165, 0); // Pomarańczowy w trybie serwisowym
-    } else {
-      // Przywróć normalny kolor zależny od stanu pompy
-      ledStates[i].currentColor = pumpEnabled[i] ? 
-        strip.Color(0, 255, 0) :  // Zielony - pompa włączona
-        strip.Color(255, 0, 0);   // Czerwony - pompa wyłączona
-    }
-  }
-}
-
-void setCalibrationMode(uint8_t pumpIndex, bool enabled) {
-  if (pumpIndex < NUMBER_OF_PUMPS) {
-    ledStates[pumpIndex].pulsing = enabled;
-    if (enabled) {
-      ledStates[pumpIndex].currentColor = strip.Color(128, 0, 128); // Fioletowy podczas kalibracji
-    } else {
-      // Przywróć normalny kolor
-      ledStates[pumpIndex].currentColor = pumpEnabled[pumpIndex] ? 
-        strip.Color(0, 255, 0) :  // Zielony - pompa włączona
-        strip.Color(255, 0, 0);   // Czerwony - pompa wyłączona
     }
   }
 }
@@ -1715,14 +1342,6 @@ void setup() {
     delay(5000);
   }
 
-  // Debug - sprawdź zawartość systemu plików
-  // Dir dir = LittleFS.openDir("/");
-  // while (dir.next()) {
-  //   String fileName = dir.fileName();
-  //   size_t fileSize = dir.fileSize();
-  //   Serial.printf("FS File: %s, size: %s\n", fileName.c_str(), String(fileSize).c_str());
-  // }
-
   setupPin();
   setupPump();
 
@@ -1735,7 +1354,6 @@ void setup() {
   setupRTC();
 
   configTime(0, 0, "pool.ntp.org", "time.nist.gov");
-  // delay(2000);
 
   // Poczekaj na synchronizację czasu
   time_t now = time(nullptr);
@@ -1781,19 +1399,29 @@ void loop() {
     pumpStates[i]->setState(pumpState);
   }
 
-  // Sprawdź czy należy zakończyć test pompy
-  if (testingPumpId >= 0 && millis() >= pumpTestEndTime) {
-    pcf8574.digitalWrite(config.pumps[testingPumpId].pcf8574_pin, LOW);
-    //webSocket.broadcastTXT("pump_test:finished:" + String(testingPumpId));
-    String message5 = "pump_test:finished:" + String(testingPumpId);
-    webSocket.broadcastTXT(message5);
-    testingPumpId = -1;
-  }
-
-  // Dodatkowe zabezpieczenie - wyłącz wszystkie pompy w trybie serwisowym
-  if (status.isServiceMode) {
-    stopAllPumps();
-  }
+    // Sprawdzaj pompy co sekundę bez blokowania
+    if (currentMillis - lastCheckTime >= 1000) {
+        DateTime now = rtc.now();
+        
+        // Sprawdź każdą pompę
+        for (byte i = 0; i < NUMBER_OF_PUMPS; i++) {
+            // Nie rozpoczynaj nowego dozowania jeśli pompa już pracuje
+            if (!pumpStates[i].isRunning && 
+                config.pumps[i].status && 
+                isDayEnabled(config.pumps[i].days, now.dayOfTheWeek()) &&
+                now.hour() == config.pumps[i].hour && 
+                now.minute() == config.pumps[i].minute && 
+                now.second() == 0) {
+                
+                startDosing(i);
+            }
+        }
+        
+        lastCheckTime = currentMillis;
+    }
+    
+    // Aktualizuj stan pomp
+    updatePumps();
 
   if (currentMillis - timers.lastOTACheck >= OTA_CHECK_INTERVAL) {
     ArduinoOTA.handle();                  // Obsługa aktualizacji OTA
