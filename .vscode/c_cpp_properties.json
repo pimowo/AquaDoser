@@ -10,8 +10,8 @@
             "includePath": [
                 "c:/Users/piotrek/Documents/PlatformIO/Projects/AquaDoser/src",
                 "C:/Users/piotrek/.platformio/packages/framework-arduinoespressif32/libraries/LittleFS/src",
-                "C:/Users/piotrek/.platformio/packages/framework-arduinoespressif32/libraries/EEPROM/src",
                 "C:/Users/piotrek/.platformio/packages/framework-arduinoespressif32/libraries/ArduinoOTA/src",
+                "C:/Users/piotrek/.platformio/packages/framework-arduinoespressif32/libraries/EEPROM/src",
                 "c:/Users/piotrek/Documents/PlatformIO/Projects/AquaDoser/.pio/libdeps/esp32s3/Timezone/src",
                 "c:/Users/piotrek/Documents/PlatformIO/Projects/AquaDoser/.pio/libdeps/esp32s3/WebSockets/src",
                 "C:/Users/piotrek/.platformio/packages/framework-arduinoespressif32/libraries/NetworkClientSecure/src",
@@ -407,8 +407,8 @@
                 "path": [
                     "c:/Users/piotrek/Documents/PlatformIO/Projects/AquaDoser/src",
                     "C:/Users/piotrek/.platformio/packages/framework-arduinoespressif32/libraries/LittleFS/src",
-                    "C:/Users/piotrek/.platformio/packages/framework-arduinoespressif32/libraries/EEPROM/src",
                     "C:/Users/piotrek/.platformio/packages/framework-arduinoespressif32/libraries/ArduinoOTA/src",
+                    "C:/Users/piotrek/.platformio/packages/framework-arduinoespressif32/libraries/EEPROM/src",
                     "c:/Users/piotrek/Documents/PlatformIO/Projects/AquaDoser/.pio/libdeps/esp32s3/Timezone/src",
                     "c:/Users/piotrek/Documents/PlatformIO/Projects/AquaDoser/.pio/libdeps/esp32s3/WebSockets/src",
                     "C:/Users/piotrek/.platformio/packages/framework-arduinoespressif32/libraries/NetworkClientSecure/src",
